@@ -12,4 +12,6 @@ The project is designed as a **CLI-first, AI-first, offline-first** quality mana
 - **Agent access** should be supported through a read-only MCP-facing interface for compliance inspection and gap analysis.
 - **Human-facing UI** comes later, with native desktop first and web/Wasm after the core is stable.
 
-See [`docs/`](docs/) for architecture notes and module decisions.
+See [`docs/`](docs/) for architecture notes and module decisions, including:
+- [`docs/requirements/UserNeeds.md`](docs/requirements/UserNeeds.md)
+- [`docs/operations/BuildAndRun.md`](docs/operations/BuildAndRun.md)
