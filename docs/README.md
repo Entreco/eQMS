@@ -2,6 +2,11 @@
 
 This folder is reserved for architecture notes, module decisions, and other project documentation that should live alongside the codebase.
 
+## Current documents
+
+- [User Needs](requirements/UserNeeds.md)
+- [Build and Run](operations/BuildAndRun.md)
+
 Suggested topics:
 
 - system architecture
