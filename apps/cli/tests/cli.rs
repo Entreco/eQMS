@@ -123,6 +123,40 @@ fn initializes_and_rebuilds_a_workspace_index() {
     assert_eq!(init_json["command"], "init");
     assert!(workspace.join(".eqms/journal.jsonl").is_file());
 
+    let branch = Command::new("git")
+        .arg("-C")
+        .arg(&workspace)
+        .args(["symbolic-ref", "--short", "HEAD"])
+        .output()
+        .unwrap();
+    assert!(branch.status.success());
+    let branch = String::from_utf8(branch.stdout).unwrap();
+    let deleted_ref = Command::new("git")
+        .arg("-C")
+        .arg(&workspace)
+        .args(["update-ref", "-d"])
+        .arg(format!("refs/heads/{}", branch.trim()))
+        .output()
+        .unwrap();
+    assert!(deleted_ref.status.success());
+    let recover = Command::new(env!("CARGO_BIN_EXE_qms"))
+        .args(["--json", "recover"])
+        .arg(&workspace)
+        .output()
+        .unwrap();
+    assert_eq!(recover.status.code(), Some(0));
+    let recover_json: serde_json::Value = serde_json::from_slice(&recover.stdout).unwrap();
+    assert_eq!(recover_json["command"], "recover");
+    assert_eq!(recover_json["status"], "ok");
+    let recovered_verify = Command::new(env!("CARGO_BIN_EXE_qms"))
+        .args(["--json", "verify"])
+        .arg(&workspace)
+        .output()
+        .unwrap();
+    assert_eq!(recovered_verify.status.code(), Some(0));
+    let verify_json: serde_json::Value = serde_json::from_slice(&recovered_verify.stdout).unwrap();
+    assert_eq!(verify_json["command"], "verify");
+
     std::fs::write(workspace.join("documents/quality-policy.md"), "# Quality\n").unwrap();
     let rebuild = Command::new(env!("CARGO_BIN_EXE_qms"))
         .args(["--json", "index", "rebuild"])
@@ -156,5 +190,139 @@ fn initializes_and_rebuilds_a_workspace_index() {
     assert_eq!(invalid_index.status.code(), Some(1));
     let error_json: serde_json::Value = serde_json::from_slice(&invalid_index.stderr).unwrap();
     assert_eq!(error_json["error"]["code"], "OPERATION_FAILED");
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn recovery_refuses_invalid_partial_initialization_without_a_commit() {
+    let root = std::env::temp_dir().join(format!(
+        "eqms-cli-partial-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    std::fs::create_dir_all(root.join(".eqms")).unwrap();
+    std::fs::create_dir_all(root.join("modules")).unwrap();
+    std::fs::write(root.join(".eqms/config.json"), b"{}").unwrap();
+    std::fs::write(root.join("modules/manifest.json"), b"{}").unwrap();
+    std::fs::write(root.join(".eqms/journal.jsonl"), b"{}\n").unwrap();
+    let original_journal = std::fs::read(root.join(".eqms/journal.jsonl")).unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_qms"))
+        .args(["--json", "recover"])
+        .arg(&root)
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(1));
+    let error: serde_json::Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(error["error"]["code"], "OPERATION_FAILED");
+    assert_eq!(
+        std::fs::read(root.join(".eqms/journal.jsonl")).unwrap(),
+        original_journal
+    );
+    let head = Command::new("git")
+        .arg("-C")
+        .arg(&root)
+        .args(["rev-parse", "--verify", "HEAD"])
+        .output()
+        .unwrap();
+    assert!(!head.status.success());
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn initialization_requires_explicit_git_identity_configuration() {
+    let root = std::env::temp_dir().join(format!(
+        "eqms-cli-no-identity-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    let config = root.join("empty-git-config");
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::write(&config, "").unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_qms"))
+        .args(["--json", "init"])
+        .arg(root.join("workspace"))
+        .env("GIT_CONFIG_GLOBAL", &config)
+        .env("GIT_CONFIG_SYSTEM", &config)
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env_remove("GIT_AUTHOR_IDENT")
+        .env_remove("GIT_COMMITTER_IDENT")
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(1));
+    let error: serde_json::Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(error["error"]["code"], "OPERATION_FAILED");
+    assert!(
+        error["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("identity")
+    );
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn concurrent_cli_initialization_creates_exactly_one_workspace() {
+    let root = std::env::temp_dir().join(format!(
+        "eqms-cli-concurrent-init-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    std::fs::create_dir_all(&root).unwrap();
+    let workspace = root.join("workspace");
+    let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
+    let first_workspace = workspace.clone();
+    let first_barrier = barrier.clone();
+    let first = std::thread::spawn(move || {
+        first_barrier.wait();
+        Command::new(env!("CARGO_BIN_EXE_qms"))
+            .args(["--json", "init"])
+            .arg(first_workspace)
+            .env(
+                "GIT_AUTHOR_IDENT",
+                "CLI Test <cli-test@example.invalid> 0 +0000",
+            )
+            .env(
+                "GIT_COMMITTER_IDENT",
+                "CLI Test <cli-test@example.invalid> 0 +0000",
+            )
+            .output()
+            .unwrap()
+    });
+    let second_workspace = workspace.clone();
+    let second = std::thread::spawn(move || {
+        barrier.wait();
+        Command::new(env!("CARGO_BIN_EXE_qms"))
+            .args(["--json", "init"])
+            .arg(second_workspace)
+            .env(
+                "GIT_AUTHOR_IDENT",
+                "CLI Test <cli-test@example.invalid> 0 +0000",
+            )
+            .env(
+                "GIT_COMMITTER_IDENT",
+                "CLI Test <cli-test@example.invalid> 0 +0000",
+            )
+            .output()
+            .unwrap()
+    });
+    let outputs = [first.join().unwrap(), second.join().unwrap()];
+
+    assert_eq!(
+        outputs
+            .iter()
+            .filter(|output| output.status.success())
+            .count(),
+        1
+    );
+    let verify = Command::new(env!("CARGO_BIN_EXE_qms"))
+        .args(["--json", "verify"])
+        .arg(&workspace)
+        .output()
+        .unwrap();
+    assert_eq!(verify.status.code(), Some(0));
     std::fs::remove_dir_all(root).unwrap();
 }

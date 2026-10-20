@@ -1,6 +1,6 @@
 ---
 title: Git-backed workspace and derived index contract
-status: implemented
+status: draft
 related: [EQMS-002, EQMS-005]
 ---
 
@@ -61,6 +61,54 @@ complete hash chain, the Git root, and equality of config/journal with `HEAD`.
 It also checks the latest event's referenced content hashes against Git `HEAD`.
 It does not prove that the Git history has never been replaced, establish signer
 identity, or validate the quality/compliance of document content.
+
+## Filesystem, mutation, and Git path safety
+
+Initialization acquires the workspace lock after Git setup, then rechecks that
+the directory is still empty (or only contains the unborn `.git` repository)
+before creating canonical files. The lock remains held through the initial
+commit and verification. Canonical config, journal, manifest, and referenced
+content paths must be regular files beneath the selected workspace; symlinked
+files or parent directories are rejected. File access for mutations must remain
+anchored to the workspace and must not follow substituted symlinks. Unix builds
+use descriptor-relative `O_NOFOLLOW` access for each path component. Non-Unix
+builds use reparse-point flags and component checks; concurrent parent-path
+replacement has not been independently verified on those targets.
+
+Content hashes describe the exact bytes in the working files. Before a journal
+event or recovery commit advances `HEAD`, the bytes Git will store must match
+those hashes; configured clean filters or line-ending conversion that changes
+the bytes cause the operation to fail without advancing `HEAD`. Git path
+arguments are treated literally so filenames containing glob characters cannot
+stage unrelated files. On Unix, a backslash in a filename is preserved as a
+filename character rather than rewritten as a directory separator.
+
+Recovery validates the retained journal prefix, its relation to committed
+history, and all files/config needed for the selected recovery path before
+truncating or committing anything. Unsupported or divergent inputs remain
+untouched. A pending update to `modules/manifest.json` is recoverable only when
+the valid manifest is named with its exact content hash in the pending event.
+
+## Risk assessment
+
+Risk Management and Security Risk Management are applicable proportionately:
+initialization and recovery mutate a local repository, while verification and
+indexing consume local workspace data.
+
+| Hazard | Mitigation | Residual limitation |
+|---|---|---|
+| Concurrent initialization overwrites workspace state | Lock after Git setup, recheck state while locked, hold through commit | External tools that ignore the lock can still modify the repository |
+| Symlink substitution redirects reads or writes | Reject symlinked path components and use no-follow, workspace-anchored mutation handles | Full-history replacement by an actor with repository access is not prevented |
+| Recovery truncates committed or unsupported journal data | Validate complete records, committed prefix, config, manifest, and pending hashes before writes | Recovery is limited to the documented interrupted operations |
+| Git filters alter bytes after hashes are recorded | Compare Git's filtered blob bytes with the exact hashed bytes before commit | Workspaces with content-transforming filters are intentionally unsupported |
+| Wildcard pathspec stages unreferenced files | Set literal pathspec handling for the shared Git command runner | Other Git clients and manual commands are outside this adapter's control |
+| Index path normalization collides with valid names | Build index keys from platform path components; preserve Unix backslashes | Index rows remain derived and must be rebuilt after corruption |
+| Git infers an unaccountable author identity | Require config-only author and committer identity | A configured identity is not independently authenticated |
+| A non-Unix parent path is substituted between checks | Reject observed reparse points and use the platform open-reparse-point flag | Parent-swap resistance outside Unix has not been independently verified |
+
+These controls reduce accidental or path-driven damage; they do not establish
+identity, trusted time, independent backup, or protection against an attacker
+who can replace the complete local Git history.
 
 ## Derived SQLite index
 

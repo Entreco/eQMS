@@ -5,7 +5,7 @@ use std::error::Error;
 use std::fmt::{self, Display, Formatter};
 use std::fs::{self, symlink_metadata};
 use std::io::ErrorKind;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 #[derive(Debug)]
 pub struct IndexError(String);
@@ -71,7 +71,7 @@ impl Index {
         let _lock = workspace.acquire_lock()?;
         workspace.verify_unlocked()?;
         let mut index = Self::open_unlocked(workspace)?;
-        let documents = read_documents(workspace.path())?;
+        let documents = read_documents(workspace)?;
         let transaction = index.connection.transaction()?;
         transaction.execute("DELETE FROM documents", [])?;
         {
@@ -197,7 +197,8 @@ fn validate_migration_history(
     Ok(())
 }
 
-fn read_documents(root: &Path) -> Result<Vec<(String, String)>, IndexError> {
+fn read_documents(workspace: &Workspace) -> Result<Vec<(String, String)>, IndexError> {
+    let root = workspace.path();
     let document_root = root.join("documents");
     let mut paths = Vec::new();
     collect_markdown(&document_root, &mut paths)?;
@@ -208,15 +209,20 @@ fn read_documents(root: &Path) -> Result<Vec<(String, String)>, IndexError> {
             let relative = path
                 .strip_prefix(root)
                 .map_err(|e| error(format!("document is outside workspace: {e}")))?
-                .to_str()
-                .ok_or_else(|| error("document path is not valid UTF-8"))?
-                .replace('\\', "/");
-            let content = fs::read_to_string(&path).map_err(|e| {
-                error(format!(
-                    "cannot read canonical document {}: {e}",
-                    path.display()
-                ))
-            })?;
+                .components()
+                .map(|component| match component {
+                    Component::Normal(part) => part
+                        .to_str()
+                        .ok_or_else(|| error("document path is not valid UTF-8")),
+                    _ => Err(error("document path contains an invalid component")),
+                })
+                .collect::<Result<Vec<_>, _>>()?
+                .join("/");
+            let bytes = workspace
+                .read_canonical_file(&relative)
+                .map_err(|e| error(format!("cannot read canonical document {relative}: {e}")))?;
+            let content = String::from_utf8(bytes)
+                .map_err(|e| error(format!("canonical document {relative} is not UTF-8: {e}")))?;
             Ok((relative, content))
         })
         .collect()
@@ -400,6 +406,63 @@ mod tests {
             String::from_utf8(output.stdout).unwrap()
         };
         assert_eq!(head_before, head_after);
+        fs::remove_dir_all(path).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn index_preserves_literal_backslashes_in_unix_filenames() {
+        let path = temp_dir();
+        let workspace = workspace(&path);
+        fs::write(path.join("documents/a\\b.md"), "# Literal backslash\n").unwrap();
+        fs::create_dir(path.join("documents/a")).unwrap();
+        fs::write(path.join("documents/a/b.md"), "# Nested path\n").unwrap();
+
+        assert_eq!(Index::rebuild(&workspace).unwrap(), 2);
+        let connection = Connection::open(workspace.index_path()).unwrap();
+        let rows = connection
+            .prepare("SELECT path, content FROM documents ORDER BY path")
+            .unwrap()
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert_eq!(
+            rows,
+            vec![
+                ("documents/a/b.md".into(), "# Nested path\n".into()),
+                ("documents/a\\b.md".into(), "# Literal backslash\n".into()),
+            ]
+        );
+
+        fs::remove_dir_all(path).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn rebuild_does_not_follow_symlinked_document_paths() {
+        use std::os::unix::fs::symlink;
+
+        let path = temp_dir();
+        let workspace = workspace(&path);
+        let outside = temp_dir();
+        fs::write(outside.join("secret.md"), "# External\n").unwrap();
+        symlink(
+            outside.join("secret.md"),
+            path.join("documents/file-link.md"),
+        )
+        .unwrap();
+        symlink(&outside, path.join("documents/directory-link")).unwrap();
+
+        assert_eq!(Index::rebuild(&workspace).unwrap(), 0);
+        assert_eq!(
+            Index::open(&workspace).unwrap().document_count().unwrap(),
+            0
+        );
+
+        fs::remove_dir_all(outside).unwrap();
         fs::remove_dir_all(path).unwrap();
     }
 

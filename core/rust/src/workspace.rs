@@ -3,16 +3,229 @@ use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::error::Error;
 use std::fmt::{self, Display, Formatter};
-use std::fs::{self, File, OpenOptions};
-use std::io::{self, Write};
-use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+#[cfg(not(unix))]
+use std::fs::OpenOptions;
+use std::fs::{self, File};
+use std::io::{self, Read, Write};
+use std::path::{Component, Path, PathBuf};
+use std::process::{Command, Output, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
+
+#[cfg(unix)]
+use rustix::fs::{Mode, OFlags};
 
 const CONFIG_PATH: &str = ".eqms/config.json";
 const JOURNAL_PATH: &str = ".eqms/journal.jsonl";
 const MODULE_MANIFEST_PATH: &str = "modules/manifest.json";
 const WORKSPACE_SCHEMA_VERSION: u32 = 1;
+
+#[derive(Clone, Copy)]
+enum WorkspaceFileMode {
+    Read,
+    Write,
+    Append,
+    Create,
+    Lock,
+}
+
+fn checked_components(path: &Path) -> io::Result<Vec<&std::ffi::OsStr>> {
+    let components = path
+        .components()
+        .map(|component| match component {
+            Component::Normal(name) => Ok(name),
+            _ => Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "workspace path must be relative and contain only normal components",
+            )),
+        })
+        .collect::<io::Result<Vec<_>>>()?;
+    if components.is_empty() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "workspace path must name a file or directory",
+        ));
+    }
+    Ok(components)
+}
+
+#[cfg(unix)]
+fn rustix_io_error(error: rustix::io::Errno) -> io::Error {
+    io::Error::from_raw_os_error(error.raw_os_error())
+}
+
+#[cfg(unix)]
+fn open_workspace_file(root: &Path, relative: &Path, mode: WorkspaceFileMode) -> io::Result<File> {
+    use rustix::fs::{open, openat};
+
+    let components = checked_components(relative)?;
+    let directory_flags = OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC;
+    let root_fd = open(root, directory_flags, Mode::empty()).map_err(rustix_io_error)?;
+    let mut directory = File::from(root_fd);
+    for component in &components[..components.len() - 1] {
+        let fd = openat(&directory, *component, directory_flags, Mode::empty())
+            .map_err(rustix_io_error)?;
+        directory = File::from(fd);
+    }
+
+    let (flags, create_mode) = match mode {
+        WorkspaceFileMode::Read => (OFlags::RDONLY, Mode::empty()),
+        WorkspaceFileMode::Write => (OFlags::WRONLY, Mode::empty()),
+        WorkspaceFileMode::Append => (OFlags::WRONLY | OFlags::APPEND, Mode::empty()),
+        WorkspaceFileMode::Create => (
+            OFlags::WRONLY | OFlags::CREATE | OFlags::EXCL,
+            Mode::from_raw_mode(0o644),
+        ),
+        WorkspaceFileMode::Lock => (OFlags::RDWR | OFlags::CREATE, Mode::from_raw_mode(0o600)),
+    };
+    let fd = openat(
+        &directory,
+        components[components.len() - 1],
+        flags | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+        create_mode,
+    )
+    .map_err(rustix_io_error)?;
+    let file = File::from(fd);
+    if !file.metadata()?.is_file() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "workspace path is not a regular file",
+        ));
+    }
+    Ok(file)
+}
+
+#[cfg(not(unix))]
+fn open_workspace_file(root: &Path, relative: &Path, mode: WorkspaceFileMode) -> io::Result<File> {
+    let components = checked_components(relative)?;
+    let mut path = root.to_path_buf();
+    for (index, component) in components.iter().enumerate() {
+        path.push(component);
+        match fs::symlink_metadata(&path) {
+            Ok(metadata) => {
+                if metadata.file_type().is_symlink()
+                    || (index + 1 < components.len() && !metadata.is_dir())
+                    || (index + 1 == components.len() && !metadata.is_file())
+                {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        "workspace path contains a symlink or non-regular file",
+                    ));
+                }
+            }
+            Err(error)
+                if index + 1 == components.len()
+                    && error.kind() == io::ErrorKind::NotFound
+                    && matches!(mode, WorkspaceFileMode::Create | WorkspaceFileMode::Lock) => {}
+            Err(error) => return Err(error),
+        }
+    }
+    let mut options = OpenOptions::new();
+    match mode {
+        WorkspaceFileMode::Read => {
+            options.read(true);
+        }
+        WorkspaceFileMode::Write => {
+            options.write(true);
+        }
+        WorkspaceFileMode::Append => {
+            options.append(true);
+        }
+        WorkspaceFileMode::Create => {
+            options.write(true).create_new(true);
+        }
+        WorkspaceFileMode::Lock => {
+            options.read(true).write(true).create(true);
+        }
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        options.custom_flags(0x0020_0000);
+    }
+    let file = options.open(path)?;
+    if !file.metadata()?.is_file() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "workspace path is not a regular file",
+        ));
+    }
+    Ok(file)
+}
+
+#[cfg(unix)]
+fn ensure_workspace_directory(root: &Path, relative: &Path) -> io::Result<()> {
+    use rustix::fs::{mkdirat, open, openat};
+
+    let components = checked_components(relative)?;
+    let directory_flags = OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC;
+    let root_fd = open(root, directory_flags, Mode::empty()).map_err(rustix_io_error)?;
+    let mut directory = File::from(root_fd);
+    for component in components {
+        let next = match openat(&directory, component, directory_flags, Mode::empty()) {
+            Ok(fd) => fd,
+            Err(error) if rustix_io_error(error).kind() == io::ErrorKind::NotFound => {
+                match mkdirat(&directory, component, Mode::from_raw_mode(0o755)) {
+                    Ok(()) => {}
+                    Err(error) if rustix_io_error(error).kind() == io::ErrorKind::AlreadyExists => {
+                    }
+                    Err(error) => return Err(rustix_io_error(error)),
+                }
+                openat(&directory, component, directory_flags, Mode::empty())
+                    .map_err(rustix_io_error)?
+            }
+            Err(error) => return Err(rustix_io_error(error)),
+        };
+        directory = File::from(next);
+    }
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn ensure_workspace_directory(root: &Path, relative: &Path) -> io::Result<()> {
+    let components = checked_components(relative)?;
+    let mut path = root.to_path_buf();
+    for component in components {
+        path.push(component);
+        match fs::symlink_metadata(&path) {
+            Ok(metadata) if metadata.is_dir() && !metadata.file_type().is_symlink() => {}
+            Ok(_) => {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "workspace directory contains a symlink or non-directory",
+                ));
+            }
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                fs::create_dir(&path)?;
+            }
+            Err(error) => return Err(error),
+        }
+    }
+    Ok(())
+}
+
+fn read_workspace_file(root: &Path, relative: &str) -> io::Result<Vec<u8>> {
+    let mut file = open_workspace_file(root, Path::new(relative), WorkspaceFileMode::Read)?;
+    let mut bytes = Vec::new();
+    file.read_to_end(&mut bytes)?;
+    Ok(bytes)
+}
+
+fn write_workspace_file(
+    root: &Path,
+    relative: &str,
+    bytes: &[u8],
+    mode: WorkspaceFileMode,
+) -> io::Result<()> {
+    let mut file = open_workspace_file(root, Path::new(relative), mode)?;
+    file.write_all(bytes)?;
+    file.sync_all()
+}
+
+fn truncate_workspace_file(root: &Path, relative: &str, length: u64) -> io::Result<()> {
+    let file = open_workspace_file(root, Path::new(relative), WorkspaceFileMode::Write)?;
+    file.set_len(length)?;
+    file.sync_all()
+}
 
 #[derive(Debug)]
 pub struct WorkspaceError(String);
@@ -98,28 +311,33 @@ impl Workspace {
                 requested_path.display()
             ))
         })?;
-        let entries = fs::read_dir(&path)?
-            .map(|entry| entry.map(|entry| entry.file_name()))
-            .collect::<Result<Vec<_>, _>>()?;
-        let empty_git_repository = entries.len() == 1 && entries[0] == ".git" && !has_head(&path);
-        if !entries.is_empty() && !empty_git_repository {
-            return Err(error(format!(
-                "workspace directory is not empty: {}",
-                path.display()
-            )));
-        }
-
+        ensure_initializable(&path)?;
         git(&path, &["init"])?;
-        ensure_git_identity(&path)?;
-        fs::create_dir_all(path.join(".eqms"))?;
-        fs::create_dir_all(path.join("documents"))?;
-        fs::create_dir_all(path.join("modules"))?;
-        fs::write(
-            path.join(".gitignore"),
-            ".eqms/index.sqlite3\n.eqms/index.sqlite3-shm\n.eqms/index.sqlite3-wal\n",
+        let workspace = Self { path };
+        let _lock = workspace.acquire_lock()?;
+        ensure_initializable(&workspace.path)?;
+        ensure_git_identity(&workspace.path)?;
+        ensure_workspace_directory(&workspace.path, Path::new(".eqms"))?;
+        ensure_workspace_directory(&workspace.path, Path::new("documents"))?;
+        ensure_workspace_directory(&workspace.path, Path::new("modules"))?;
+        write_workspace_file(
+            &workspace.path,
+            ".gitignore",
+            b".eqms/index.sqlite3\n.eqms/index.sqlite3-shm\n.eqms/index.sqlite3-wal\n",
+            WorkspaceFileMode::Create,
         )?;
-        fs::write(path.join("documents/.gitkeep"), "")?;
-        fs::write(path.join("modules/.gitkeep"), "")?;
+        write_workspace_file(
+            &workspace.path,
+            "documents/.gitkeep",
+            b"",
+            WorkspaceFileMode::Create,
+        )?;
+        write_workspace_file(
+            &workspace.path,
+            "modules/.gitkeep",
+            b"",
+            WorkspaceFileMode::Create,
+        )?;
 
         let config = WorkspaceConfig {
             schema_version: WORKSPACE_SCHEMA_VERSION,
@@ -127,9 +345,10 @@ impl Workspace {
             module_manifest_schema_version: 1,
             journal_schema_version: WORKSPACE_SCHEMA_VERSION,
         };
-        write_json(&path.join(CONFIG_PATH), &config)?;
+        write_json(&workspace.path, CONFIG_PATH, &config)?;
         write_json(
-            &path.join(MODULE_MANIFEST_PATH),
+            &workspace.path,
+            MODULE_MANIFEST_PATH,
             &ModuleManifest {
                 schema_version: 1,
                 modules: Vec::new(),
@@ -147,7 +366,7 @@ impl Workspace {
             hash: String::new(),
         };
         let record = with_hash(event)?;
-        write_journal(&path.join(JOURNAL_PATH), &[record])?;
+        write_journal(&workspace.path, &[record])?;
         let initial_paths = [
             ".gitignore",
             CONFIG_PATH,
@@ -158,13 +377,16 @@ impl Workspace {
         ];
         let mut add_args = vec!["add", "--"];
         add_args.extend(initial_paths);
-        git(&path, &add_args)?;
+        git(&workspace.path, &add_args)?;
+        for relative_path in initial_paths {
+            let bytes = read_workspace_file(&workspace.path, relative_path)?;
+            verify_staged_bytes(&workspace.path, relative_path, &bytes)?;
+        }
         let mut commit_args = vec!["commit", "--only", "-m", "Initialize eQMS workspace", "--"];
         commit_args.extend(initial_paths);
-        git(&path, &commit_args)?;
+        git(&workspace.path, &commit_args)?;
 
-        let workspace = Self { path };
-        workspace.verify()?;
+        workspace.verify_unlocked()?;
         Ok(workspace)
     }
 
@@ -176,12 +398,23 @@ impl Workspace {
             ))
         })?;
         for relative_path in [CONFIG_PATH, JOURNAL_PATH, MODULE_MANIFEST_PATH] {
-            if !path.join(relative_path).is_file() {
-                return Err(error(format!(
-                    "workspace is missing {relative_path}: {}",
-                    path.display()
-                )));
-            }
+            open_workspace_file(&path, Path::new(relative_path), WorkspaceFileMode::Read).map_err(
+                |e| {
+                    error(format!(
+                        "cannot open workspace file {relative_path} in {}: {e}",
+                        path.display()
+                    ))
+                },
+            )?;
+        }
+        let git_root = git_text(&path, &["rev-parse", "--show-toplevel"])?;
+        let git_root = Path::new(git_root.trim()).canonicalize()?;
+        if git_root != path {
+            return Err(error(format!(
+                "workspace Git root {} does not match workspace path {}",
+                git_root.display(),
+                path.display()
+            )));
         }
         Ok(Self { path })
     }
@@ -194,13 +427,24 @@ impl Workspace {
         self.path.join(".eqms/index.sqlite3")
     }
 
+    pub(crate) fn read_canonical_file(&self, relative: &str) -> Result<Vec<u8>, WorkspaceError> {
+        read_workspace_file(&self.path, relative).map_err(Into::into)
+    }
+
     pub fn verify(&self) -> Result<Vec<JournalRecord>, WorkspaceError> {
         let _lock = self.acquire_lock()?;
         self.verify_unlocked()
     }
 
     pub(crate) fn verify_unlocked(&self) -> Result<Vec<JournalRecord>, WorkspaceError> {
-        let config_bytes = fs::read(self.path.join(CONFIG_PATH))?;
+        self.verify_unlocked_with_manifest_update(None)
+    }
+
+    fn verify_unlocked_with_manifest_update(
+        &self,
+        pending_manifest_hash: Option<&str>,
+    ) -> Result<Vec<JournalRecord>, WorkspaceError> {
+        let config_bytes = read_workspace_file(&self.path, CONFIG_PATH)?;
         let config: WorkspaceConfig = serde_json::from_slice(&config_bytes)
             .map_err(|e| error(format!("invalid workspace config: {e}")))?;
         if config.schema_version != WORKSPACE_SCHEMA_VERSION
@@ -213,7 +457,7 @@ impl Workspace {
                 CONFIG_PATH
             )));
         }
-        let manifest_bytes = fs::read(self.path.join(MODULE_MANIFEST_PATH))?;
+        let manifest_bytes = read_workspace_file(&self.path, MODULE_MANIFEST_PATH)?;
         let manifest: ModuleManifest = serde_json::from_slice(&manifest_bytes)
             .map_err(|e| error(format!("invalid module manifest: {e}")))?;
         if manifest.schema_version != config.module_manifest_schema_version {
@@ -223,7 +467,7 @@ impl Workspace {
             )));
         }
 
-        let journal_bytes = fs::read(self.path.join(JOURNAL_PATH))?;
+        let journal_bytes = read_workspace_file(&self.path, JOURNAL_PATH)?;
         let records = parse_and_verify_journal(&journal_bytes)?;
         let git_root = git_text(&self.path, &["rev-parse", "--show-toplevel"])?;
         let git_root = Path::new(git_root.trim()).canonicalize()?;
@@ -241,7 +485,16 @@ impl Workspace {
         }
         ensure_matches_head(&self.path, CONFIG_PATH, &config_bytes)?;
         ensure_matches_head(&self.path, JOURNAL_PATH, &journal_bytes)?;
-        ensure_matches_head(&self.path, MODULE_MANIFEST_PATH, &manifest_bytes)?;
+        if let Some(expected_hash) = pending_manifest_hash {
+            let actual_hash = format!("sha256:{:x}", Sha256::digest(&manifest_bytes));
+            if actual_hash != expected_hash {
+                return Err(error(
+                    "module manifest does not match the declared pending content hash",
+                ));
+            }
+        } else {
+            ensure_matches_head(&self.path, MODULE_MANIFEST_PATH, &manifest_bytes)?;
+        }
         verify_head_content_hashes(
             &self.path,
             &records
@@ -263,13 +516,15 @@ impl Workspace {
         }
         validate_content_hashes(&content_hashes)?;
         let _lock = self.lock()?;
-        self.verify_unlocked()?;
+        self.verify_unlocked_with_manifest_update(
+            content_hashes.get(MODULE_MANIFEST_PATH).map(String::as_str),
+        )?;
 
-        let journal_path = self.path.join(JOURNAL_PATH);
-        let bytes = fs::read(&journal_path)?;
+        let bytes = read_workspace_file(&self.path, JOURNAL_PATH)?;
         let records = parse_and_verify_journal(&bytes)?;
         let previous = records.last().expect("genesis record is required");
         verify_workspace_content_hashes(&self.path, &content_hashes)?;
+        ensure_git_preserves_content_hashes(&self.path, &content_hashes)?;
         let event = JournalRecord {
             schema_version: WORKSPACE_SCHEMA_VERSION,
             sequence: previous
@@ -286,8 +541,16 @@ impl Workspace {
         let record = with_hash(event)?;
         let line = serde_json::to_vec(&record)
             .map_err(|e| error(format!("cannot encode journal event: {e}")))?;
+        let mut new_journal = bytes;
+        new_journal.extend_from_slice(&line);
+        new_journal.push(b'\n');
+        ensure_git_preserves_bytes(&self.path, JOURNAL_PATH, &new_journal)?;
         let write_result = (|| -> Result<(), io::Error> {
-            let mut file = OpenOptions::new().append(true).open(&journal_path)?;
+            let mut file = open_workspace_file(
+                &self.path,
+                Path::new(JOURNAL_PATH),
+                WorkspaceFileMode::Append,
+            )?;
             file.write_all(&line)?;
             file.write_all(b"\n")?;
             file.sync_all()
@@ -318,6 +581,13 @@ impl Workspace {
                 self.path.display()
             )));
         }
+        if let Err(commit_error) = verify_staged_content_hashes(&self.path, &record.content_hashes)
+            .and_then(|()| verify_staged_bytes(&self.path, JOURNAL_PATH, &new_journal))
+        {
+            return Err(error(format!(
+                "journal event was staged but Git would store different canonical bytes; refusing to commit: {commit_error}"
+            )));
+        }
         if let Err(commit_error) = git(&self.path, &commit_args) {
             return Err(error(format!(
                 "journal event was appended but not committed; run `qms recover {}`: {commit_error}",
@@ -330,39 +600,27 @@ impl Workspace {
 
     pub fn recover(&self) -> Result<(), WorkspaceError> {
         let _lock = self.lock()?;
-        let journal_path = self.path.join(JOURNAL_PATH);
-        let mut bytes = fs::read(&journal_path)?;
-        if !bytes.ends_with(b"\n") {
-            if let Some(last_newline) = bytes.iter().rposition(|byte| *byte == b'\n') {
-                bytes.truncate(last_newline + 1);
-                let file = OpenOptions::new().write(true).open(&journal_path)?;
-                file.set_len(bytes.len() as u64)?;
-                file.sync_all()?;
-            } else {
+        let original = read_workspace_file(&self.path, JOURNAL_PATH)?;
+        let needs_truncation = !original.ends_with(b"\n");
+        let candidate = if needs_truncation {
+            let Some(last_newline) = original.iter().rposition(|byte| *byte == b'\n') else {
                 return Err(error(
                     "journal has no complete records; refusing automatic recovery",
                 ));
-            }
-        }
-        let records = parse_and_verify_journal(&bytes)?;
+            };
+            original[..=last_newline].to_vec()
+        } else {
+            original.clone()
+        };
+        let records = parse_and_verify_journal(&candidate)?;
 
         if !has_head(&self.path) {
-            let config_bytes = fs::read(self.path.join(CONFIG_PATH))?;
-            let config: WorkspaceConfig = serde_json::from_slice(&config_bytes)
-                .map_err(|e| error(format!("invalid workspace config: {e}")))?;
-            if config.schema_version != WORKSPACE_SCHEMA_VERSION
-                || config.document_schema_version != 1
-                || config.module_manifest_schema_version != 1
-                || config.journal_schema_version != WORKSPACE_SCHEMA_VERSION
-            {
-                return Err(error("unsupported workspace schema version"));
+            if needs_truncation {
+                return Err(error(
+                    "cannot truncate an incomplete journal without committed history",
+                ));
             }
-            let manifest: ModuleManifest =
-                serde_json::from_slice(&fs::read(self.path.join(MODULE_MANIFEST_PATH))?)
-                    .map_err(|e| error(format!("invalid module manifest: {e}")))?;
-            if manifest.schema_version != config.module_manifest_schema_version {
-                return Err(error("unsupported module manifest schema version"));
-            }
+            validate_initialization_state(&self.path)?;
             let initial_paths = [
                 ".gitignore",
                 CONFIG_PATH,
@@ -374,6 +632,13 @@ impl Workspace {
             let mut add_args = vec!["add", "--"];
             add_args.extend(initial_paths);
             git(&self.path, &add_args)?;
+            for relative_path in initial_paths {
+                verify_staged_bytes(
+                    &self.path,
+                    relative_path,
+                    &read_workspace_file(&self.path, relative_path)?,
+                )?;
+            }
             let mut commit_args = vec![
                 "commit",
                 "--only",
@@ -387,28 +652,58 @@ impl Workspace {
             return Ok(());
         }
 
-        ensure_matches_head(
-            &self.path,
-            CONFIG_PATH,
-            &fs::read(self.path.join(CONFIG_PATH))?,
-        )?;
-        ensure_matches_head(
-            &self.path,
-            MODULE_MANIFEST_PATH,
-            &fs::read(self.path.join(MODULE_MANIFEST_PATH))?,
-        )?;
+        let config_bytes = read_workspace_file(&self.path, CONFIG_PATH)?;
+        let config: WorkspaceConfig = serde_json::from_slice(&config_bytes)
+            .map_err(|e| error(format!("invalid workspace config: {e}")))?;
+        if config.schema_version != WORKSPACE_SCHEMA_VERSION
+            || config.document_schema_version != 1
+            || config.module_manifest_schema_version != 1
+            || config.journal_schema_version != WORKSPACE_SCHEMA_VERSION
+        {
+            return Err(error("unsupported workspace schema version"));
+        }
+        ensure_matches_head(&self.path, CONFIG_PATH, &config_bytes)?;
+
+        let manifest_bytes = read_workspace_file(&self.path, MODULE_MANIFEST_PATH)?;
+        let manifest: ModuleManifest = serde_json::from_slice(&manifest_bytes)
+            .map_err(|e| error(format!("invalid module manifest: {e}")))?;
+        if manifest.schema_version != config.module_manifest_schema_version {
+            return Err(error("unsupported module manifest schema version"));
+        }
+
         let committed = git(&self.path, &["show", &format!("HEAD:{JOURNAL_PATH}")])?;
-        if committed.stdout == bytes {
+        parse_and_verify_journal(&committed.stdout)?;
+        if candidate == committed.stdout {
+            ensure_matches_head(&self.path, MODULE_MANIFEST_PATH, &manifest_bytes)?;
+            let last = records.last().expect("genesis record is required");
+            verify_head_content_hashes(&self.path, &last.content_hashes)?;
+            if needs_truncation {
+                truncate_workspace_file(&self.path, JOURNAL_PATH, candidate.len() as u64)?;
+            }
             self.verify_unlocked()?;
             return Ok(());
         }
-        if !bytes.starts_with(&committed.stdout) {
+        if !candidate.starts_with(&committed.stdout) {
             return Err(error(
                 "journal does not extend committed history; refusing recovery",
             ));
         }
+
         let last_record = records.last().expect("genesis record is required");
+        if !last_record
+            .content_hashes
+            .contains_key(MODULE_MANIFEST_PATH)
+        {
+            ensure_matches_head(&self.path, MODULE_MANIFEST_PATH, &manifest_bytes)?;
+        }
         verify_workspace_content_hashes(&self.path, &last_record.content_hashes)?;
+        ensure_git_preserves_content_hashes(&self.path, &last_record.content_hashes)?;
+        ensure_git_preserves_bytes(&self.path, JOURNAL_PATH, &candidate)?;
+        ensure_git_identity(&self.path)?;
+        if needs_truncation {
+            truncate_workspace_file(&self.path, JOURNAL_PATH, candidate.len() as u64)?;
+        }
+
         let mut commit_args = vec![
             "commit".to_owned(),
             "--only".to_owned(),
@@ -425,19 +720,19 @@ impl Workspace {
         add_args.extend(add_paths);
         let add_args = add_args.iter().map(String::as_str).collect::<Vec<_>>();
         git(&self.path, &add_args)?;
+        verify_staged_content_hashes(&self.path, &last_record.content_hashes)?;
+        verify_staged_bytes(&self.path, JOURNAL_PATH, &candidate)?;
         git(&self.path, &commit_args)?;
         self.verify_unlocked()?;
         Ok(())
     }
 
     pub(crate) fn acquire_lock(&self) -> Result<File, WorkspaceError> {
-        let lock_path = self.path.join(".git/eqms-workspace.lock");
-        let file = OpenOptions::new()
-            .create(true)
-            .truncate(false)
-            .read(true)
-            .write(true)
-            .open(lock_path)?;
+        let file = open_workspace_file(
+            &self.path,
+            Path::new(".git/eqms-workspace.lock"),
+            WorkspaceFileMode::Lock,
+        )?;
         file.lock()?;
         Ok(file)
     }
@@ -447,21 +742,26 @@ impl Workspace {
     }
 }
 
-fn write_json(path: &Path, value: &impl Serialize) -> Result<(), WorkspaceError> {
+fn write_json(root: &Path, relative: &str, value: &impl Serialize) -> Result<(), WorkspaceError> {
     let bytes = serde_json::to_vec_pretty(value)
         .map_err(|e| error(format!("cannot encode config: {e}")))?;
-    fs::write(path, [bytes.as_slice(), b"\n"].concat())?;
+    write_workspace_file(
+        root,
+        relative,
+        &[bytes.as_slice(), b"\n"].concat(),
+        WorkspaceFileMode::Create,
+    )?;
     Ok(())
 }
 
-fn write_journal(path: &Path, records: &[JournalRecord]) -> Result<(), WorkspaceError> {
-    let mut file = File::create(path)?;
+fn write_journal(root: &Path, records: &[JournalRecord]) -> Result<(), WorkspaceError> {
+    let mut bytes = Vec::new();
     for record in records {
-        serde_json::to_writer(&mut file, record)
+        serde_json::to_writer(&mut bytes, record)
             .map_err(|e| error(format!("cannot encode journal record: {e}")))?;
-        file.write_all(b"\n")?;
+        bytes.push(b'\n');
     }
-    file.sync_all()?;
+    write_workspace_file(root, JOURNAL_PATH, &bytes, WorkspaceFileMode::Create)?;
     Ok(())
 }
 
@@ -516,35 +816,118 @@ fn validate_content_hashes(
     Ok(())
 }
 
+fn ensure_initializable(path: &Path) -> Result<(), WorkspaceError> {
+    let entries = fs::read_dir(path)?
+        .map(|entry| entry.map(|entry| entry.file_name()))
+        .collect::<Result<Vec<_>, _>>()?;
+    if entries.is_empty() {
+        return Ok(());
+    }
+    let only_unborn_git = entries.len() == 1
+        && entries[0] == ".git"
+        && !has_head(path)
+        && fs::symlink_metadata(path.join(".git"))
+            .is_ok_and(|metadata| metadata.is_dir() && !metadata.file_type().is_symlink());
+    if only_unborn_git {
+        Ok(())
+    } else {
+        Err(error(format!(
+            "workspace directory is not empty or is not an unborn Git repository: {}",
+            path.display()
+        )))
+    }
+}
+
+fn ensure_exact_directory_entries(
+    directory: &Path,
+    expected: &[&str],
+) -> Result<(), WorkspaceError> {
+    let metadata = fs::symlink_metadata(directory)?;
+    if !metadata.is_dir() || metadata.file_type().is_symlink() {
+        return Err(error(format!(
+            "initialization path is not a regular directory: {}",
+            directory.display()
+        )));
+    }
+    let mut actual = fs::read_dir(directory)?
+        .map(|entry| entry.map(|entry| entry.file_name().to_string_lossy().into_owned()))
+        .collect::<Result<Vec<_>, _>>()?;
+    actual.sort();
+    let mut expected = expected
+        .iter()
+        .map(|name| name.to_string())
+        .collect::<Vec<_>>();
+    expected.sort();
+    if actual != expected {
+        return Err(error(format!(
+            "incomplete or unexpected initialization contents in {}",
+            directory.display()
+        )));
+    }
+    Ok(())
+}
+
+fn validate_initialization_state(root: &Path) -> Result<(), WorkspaceError> {
+    ensure_exact_directory_entries(
+        root,
+        &[".git", ".gitignore", ".eqms", "documents", "modules"],
+    )?;
+    let git_metadata = fs::symlink_metadata(root.join(".git"))?;
+    if !git_metadata.is_dir() || git_metadata.file_type().is_symlink() {
+        return Err(error(
+            "initialization Git metadata path is not a regular directory",
+        ));
+    }
+    ensure_exact_directory_entries(&root.join(".eqms"), &["config.json", "journal.jsonl"])?;
+    ensure_exact_directory_entries(&root.join("documents"), &[".gitkeep"])?;
+    ensure_exact_directory_entries(&root.join("modules"), &[".gitkeep", "manifest.json"])?;
+
+    let config_bytes = read_workspace_file(root, CONFIG_PATH)?;
+    let config: WorkspaceConfig = serde_json::from_slice(&config_bytes)
+        .map_err(|e| error(format!("invalid workspace config: {e}")))?;
+    if config.schema_version != WORKSPACE_SCHEMA_VERSION
+        || config.document_schema_version != 1
+        || config.module_manifest_schema_version != 1
+        || config.journal_schema_version != WORKSPACE_SCHEMA_VERSION
+    {
+        return Err(error("unsupported workspace schema version"));
+    }
+    let manifest_bytes = read_workspace_file(root, MODULE_MANIFEST_PATH)?;
+    let manifest: ModuleManifest = serde_json::from_slice(&manifest_bytes)
+        .map_err(|e| error(format!("invalid module manifest: {e}")))?;
+    if manifest.schema_version != config.module_manifest_schema_version {
+        return Err(error("unsupported module manifest schema version"));
+    }
+    let records = parse_and_verify_journal(&read_workspace_file(root, JOURNAL_PATH)?)?;
+    if records.len() != 1 || !records[0].content_hashes.is_empty() {
+        return Err(error(
+            "interrupted initialization must contain only the valid genesis record",
+        ));
+    }
+    if read_workspace_file(root, ".gitignore")?
+        != b".eqms/index.sqlite3\n.eqms/index.sqlite3-shm\n.eqms/index.sqlite3-wal\n"
+        || !read_workspace_file(root, "documents/.gitkeep")?.is_empty()
+        || !read_workspace_file(root, "modules/.gitkeep")?.is_empty()
+    {
+        return Err(error("incomplete initialization files"));
+    }
+    ensure_git_identity(root)?;
+    for (relative, bytes) in [
+        (CONFIG_PATH, config_bytes),
+        (JOURNAL_PATH, read_workspace_file(root, JOURNAL_PATH)?),
+        (MODULE_MANIFEST_PATH, manifest_bytes),
+    ] {
+        ensure_git_preserves_bytes(root, relative, &bytes)?;
+    }
+    Ok(())
+}
+
 fn verify_workspace_content_hashes(
     root: &Path,
     content_hashes: &BTreeMap<String, String>,
 ) -> Result<(), WorkspaceError> {
     for (relative_path, expected_hash) in content_hashes {
-        let mut path = root.to_path_buf();
-        let components = relative_path.split('/').collect::<Vec<_>>();
-        for (index, component) in components.iter().enumerate() {
-            path.push(component);
-            let metadata = fs::symlink_metadata(&path).map_err(|e| {
-                error(format!(
-                    "cannot inspect referenced canonical content {relative_path}: {e}"
-                ))
-            })?;
-            if metadata.file_type().is_symlink()
-                || (index + 1 < components.len() && !metadata.is_dir())
-                || (index + 1 == components.len() && !metadata.is_file())
-            {
-                return Err(error(format!(
-                    "referenced canonical content is not a regular workspace file: {relative_path}"
-                )));
-            }
-        }
-        if !path.starts_with(root) {
-            return Err(error(format!(
-                "referenced canonical content is outside workspace: {relative_path}"
-            )));
-        }
-        let bytes = fs::read(&path).map_err(|e| {
+        let bytes = read_workspace_file(root, relative_path).map_err(|e| {
             error(format!(
                 "cannot read referenced canonical content {relative_path}: {e}"
             ))
@@ -553,6 +936,112 @@ fn verify_workspace_content_hashes(
         if actual_hash != *expected_hash {
             return Err(error(format!(
                 "content hash does not match canonical file {relative_path}"
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn ensure_git_preserves_content_hashes(
+    root: &Path,
+    content_hashes: &BTreeMap<String, String>,
+) -> Result<(), WorkspaceError> {
+    for (relative_path, expected_hash) in content_hashes {
+        let bytes = read_workspace_file(root, relative_path)?;
+        let actual_hash = format!("sha256:{:x}", Sha256::digest(&bytes));
+        if actual_hash != *expected_hash {
+            return Err(error(format!(
+                "content hash does not match canonical file {relative_path}"
+            )));
+        }
+        ensure_git_preserves_bytes(root, relative_path, &bytes)?;
+    }
+    Ok(())
+}
+
+fn ensure_git_preserves_bytes(
+    root: &Path,
+    relative_path: &str,
+    bytes: &[u8],
+) -> Result<(), WorkspaceError> {
+    let raw_hash = git_blob_hash(root, relative_path, bytes, false)?;
+    let filtered_hash = git_blob_hash(root, relative_path, bytes, true)?;
+    if raw_hash != filtered_hash {
+        return Err(error(format!(
+            "Git filters would change canonical bytes for {relative_path}"
+        )));
+    }
+    Ok(())
+}
+
+fn git_blob_hash(
+    root: &Path,
+    relative_path: &str,
+    bytes: &[u8],
+    apply_filters: bool,
+) -> Result<String, WorkspaceError> {
+    let mut command = Command::new("git");
+    command
+        .arg("--literal-pathspecs")
+        .arg("-C")
+        .arg(root)
+        .arg("hash-object");
+    if apply_filters {
+        command.arg(format!("--path={relative_path}"));
+    } else {
+        command.arg("--no-filters");
+    }
+    let mut child = command
+        .arg("--stdin")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| error(format!("cannot execute Git hash-object: {e}")))?;
+    let mut stdin = child
+        .stdin
+        .take()
+        .ok_or_else(|| error("cannot write to Git hash-object"))?;
+    stdin.write_all(bytes)?;
+    drop(stdin);
+    let output = child
+        .wait_with_output()
+        .map_err(|e| error(format!("cannot read Git hash-object result: {e}")))?;
+    if !output.status.success() {
+        return Err(error(format!(
+            "Git hash-object failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        )));
+    }
+    String::from_utf8(output.stdout)
+        .map(|hash| hash.trim().to_owned())
+        .map_err(|e| error(format!("Git returned a non-UTF-8 blob hash: {e}")))
+}
+
+fn verify_staged_bytes(
+    root: &Path,
+    relative_path: &str,
+    expected: &[u8],
+) -> Result<(), WorkspaceError> {
+    let output = git(root, &["show", &format!(":{relative_path}")])?;
+    if output.stdout != expected {
+        return Err(error(format!(
+            "Git index does not contain the exact canonical bytes for {relative_path}"
+        )));
+    }
+    Ok(())
+}
+
+fn verify_staged_content_hashes(
+    root: &Path,
+    content_hashes: &BTreeMap<String, String>,
+) -> Result<(), WorkspaceError> {
+    for (relative_path, expected_hash) in content_hashes {
+        let output = git(root, &["show", &format!(":{relative_path}")])?;
+        let actual_hash = format!("sha256:{:x}", Sha256::digest(output.stdout));
+        if actual_hash != *expected_hash {
+            return Err(error(format!(
+                "Git index does not contain the declared content for {relative_path}"
             )));
         }
     }
@@ -632,7 +1121,7 @@ fn parse_and_verify_journal(bytes: &[u8]) -> Result<Vec<JournalRecord>, Workspac
 
 fn ensure_git_identity(path: &Path) -> Result<(), WorkspaceError> {
     for variable in ["GIT_AUTHOR_IDENT", "GIT_COMMITTER_IDENT"] {
-        let output = git(path, &["var", variable])?;
+        let output = git(path, &["-c", "user.useConfigOnly=true", "var", variable])?;
         let identity = String::from_utf8_lossy(&output.stdout);
         if !identity.contains('<') || !identity.contains('>') {
             return Err(error(
@@ -675,6 +1164,7 @@ fn git_text(path: &Path, args: &[&str]) -> Result<String, WorkspaceError> {
 
 fn git(path: &Path, args: &[&str]) -> Result<Output, WorkspaceError> {
     let output = Command::new("git")
+        .arg("--literal-pathspecs")
         .arg("-C")
         .arg(path)
         .args(args)
@@ -699,6 +1189,7 @@ fn git(path: &Path, args: &[&str]) -> Result<Output, WorkspaceError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs::OpenOptions;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     static NEXT: AtomicUsize = AtomicUsize::new(0);
@@ -732,6 +1223,32 @@ mod tests {
     }
 
     #[test]
+    fn concurrent_initializations_recheck_state_under_the_workspace_lock() {
+        let path = temp_dir();
+        configure_git(&path);
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
+        let first_path = path.clone();
+        let first_barrier = barrier.clone();
+        let first = std::thread::spawn(move || {
+            first_barrier.wait();
+            Workspace::initialize(first_path)
+        });
+        let second_path = path.clone();
+        let second = std::thread::spawn(move || {
+            barrier.wait();
+            Workspace::initialize(second_path)
+        });
+
+        let successes = [first.join().unwrap(), second.join().unwrap()]
+            .into_iter()
+            .filter(Result::is_ok)
+            .count();
+        assert_eq!(successes, 1);
+        assert_eq!(Workspace::open(&path).unwrap().verify().unwrap().len(), 1);
+        fs::remove_dir_all(path).unwrap();
+    }
+
+    #[test]
     fn records_and_recovers_events_without_replacing_history() {
         let path = temp_dir();
         configure_git(&path);
@@ -757,6 +1274,124 @@ mod tests {
     }
 
     #[test]
+    fn records_a_valid_module_manifest_update() {
+        let path = temp_dir();
+        configure_git(&path);
+        let workspace = Workspace::initialize(&path).unwrap();
+        let manifest = serde_json::to_vec(&ModuleManifest {
+            schema_version: 1,
+            modules: vec![ModuleEntry {
+                id: "iso-13485".into(),
+                version: "1".into(),
+            }],
+        })
+        .unwrap();
+        fs::write(path.join(MODULE_MANIFEST_PATH), &manifest).unwrap();
+        let hash = format!("sha256:{:x}", Sha256::digest(&manifest));
+
+        let event = workspace
+            .record_event(
+                "module.updated",
+                BTreeMap::new(),
+                BTreeMap::from([(MODULE_MANIFEST_PATH.into(), hash.clone())]),
+            )
+            .unwrap();
+
+        assert_eq!(event.content_hashes[MODULE_MANIFEST_PATH], hash);
+        assert_eq!(workspace.verify().unwrap().len(), 2);
+        assert_eq!(
+            git(&path, &["show", &format!("HEAD:{MODULE_MANIFEST_PATH}")])
+                .unwrap()
+                .stdout,
+            manifest
+        );
+        fs::remove_dir_all(path).unwrap();
+    }
+
+    #[test]
+    fn recovery_commits_a_valid_pending_manifest_update() {
+        let path = temp_dir();
+        configure_git(&path);
+        let workspace = Workspace::initialize(&path).unwrap();
+        let previous = workspace.verify().unwrap().pop().unwrap();
+        let manifest = serde_json::to_vec(&ModuleManifest {
+            schema_version: 1,
+            modules: vec![ModuleEntry {
+                id: "iso-13485".into(),
+                version: "1".into(),
+            }],
+        })
+        .unwrap();
+        fs::write(path.join(MODULE_MANIFEST_PATH), &manifest).unwrap();
+        let hash = format!("sha256:{:x}", Sha256::digest(&manifest));
+        let record = with_hash(JournalRecord {
+            schema_version: WORKSPACE_SCHEMA_VERSION,
+            sequence: 1,
+            previous_hash: Some(previous.hash),
+            timestamp: timestamp().unwrap(),
+            event_type: "module.updated".into(),
+            payload: BTreeMap::new(),
+            content_hashes: BTreeMap::from([(MODULE_MANIFEST_PATH.into(), hash)]),
+            hash: String::new(),
+        })
+        .unwrap();
+        let mut journal = OpenOptions::new()
+            .append(true)
+            .open(path.join(JOURNAL_PATH))
+            .unwrap();
+        serde_json::to_writer(&mut journal, &record).unwrap();
+        journal.write_all(b"\n").unwrap();
+        journal.sync_all().unwrap();
+
+        workspace.recover().unwrap();
+
+        assert_eq!(workspace.verify().unwrap().len(), 2);
+        assert_eq!(
+            git(&path, &["show", &format!("HEAD:{MODULE_MANIFEST_PATH}")])
+                .unwrap()
+                .stdout,
+            manifest
+        );
+        fs::remove_dir_all(path).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn opening_and_recovery_reject_symlinked_canonical_paths() {
+        use std::os::unix::fs::symlink;
+
+        let path = temp_dir();
+        configure_git(&path);
+        let workspace = Workspace::initialize(&path).unwrap();
+        let outside = temp_dir();
+        let sentinel = outside.join("sentinel");
+        fs::write(&sentinel, "unchanged").unwrap();
+
+        let config = path.join(CONFIG_PATH);
+        let saved_config = path.join(".eqms/config.saved");
+        fs::rename(&config, &saved_config).unwrap();
+        symlink(&sentinel, &config).unwrap();
+        assert!(Workspace::open(&path).is_err());
+        assert!(workspace.recover().is_err());
+        assert_eq!(fs::read(&sentinel).unwrap(), b"unchanged");
+        fs::remove_file(&config).unwrap();
+        fs::rename(saved_config, config).unwrap();
+
+        let eqms = path.join(".eqms");
+        let saved_eqms = path.join(".eqms.saved");
+        fs::rename(&eqms, &saved_eqms).unwrap();
+        symlink(&outside, &eqms).unwrap();
+        assert!(Workspace::open(&path).is_err());
+        assert!(workspace.recover().is_err());
+        assert_eq!(fs::read(&sentinel).unwrap(), b"unchanged");
+        fs::remove_file(&eqms).unwrap();
+        fs::rename(saved_eqms, eqms).unwrap();
+
+        fs::remove_dir_all(outside).unwrap();
+        fs::remove_dir_all(path).unwrap();
+    }
+
+    #[test]
     fn rejects_nonempty_initialization_and_tampered_journal() {
         let path = temp_dir();
         fs::write(path.join("keep.txt"), "keep").unwrap();
@@ -766,6 +1401,24 @@ mod tests {
         let workspace = Workspace::initialize(&path).unwrap();
         fs::write(path.join(JOURNAL_PATH), b"{}\n").unwrap();
         assert!(workspace.verify().is_err());
+        fs::remove_dir_all(path).unwrap();
+    }
+
+    #[test]
+    fn open_rejects_a_nested_directory_inside_another_git_repository() {
+        let path = temp_dir();
+        configure_git(&path);
+        let nested = path.join("nested");
+        fs::create_dir_all(nested.join(".eqms")).unwrap();
+        fs::create_dir_all(nested.join("modules")).unwrap();
+        fs::write(nested.join(CONFIG_PATH), b"{}").unwrap();
+        fs::write(nested.join(JOURNAL_PATH), b"{}\n").unwrap();
+        fs::write(nested.join(MODULE_MANIFEST_PATH), b"{}").unwrap();
+
+        let result = Workspace::open(&nested);
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Git root"));
         fs::remove_dir_all(path).unwrap();
     }
 
@@ -780,6 +1433,149 @@ mod tests {
         file.sync_all().unwrap();
         workspace.recover().unwrap();
         assert_eq!(workspace.verify().unwrap().len(), 1);
+        fs::remove_dir_all(path).unwrap();
+    }
+
+    #[test]
+    fn recovery_preserves_a_committed_record_missing_its_newline() {
+        let path = temp_dir();
+        configure_git(&path);
+        let workspace = Workspace::initialize(&path).unwrap();
+        workspace
+            .record_event("test.record", BTreeMap::new(), BTreeMap::new())
+            .unwrap();
+        let journal_path = path.join(JOURNAL_PATH);
+        let mut bytes = fs::read(&journal_path).unwrap();
+        bytes.pop();
+        fs::write(&journal_path, &bytes).unwrap();
+        let head_before = git(&path, &["rev-parse", "HEAD"]).unwrap().stdout;
+
+        assert!(workspace.recover().is_err());
+        assert_eq!(fs::read(&journal_path).unwrap(), bytes);
+        assert_eq!(
+            git(&path, &["rev-parse", "HEAD"]).unwrap().stdout,
+            head_before
+        );
+        fs::remove_dir_all(path).unwrap();
+    }
+
+    #[test]
+    fn recovery_refuses_invalid_partial_initialization_without_committing() {
+        let path = temp_dir();
+        configure_git(&path);
+        fs::create_dir_all(path.join(".eqms")).unwrap();
+        fs::create_dir_all(path.join("modules")).unwrap();
+        fs::write(path.join(CONFIG_PATH), b"{}").unwrap();
+        fs::write(path.join(MODULE_MANIFEST_PATH), b"{}").unwrap();
+        fs::write(path.join(JOURNAL_PATH), b"{}\n").unwrap();
+        let original_journal = fs::read(path.join(JOURNAL_PATH)).unwrap();
+        let workspace = Workspace::open(&path).unwrap();
+
+        assert!(workspace.recover().is_err());
+        assert!(!has_head(&path));
+        assert_eq!(fs::read(path.join(JOURNAL_PATH)).unwrap(), original_journal);
+        fs::remove_dir_all(path).unwrap();
+    }
+
+    #[test]
+    fn recording_refuses_git_filters_that_change_hashed_bytes() {
+        let path = temp_dir();
+        configure_git(&path);
+        git(&path, &["config", "core.autocrlf", "true"]).unwrap();
+        let workspace = Workspace::initialize(&path).unwrap();
+        let content = b"# Filtered document\r\n";
+        fs::write(path.join("documents/filtered.md"), content).unwrap();
+        let journal_before = read_workspace_file(&path, JOURNAL_PATH).unwrap();
+        let head_before = git(&path, &["rev-parse", "HEAD"]).unwrap().stdout;
+
+        let result = workspace.record_event(
+            "document.updated",
+            BTreeMap::new(),
+            BTreeMap::from([(
+                "documents/filtered.md".into(),
+                format!("sha256:{:x}", Sha256::digest(content)),
+            )]),
+        );
+
+        assert!(result.is_err());
+        assert_eq!(
+            read_workspace_file(&path, JOURNAL_PATH).unwrap(),
+            journal_before
+        );
+        assert_eq!(
+            git(&path, &["rev-parse", "HEAD"]).unwrap().stdout,
+            head_before
+        );
+        fs::remove_dir_all(path).unwrap();
+    }
+
+    #[test]
+    fn recovery_refuses_filtered_content_before_advancing_head() {
+        let path = temp_dir();
+        configure_git(&path);
+        git(&path, &["config", "core.autocrlf", "true"]).unwrap();
+        let workspace = Workspace::initialize(&path).unwrap();
+        let content = b"# Filtered document\r\n";
+        fs::write(path.join("documents/filtered.md"), content).unwrap();
+        let previous = workspace.verify().unwrap().pop().unwrap();
+        let record = with_hash(JournalRecord {
+            schema_version: WORKSPACE_SCHEMA_VERSION,
+            sequence: 1,
+            previous_hash: Some(previous.hash),
+            timestamp: timestamp().unwrap(),
+            event_type: "document.updated".into(),
+            payload: BTreeMap::new(),
+            content_hashes: BTreeMap::from([(
+                "documents/filtered.md".into(),
+                format!("sha256:{:x}", Sha256::digest(content)),
+            )]),
+            hash: String::new(),
+        })
+        .unwrap();
+        let mut journal = OpenOptions::new()
+            .append(true)
+            .open(path.join(JOURNAL_PATH))
+            .unwrap();
+        serde_json::to_writer(&mut journal, &record).unwrap();
+        journal.write_all(b"\n").unwrap();
+        journal.sync_all().unwrap();
+        let head_before = git(&path, &["rev-parse", "HEAD"]).unwrap().stdout;
+
+        assert!(workspace.recover().is_err());
+        assert_eq!(
+            git(&path, &["rev-parse", "HEAD"]).unwrap().stdout,
+            head_before
+        );
+        fs::remove_dir_all(path).unwrap();
+    }
+
+    #[test]
+    fn event_paths_with_wildcards_do_not_stage_siblings() {
+        let path = temp_dir();
+        configure_git(&path);
+        let workspace = Workspace::initialize(&path).unwrap();
+        let selected = b"# Selected\n";
+        fs::write(path.join("documents/selected*.md"), selected).unwrap();
+        fs::write(path.join("documents/selected-extra.md"), "# Unselected\n").unwrap();
+
+        workspace
+            .record_event(
+                "document.updated",
+                BTreeMap::new(),
+                BTreeMap::from([(
+                    "documents/selected*.md".into(),
+                    format!("sha256:{:x}", Sha256::digest(selected)),
+                )]),
+            )
+            .unwrap();
+
+        assert_eq!(
+            git(&path, &["show", "HEAD:documents/selected*.md"])
+                .unwrap()
+                .stdout,
+            selected
+        );
+        assert!(git(&path, &["show", "HEAD:documents/selected-extra.md"]).is_err());
         fs::remove_dir_all(path).unwrap();
     }
 
