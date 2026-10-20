@@ -1,14 +1,20 @@
 # eQMS
 
-Blockchain-based eQMS for **ISO 13485**, **ISO 81001**, and **IEC 62304 Class C**.
+Modern eQMS supporting quality-management work for **ISO 13485**, **ISO 81001**, and **IEC 62304 Class C**.
 
-The project is designed as a **CLI-first, AI-first, offline-first** quality management system built on a shared Kotlin Multiplatform core, with focused Rust integration for performance-sensitive modules such as search.
+The target architecture is a **CLI-first, AI-first, offline-first** quality management system with a **Rust core and native CLI**, plus Kotlin desktop/web UI shells. Speed and usability are product requirements, with performance budgets based on measured workloads rather than language choice.
+
+The current Kotlin workspace and JVM SQLite bootstrap are prototypes, not the completed Rust architecture. See [PLANNING.md](PLANNING.md) for the transition and first feature: `qms init <path>`.
 
 ## Core direction
 
 - **Canonical artifacts** use a minimal Markdown-based format for documents, procedures, policies, and records.
+- **History and auditability** combine Git-backed documents and readable diffs with a hash-chained audit journal. Local hashes alone do not prevent complete history replacement or prove signer identity.
 - **Core modules** cover ledger/auditability, signatures, traceability, search, and release management.
 - **`qms init`** should bootstrap a configurable eQMS, including roles, approval rules, policies, and procedures.
+- **Standards modules** should add configurable ISO 13485 and IEC 62304 draft scaffolds and checks after minimal workspace initialization. Templates support compliance work; they do not establish compliance by themselves.
+- **Presentation adapters** should derive DOCX, PDF, and HTML from canonical content without making rendered files authoritative.
+- **Dogfooding** means using our own CLI to manage project documentation as controls become available, without inventing historical approvals.
 - **Agent access** should be supported through a read-only MCP-facing interface for compliance inspection and gap analysis.
 - **Human-facing UI** comes later, with native desktop first and web/Wasm after the core is stable.
 
