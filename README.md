@@ -10,7 +10,8 @@ operations, and structured errors. Build it with
 `qms init`, `qms verify`, `qms recover`, and
 `qms index rebuild` manage a Git-backed workspace and its rebuildable Rust-owned
 SQLite index. The Kotlin CLI/JVM SQLite bootstrap remains a prototype;
-desktop/web scaffolds are retained. See [PLANNING.md](PLANNING.md) for the roadmap,
+the Compose Desktop app provides the first create/open project flow, and web
+remains a scaffold. See [PLANNING.md](PLANNING.md) for the roadmap,
 [EQMS-005 workspace contract](docs/architecture/EQMS-005.md), and
 [Build and Run](docs/operations/BuildAndRun.md) for commands.
 

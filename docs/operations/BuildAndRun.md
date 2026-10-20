@@ -6,6 +6,7 @@ last_updated: 2026-10-20
 related:
   - EQMS-001
   - EQMS-004
+  - EQMS-090
 ---
 
 # Build and Run
@@ -76,10 +77,16 @@ JSON command/error contracts and exit codes are documented in the
 
 - Prototype CLI (not native `qms`):
   - `./gradlew :apps:cmd:run`
-- Desktop app:
-  - `./gradlew :apps:desktop:run`
+- Desktop app (build the native CLI first; the app resolves `qms` from `PATH`
+  or accepts an explicit executable path with `EQMS_QMS_PATH`):
+  - `cargo build --workspace --release --locked`
+  - `EQMS_QMS_PATH="$PWD/target/release/qms" ./gradlew :apps:desktop:run`
 - Web Wasm app (dev server):
   - `./gradlew :apps:web:wasmJsBrowserDevelopmentRun`
+
+The first desktop milestone supports creating a project with `qms init` and
+opening/verifying one with `qms verify`. The UI delegates workspace rules to the
+native CLI; see the [EQMS-090 design](../architecture/EQMS-090.md).
 
 ## Web module tasks
 
