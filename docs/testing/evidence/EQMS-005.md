@@ -8,7 +8,7 @@ related: [EQMS-005, EQMS-010, EQMS-101]
 
 ## Tested revision and environment
 
-- Tested revision: `58385c0fdd888beeb5bb68c84b44b7e3e136acb6`
+- Tested revision: `0b7427510168d981ced8a5612fe2e9b34129e920`
 - Test date: 2026-10-20
 - Platform: macOS 26.6.2
 - Rust: `rustc 1.99.1 (58cf8f9c3 2026-10-13)`
@@ -20,7 +20,7 @@ related: [EQMS-005, EQMS-010, EQMS-101]
 | Command | Result |
 |---|---|
 | `cargo fmt --all -- --check` | Passed |
-| `cargo test --workspace --locked` | Passed: 25 library unit tests, 9 CLI integration tests, 0 doc tests |
+| `GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 cargo test --workspace --locked` | Passed: 25 library unit tests, 9 CLI integration tests, 0 doc tests |
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | Passed |
 | `cargo build --workspace --release --locked` | Passed |
 | `git diff --check` | Passed |

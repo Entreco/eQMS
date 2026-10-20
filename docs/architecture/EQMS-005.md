@@ -64,14 +64,16 @@ identity, or validate the quality/compliance of document content.
 
 ## Filesystem, mutation, and Git path safety
 
-Initialization acquires the workspace lock after Git setup, then rechecks that
-the directory is still empty (or only contains the unborn `.git` repository)
-before creating canonical files. The lock remains held through the initial
-commit and verification. Canonical config, journal, manifest, and referenced
-content paths must be regular files beneath the selected workspace; symlinked
-files or parent directories are rejected. File access for mutations must remain
-anchored to the workspace and must not follow substituted symlinks. Unix builds
-use descriptor-relative `O_NOFOLLOW` access for each path component. Non-Unix
+Initialization creates or validates the `.git` directory, acquires the
+workspace lock there, and only then runs Git setup and rechecks that the
+directory is still empty (or contains only an unborn repository). This
+serializes Git setup as well as canonical-file creation across concurrent
+initializers. The lock remains held through the initial commit and verification.
+Canonical config, journal, manifest, and referenced content paths must be
+regular files beneath the selected workspace; symlinked files or parent
+directories are rejected. File access for mutations must remain anchored to
+the workspace and must not follow substituted symlinks. Unix builds use
+descriptor-relative `O_NOFOLLOW` access for each path component. Non-Unix
 builds use reparse-point flags and component checks; concurrent parent-path
 replacement has not been independently verified on those targets.
 
@@ -97,7 +99,7 @@ indexing consume local workspace data.
 
 | Hazard | Mitigation | Residual limitation |
 |---|---|---|
-| Concurrent initialization overwrites workspace state | Lock after Git setup, recheck state while locked, hold through commit | External tools that ignore the lock can still modify the repository |
+| Concurrent initialization overwrites workspace state | Create the Git directory and lock before Git setup, recheck state while locked, hold through commit | External tools that ignore the lock can still modify the repository |
 | Symlink substitution redirects reads or writes | Reject symlinked path components and use no-follow, workspace-anchored mutation handles | Full-history replacement by an actor with repository access is not prevented |
 | Recovery truncates committed or unsupported journal data | Validate complete records, committed prefix, config, manifest, and pending hashes before writes | Recovery is limited to the documented interrupted operations |
 | Git filters alter bytes after hashes are recorded | Compare Git's filtered blob bytes with the exact hashed bytes before commit | Workspaces with content-transforming filters are intentionally unsupported |
