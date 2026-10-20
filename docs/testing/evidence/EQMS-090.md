@@ -92,3 +92,39 @@ evidence.
 - [ ] Cancel the name prompt; confirm no folder is created.
 - [ ] Create a folder then cancel the chooser; confirm it remains empty.
 - [ ] Confirm Open project has no explicit New folder accessory.
+
+## Shared Compose UI refinement
+
+- Tested revision: `b20fbe4fdd734a77e80a406366343b1bdd4b74ed`
+- Environment: same macOS/JDK/Gradle environment described above.
+- Shared UI now lives in `core:ui` common sources with JVM and Wasm targets.
+  Desktop filesystem and native CLI capabilities remain JVM adapters.
+- `./gradlew --rerun-tasks :core:ui:jvmTest :core:ui:compileKotlinWasmJs :apps:desktop:test :apps:desktop:jar`
+  passed: 6 Compose interaction tests, 11 desktop adapter/folder tests,
+  shared JVM/Wasm compilation, and desktop JAR build. No tests skipped.
+- T090-09 interaction coverage includes new-folder navigation and create
+  selection, Open without folder creation, failed navigation disabling stale
+  selection, visible folder errors, cancellation before and after folder
+  creation without initialization, and busy-state duplicate prevention with
+  visible workspace failure.
+- Desktop tests verify exclusive filesystem creation and directory listing,
+  plus delegation of init/verify arguments and authoritative CLI failures.
+- Source checks found no Java/`javax` imports in shared common sources, no
+  `javax.swing` references in desktop sources, and no `ui:project` references
+  in shared sources or Gradle integration. `git diff --check` passed.
+- Initial attempts exposed a test assumption about macOS `/var` path aliases
+  and an incorrect Compose test collection accessor. The assertion now compares
+  canonical paths and the test uses `onLast()`; the final forced run passed.
+- Skiko emitted a JDK native-access warning; it did not fail the run.
+- Human GUI review/testing remains pending. Automated Compose interaction
+  tests use injected capabilities, not real GUI-driven filesystem/native CLI
+  integration. Windows/Linux runtime tests, browser application integration,
+  packaging, and a JVM-free desktop migration are not claimed.
+
+### Shared UI manual checklist — pending
+
+- [ ] Human confirms Compose dialog sizing and navigation in Android Studio hotRun.
+- [ ] Browse using path/Go, Up, and child directories; select the intended directory.
+- [ ] Create a folder with spaces, initialize it, then reopen it.
+- [ ] Confirm filesystem/permission errors and unavailable CLI remain visible.
+- [ ] Cancel folder prompts and directory selection; verify no unintended init.
