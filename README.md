@@ -4,7 +4,12 @@ Modern eQMS supporting quality-management work for **ISO 13485**, **ISO 81001**,
 
 The target architecture is a **CLI-first, AI-first, offline-first** quality management system with a **Rust core and native CLI**, plus Kotlin desktop/web UI shells. Speed and usability are product requirements, with performance budgets based on measured workloads rather than language choice.
 
-The current Kotlin workspace and JVM SQLite bootstrap are prototypes, not the completed Rust architecture. See [PLANNING.md](PLANNING.md) for the transition and first feature: `qms init <path>`.
+The Rust foundation provides a native `qms` binary with help/version and structured
+usage errors. Build it with `cargo build --workspace --release --locked`, then run
+`./target/release/qms --help`. The Kotlin CLI/JVM SQLite bootstrap remains a
+prototype; desktop/web scaffolds are retained. Storage and `qms init` are not
+implemented yet. See [PLANNING.md](PLANNING.md) for the roadmap and
+[Build and Run](docs/operations/BuildAndRun.md) for commands.
 
 ## Core direction
 

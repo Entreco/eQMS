@@ -1,0 +1,14 @@
+[package]
+name = "eqms-cli"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+eqms-core = { path = "../../core/rust" }
+clap = "4.5"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[[bin]]
+name = "qms"
+path = "src/main.rs"

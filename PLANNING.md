@@ -84,6 +84,7 @@ All other tickets below are planned unless explicitly stated otherwise.
 - Model supports plugin-defined artifact types.
 
 ### EQMS-004: Establish Rust core and native CLI workspace
+**Status:** Implemented on feature branch; manual review/testing pending
 **Type:** Feature  
 **Priority:** P0  
 **Dependencies:** None  

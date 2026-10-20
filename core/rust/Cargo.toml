@@ -1,0 +1,6 @@
+[package]
+name = "eqms-core"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]

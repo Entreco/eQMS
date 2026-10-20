@@ -6,6 +6,13 @@ This folder is reserved for architecture notes, module decisions, and other proj
 
 - [User Needs](requirements/UserNeeds.md)
 - [Build and Run](operations/BuildAndRun.md)
+- [Rust foundation design and risk assessment](architecture/EQMS-004.md)
+- [Rust foundation requirements](requirements/EQMS-004.md)
+- [Rust foundation tests](testing/EQMS-004.md)
+- [Rust foundation automated evidence](testing/evidence/EQMS-004.md)
+
+Issue delivery follows the [contributor workflow](../AGENTS.md). Feature records
+remain drafts pending manual review and testing.
 
 Suggested topics:
 
