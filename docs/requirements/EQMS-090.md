@@ -14,6 +14,7 @@ related: [EQMS-005, EQMS-010, EQMS-090, EQMS-101]
 | R090-04 | The adapter passes executable arguments without shell interpolation and validates process exit status plus JSON schema version, status, and command. |
 | R090-05 | Cancellation, unavailable executable, malformed response, and CLI failure do not produce success-shaped UI state and are reported clearly. |
 | R090-06 | CLI work does not block the desktop UI; while it runs, the UI indicates that an operation is in progress and prevents duplicate submissions. |
+| R090-07 | The Create project chooser provides an explicit New folder action that prompts for a single child-folder name, creates and selects it under the displayed directory, and reports invalid names, existing paths, and filesystem errors without overwriting data. Open project remains an existing-folder selection flow. Cancelling a prompt creates nothing; cancelling the chooser does not initialize a workspace or delete a folder already created. |
 
 ## Risk applicability
 

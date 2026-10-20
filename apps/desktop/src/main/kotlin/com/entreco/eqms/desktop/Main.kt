@@ -164,12 +164,8 @@ private fun executeProcess(executable: String, arguments: List<String>): Process
     return ProcessResult(process.waitFor(), output)
 }
 
-private fun chooseProjectDirectory(): Path? {
-    val chooser = JFileChooser().apply {
-        dialogTitle = "Choose project directory"
-        fileSelectionMode = JFileChooser.DIRECTORIES_ONLY
-        isAcceptAllFileFilterUsed = false
-    }
+private fun chooseProjectDirectory(operation: WorkspaceOperation): Path? {
+    val chooser = projectDirectoryChooser(operation)
     return if (chooser.showOpenDialog(null) == JFileChooser.APPROVE_OPTION) {
         chooser.selectedFile?.toPath()
     } else {
@@ -186,7 +182,7 @@ fun main() = application {
     var hasError by remember { mutableStateOf(false) }
 
     fun selectProject(operation: WorkspaceOperation) {
-        val selectedPath = chooseProjectDirectory()
+        val selectedPath = chooseProjectDirectory(operation)
         if (selectedPath == null) {
             statusMessage = "${operation.label} cancelled."
             hasError = false

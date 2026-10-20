@@ -29,8 +29,20 @@ launch failures are shown as failures. A cancelled directory chooser performs
 no operation. The interface remains responsive while the CLI runs.
 
 The executable is resolved from `EQMS_QMS_PATH` when configured, otherwise
-`qms` on `PATH`. Distribution and signing of the native executable are not
-covered by this milestone.
+`qms` on `PATH`. Gradle desktop launches (`run` and `hotRun`) supply the absolute
+repository `target/release/qms` path (`qms.exe` on Windows) when no nonblank
+override is set. Build the CLI first; Gradle does not build it automatically.
+Distribution and signing of the native executable are not covered by this
+milestone.
+
+The Create chooser includes an explicit New folder button independent of the
+platform look and feel. It prompts for a single child name and uses exclusive
+directory creation under the displayed directory. Blank names, absolute paths,
+separators, and dot/dot-dot names are rejected. Existing paths are never reused
+or overwritten; validation and filesystem errors remain visible in the dialog.
+After creation the chooser refreshes and selects the new folder. Cancelling the
+prompt creates nothing; cancelling the chooser does not invoke init or delete a
+folder already created. Open has no explicit folder-creation accessory.
 
 ## Risk assessment
 
@@ -46,6 +58,7 @@ path.
 | Selected path is interpreted as shell syntax or a different argument | Pass process arguments directly without shell interpolation; test paths containing spaces | The OS process API and trusted executable remain part of the platform boundary |
 | Missing or substituted executable, or malformed response, looks like success | Allow an explicit executable path, validate JSON schema/status/command, and surface launch/protocol errors | Packaging, executable provenance, and supply-chain assurance are out of scope |
 | Slow CLI operation blocks interaction | Run process calls off the UI thread and expose a busy state | No cancellation of an in-flight CLI process in this milestone |
+| Folder name targets another directory or overwrites data | Accept one child name only and use exclusive directory creation; show errors in the chooser | A created empty directory remains if the user subsequently cancels |
 
 This design is a draft and does not represent human review, approval, or
 compliance evidence.

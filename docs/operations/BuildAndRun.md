@@ -77,16 +77,24 @@ JSON command/error contracts and exit codes are documented in the
 
 - Prototype CLI (not native `qms`):
   - `./gradlew :apps:cmd:run`
-- Desktop app (build the native CLI first; the app resolves `qms` from `PATH`
-  or accepts an explicit executable path with `EQMS_QMS_PATH`):
+- Desktop app (build the native CLI first; Gradle `run` and `hotRun` use the
+  repository's absolute `target/release/qms` path, or `qms.exe` on Windows,
+  unless `EQMS_QMS_PATH` explicitly selects another executable):
   - `cargo build --workspace --release --locked`
-  - `EQMS_QMS_PATH="$PWD/target/release/qms" ./gradlew :apps:desktop:run`
+  - `./gradlew :apps:desktop:run`
+  - `./gradlew :apps:desktop:hotRun`
 - Web Wasm app (dev server):
   - `./gradlew :apps:web:wasmJsBrowserDevelopmentRun`
 
 The first desktop milestone supports creating a project with `qms init` and
 opening/verifying one with `qms verify`. The UI delegates workspace rules to the
 native CLI; see the [EQMS-090 design](../architecture/EQMS-090.md).
+
+In **Create project**, use **New folder** to create a named child of the
+displayed directory; the new folder is selected for initialization. Invalid
+names, existing paths, and permission errors are shown without overwriting.
+Cancelling the chooser leaves any folder already created on disk but does not
+initialize a workspace. **Open project** selects an existing workspace.
 
 ## Web module tasks
 

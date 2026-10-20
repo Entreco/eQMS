@@ -10,6 +10,15 @@ compose.desktop {
     }
 }
 
+val qmsExecutableName = if (System.getProperty("os.name").startsWith("Windows")) "qms.exe" else "qms"
+val qmsExecutable = providers.environmentVariable("EQMS_QMS_PATH")
+    .filter { it.isNotBlank() }
+    .getOrElse(rootProject.layout.projectDirectory.file("target/release/$qmsExecutableName").asFile.absolutePath)
+
+tasks.withType<JavaExec>().configureEach {
+    environment("EQMS_QMS_PATH", qmsExecutable)
+}
+
 dependencies {
     implementation(project(":core:ledger"))
     implementation(project(":core:search"))
