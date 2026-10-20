@@ -8,6 +8,11 @@ related: [EQMS-004, UN-009, UN-010]
 
 Issue: [#5](https://github.com/Entreco/eQMS/issues/5).
 
+This document records the initial EQMS-004 foundation boundary. Subsequent
+workspace and index behavior is specified in
+[EQMS-005 / EQMS-002](EQMS-005.md); the initial statements below about a
+standard-library-only core and no filesystem mutations predate those tickets.
+
 ## Design
 
 The root Cargo workspace contains `core/rust` (`eqms-core`) and `apps/cli`

@@ -47,9 +47,10 @@ without sacrificing accountable human decisions.
 
 This is a roadmap, not a claim that the described controls are implemented.
 Existing IDs remain stable. EQMS-001 delivered the Kotlin bootstrap prototype;
-the uncommitted EQMS-002 SQLite first pass remains prototype work, not a complete
-ordered migration framework. Preserve that work while transitioning deliberately.
-All other tickets below are planned unless explicitly stated otherwise.
+the Kotlin SQLite bootstrap remains prototype work. EQMS-002 and EQMS-005 are
+implemented on the open PR #45 branch; review fixes, automated evidence, and
+manual review/testing remain pending. All other tickets below are planned
+unless explicitly stated otherwise.
 
 ## Milestone 0 — Project foundation
 
@@ -64,7 +65,7 @@ All other tickets below are planned unless explicitly stated otherwise.
 - CLI module depends on shared core.
 
 ### EQMS-002: Add embedded SQLite persistence layer
-**Status:** Prototype first pass; role revised to derived indexing  
+**Status:** Implemented on open PR #45; review/evidence pending
 **Type:** Feature  
 **Priority:** P0  
 **Description:** Evaluate and adapt the existing JVM SQLite prototype into a Rust-owned, rebuildable query/index layer after the Git/journal contract is established. It must not become the authoritative document or audit store.  
@@ -97,6 +98,7 @@ All other tickets below are planned unless explicitly stated otherwise.
 - Baseline startup measurements record platform, hardware, build profile, and methodology.
 
 ### EQMS-005: Define Git/journal workspace and consistency contract
+**Status:** Implemented on open PR #45; review/evidence pending
 **Type:** Feature  
 **Priority:** P0  
 **Dependencies:** EQMS-004  
