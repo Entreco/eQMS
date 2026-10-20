@@ -52,5 +52,6 @@ rootProject.name = "eQMS"
 include(":apps:cmd")
 include(":apps:desktop")
 include(":apps:web")
+include(":core:ui")
 include(":core:ledger")
 include(":core:search")

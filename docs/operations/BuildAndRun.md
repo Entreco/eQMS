@@ -96,6 +96,13 @@ names, existing paths, and permission errors are shown without overwriting.
 Cancelling the chooser leaves any folder already created on disk but does not
 initialize a workspace. **Open project** selects an existing workspace.
 
+The project screen and directory dialogs are shared Compose Multiplatform
+components in `core:ui` (JVM and Wasm targets), without Swing UI. Use **Go** to
+browse an entered directory path, **Up** for its parent, or click a child folder
+to enter it, then **Select directory**. Desktop filesystem and native CLI access
+remain in `apps:desktop`; the browser shell is not wired to these capabilities.
+Desktop still requires a JVM, not Kotlin/Native.
+
 ## Web module tasks
 
 - Build development webpack bundle:

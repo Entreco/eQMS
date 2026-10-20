@@ -8,7 +8,7 @@ related: [EQMS-005, EQMS-010, EQMS-090, EQMS-101]
 
 ## Scope
 
-The first desktop milestone is a native Compose Desktop landing window with
+The first desktop milestone is a Compose/JVM Desktop landing window with
 **Create project** and **Open project** actions. The user chooses a directory;
 the app delegates creation to `qms init --json <path>` and opening to
 `qms verify --json <path>`. The app reports a project as open only after the
@@ -35,14 +35,23 @@ override is set. Build the CLI first; Gradle does not build it automatically.
 Distribution and signing of the native executable are not covered by this
 milestone.
 
-The Create chooser includes an explicit New folder button independent of the
-platform look and feel. It prompts for a single child name and uses exclusive
+The shared Compose directory browser includes an explicit New folder button.
+It prompts for a single child name and uses exclusive
 directory creation under the displayed directory. Blank names, absolute paths,
 separators, and dot/dot-dot names are rejected. Existing paths are never reused
 or overwritten; validation and filesystem errors remain visible in the dialog.
-After creation the chooser refreshes and selects the new folder. Cancelling the
+After creation the browser navigates into the new folder. Cancelling the
 prompt creates nothing; cancelling the chooser does not invoke init or delete a
-folder already created. Open has no explicit folder-creation accessory.
+folder already created. Open has no folder-creation action.
+
+The `core:ui` Kotlin Multiplatform module contains shared UI components: the
+screen, directory browser, folder-name prompt, and error rendering in common
+Compose code. Its
+suspending capability interface uses strings and directory DTOs, not Java paths.
+Desktop implements the filesystem and native CLI adapters on JVM, off the UI
+thread. JVM and Wasm compilation verify reuse; no browser filesystem or service
+adapter is provided here. Compose Desktop still requires JVM; this is not a
+Kotlin/Native Windows/macOS/Linux application.
 
 ## Risk assessment
 

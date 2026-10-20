@@ -447,6 +447,7 @@ unless explicitly stated otherwise.
 - Launching the desktop app presents **Create project** and **Open project** actions.
 - Create selects a destination and invokes `qms init --json <path>`; existing non-empty data is never overwritten and success is shown only after CLI success.
 - The Create chooser offers an explicit **New folder** action, validates a single child name, creates without overwriting, and selects the new folder. Open remains an existing-folder selection flow.
+- Shared Compose screen and folder dialogs live in `core:ui` with JVM/Wasm targets; platform capabilities stay in desktop adapters. Desktop remains JVM-based; browser capability integration is deferred.
 - Open selects a directory and invokes `qms verify --json <path>`; it is marked open only after verification succeeds.
 - Cancellation, unavailable CLI, malformed responses, invalid workspaces, and command failures are handled explicitly.
 - The Kotlin UI uses the versioned native CLI through an explicit adapter and does not reimplement workspace rules.

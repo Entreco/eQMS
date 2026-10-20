@@ -20,6 +20,7 @@ tasks.withType<JavaExec>().configureEach {
 }
 
 dependencies {
+    implementation(project(":core:ui"))
     implementation(project(":core:ledger"))
     implementation(project(":core:search"))
     implementation(compose.desktop.currentOs)
