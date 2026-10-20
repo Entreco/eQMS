@@ -6,6 +6,7 @@ last_updated: 2026-10-20
 related:
   - EQMS-001
   - EQMS-004
+  - EQMS-090
 ---
 
 # Build and Run
@@ -76,10 +77,31 @@ JSON command/error contracts and exit codes are documented in the
 
 - Prototype CLI (not native `qms`):
   - `./gradlew :apps:cmd:run`
-- Desktop app:
+- Desktop app (build the native CLI first; Gradle `run` and `hotRun` use the
+  repository's absolute `target/release/qms` path, or `qms.exe` on Windows,
+  unless `EQMS_QMS_PATH` explicitly selects another executable):
+  - `cargo build --workspace --release --locked`
   - `./gradlew :apps:desktop:run`
+  - `./gradlew :apps:desktop:hotRun`
 - Web Wasm app (dev server):
   - `./gradlew :apps:web:wasmJsBrowserDevelopmentRun`
+
+The first desktop milestone supports creating a project with `qms init` and
+opening/verifying one with `qms verify`. The UI delegates workspace rules to the
+native CLI; see the [EQMS-090 design](../architecture/EQMS-090.md).
+
+In **Create project**, use **New folder** to create a named child of the
+displayed directory; the new folder is selected for initialization. Invalid
+names, existing paths, and permission errors are shown without overwriting.
+Cancelling the chooser leaves any folder already created on disk but does not
+initialize a workspace. **Open project** selects an existing workspace.
+
+The project screen and directory dialogs are shared Compose Multiplatform
+components in `core:ui` (JVM and Wasm targets), without Swing UI. Use **Go** to
+browse an entered directory path, **Up** for its parent, or click a child folder
+to enter it, then **Select directory**. Desktop filesystem and native CLI access
+remain in `apps:desktop`; the browser shell is not wired to these capabilities.
+Desktop still requires a JVM, not Kotlin/Native.
 
 ## Web module tasks
 

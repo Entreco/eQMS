@@ -437,13 +437,25 @@ unless explicitly stated otherwise.
 ## Milestone 9 — Desktop and web clients
 
 ### EQMS-090: Build desktop shell (offline-first)
+**Status:** First create/open milestone implemented on draft PR #46; manual GUI review/testing pending
 **Type:** Feature  
 **Priority:** P2  
 **Description:** Evolve the Kotlin desktop shell to consume versioned Rust-core capabilities through an explicit adapter, preserving offline-first UX.  
-**Acceptance criteria:**
+**Dependencies:** EQMS-005 workspace contract, EQMS-010 workspace initialization, and EQMS-101 versioned JSON output contract.
+
+**First milestone — create/open project:**
+- Launching the desktop app presents **Create project** and **Open project** actions.
+- Create selects a destination and invokes `qms init --json <path>`; existing non-empty data is never overwritten and success is shown only after CLI success.
+- The Create chooser offers an explicit **New folder** action, validates a single child name, creates without overwriting, and selects the new folder. Open remains an existing-folder selection flow.
+- Shared Compose screen and folder dialogs live in `core:ui` with JVM/Wasm targets; platform capabilities stay in desktop adapters. Desktop remains JVM-based; browser capability integration is deferred.
+- Open selects a directory and invokes `qms verify --json <path>`; it is marked open only after verification succeeds.
+- Cancellation, unavailable CLI, malformed responses, invalid workspaces, and command failures are handled explicitly.
+- The Kotlin UI uses the versioned native CLI through an explicit adapter and does not reimplement workspace rules.
+**Follow-on milestones (not included here):**
 - Users can browse/search artifacts offline.
 - Users can review traceability matrix and release status.
-- No business logic duplicated outside shared core.
+**Risk Management applicability:** Applicable proportionately because create mutates local files and Git history, and open reads and verifies local data. Directory selection and the Rust CLI contract mitigate wrong-directory and invalid-workspace hazards; local verification does not prove signer identity or prevent full-history replacement.
+**Security Risk Management applicability:** Applicable proportionately because the UI invokes a local executable with user-selected paths. Use an argument list without shell interpolation, validate structured output and exit status, and report missing executables and malformed responses. Correct executable installation/resolution remains an out-of-scope packaging limitation.
 
 ### EQMS-091: Build web/Wasm client
 **Type:** Feature  
