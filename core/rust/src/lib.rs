@@ -3,6 +3,9 @@ pub const fn version() -> &'static str {
     env!("CARGO_PKG_VERSION")
 }
 
+pub mod index;
+pub mod workspace;
+
 #[cfg(test)]
 mod tests {
     #[test]

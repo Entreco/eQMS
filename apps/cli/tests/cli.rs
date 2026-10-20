@@ -89,3 +89,72 @@ fn structured_errors_regardless_of_flag_order() {
         assert!(!value["error"]["message"].as_str().unwrap().is_empty());
     }
 }
+
+#[test]
+fn initializes_and_rebuilds_a_workspace_index() {
+    let root = std::env::temp_dir().join(format!(
+        "eqms-cli-workspace-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    let workspace = root.join("workspace with spaces");
+    std::fs::create_dir_all(&workspace).unwrap();
+    for args in [
+        &["init", "--quiet"][..],
+        &["config", "user.name", "CLI Test"][..],
+        &["config", "user.email", "cli-test@example.invalid"][..],
+    ] {
+        let output = Command::new("git")
+            .arg("-C")
+            .arg(&workspace)
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+    }
+
+    let init = Command::new(env!("CARGO_BIN_EXE_qms"))
+        .args(["--json", "init"])
+        .arg(&workspace)
+        .output()
+        .unwrap();
+    assert_eq!(init.status.code(), Some(0));
+    let init_json: serde_json::Value = serde_json::from_slice(&init.stdout).unwrap();
+    assert_eq!(init_json["command"], "init");
+    assert!(workspace.join(".eqms/journal.jsonl").is_file());
+
+    std::fs::write(workspace.join("documents/quality-policy.md"), "# Quality\n").unwrap();
+    let rebuild = Command::new(env!("CARGO_BIN_EXE_qms"))
+        .args(["--json", "index", "rebuild"])
+        .arg(&workspace)
+        .output()
+        .unwrap();
+    assert_eq!(rebuild.status.code(), Some(0));
+    let rebuild_json: serde_json::Value = serde_json::from_slice(&rebuild.stdout).unwrap();
+    assert_eq!(rebuild_json["command"], "index.rebuild");
+    assert_eq!(rebuild_json["indexed_documents"], 1);
+    assert!(
+        rebuild_json["index_path"]
+            .as_str()
+            .unwrap()
+            .ends_with(".eqms/index.sqlite3")
+    );
+    assert!(workspace.join(".eqms/index.sqlite3").is_file());
+
+    let verify = Command::new(env!("CARGO_BIN_EXE_qms"))
+        .arg("verify")
+        .arg(&workspace)
+        .output()
+        .unwrap();
+    assert_eq!(verify.status.code(), Some(0));
+
+    let invalid_index = Command::new(env!("CARGO_BIN_EXE_qms"))
+        .args(["index", "rebuild", "--json"])
+        .arg(root.join("missing"))
+        .output()
+        .unwrap();
+    assert_eq!(invalid_index.status.code(), Some(1));
+    let error_json: serde_json::Value = serde_json::from_slice(&invalid_index.stderr).unwrap();
+    assert_eq!(error_json["error"]["code"], "OPERATION_FAILED");
+    std::fs::remove_dir_all(root).unwrap();
+}

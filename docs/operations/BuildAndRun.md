@@ -10,8 +10,9 @@ related:
 
 # Build and Run
 
-Run commands from the repository root. The Rust native CLI is the foundation
-for future eQMS commands; Kotlin cmd remains the SQLite bootstrap prototype.
+Run commands from the repository root. The Rust native CLI owns workspace
+operations and the derived SQLite index; Kotlin cmd remains a bootstrap
+prototype.
 
 ## Rust native CLI
 
@@ -25,8 +26,24 @@ cargo build --workspace --release --locked
 ./target/release/qms --json --version
 ```
 
-Only help/version are implemented. `qms init` is a future feature, not a working
-command. No JVM is required by `qms`.
+No JVM is required by `qms`. Git must be installed and configured with a user
+name and email before initializing a workspace; the CLI uses that configured
+identity and does not invent one.
+
+Initialize and verify a workspace, then build its derived index on demand:
+
+```sh
+./target/release/qms init ./quality-workspace
+./target/release/qms verify ./quality-workspace
+./target/release/qms index rebuild ./quality-workspace
+./target/release/qms recover ./quality-workspace
+```
+
+The workspace must be empty or contain only an empty Git repository. Canonical
+configuration and the audit journal are committed in Git; Markdown under
+`documents/` is indexed into the ignored `.eqms/index.sqlite3` file. Rebuilding
+the index does not change Git history or the journal. See the
+[workspace and index contract](../architecture/EQMS-005.md).
 
 ```sh
 cargo fmt --all -- --check
@@ -41,8 +58,9 @@ Build release first; the script prints JSON including environment, raw samples,
 median and p95. First observed launch is not a controlled cold-cache measurement.
 Use `--samples` and `--warmups` to adjust the sample counts.
 
-JSON version/error contracts and exit codes are documented in
-[the design](../architecture/EQMS-004.md).
+JSON command/error contracts and exit codes are documented in the
+[native foundation design](../architecture/EQMS-004.md) and the
+[workspace/index contract](../architecture/EQMS-005.md).
 
 ## Kotlin prototype prerequisites
 

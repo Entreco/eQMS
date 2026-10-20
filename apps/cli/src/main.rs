@@ -1,6 +1,7 @@
 use clap::{Arg, ArgAction, Command, error::ErrorKind};
 use serde::Serialize;
 use std::io::{self, Write};
+use std::path::Path;
 use std::process::ExitCode;
 
 #[derive(Serialize)]
@@ -38,8 +39,33 @@ fn command() -> Command {
             Arg::new("json")
                 .long("json")
                 .global(true)
-                .help("Use schema-versioned JSON for version output and usage errors")
+                .help("Use schema-versioned JSON for command results and errors")
                 .action(ArgAction::SetTrue),
+        )
+        .subcommand(
+            Command::new("init")
+                .about("Initialize a Git-backed eQMS workspace")
+                .arg(Arg::new("path").required(true)),
+        )
+        .subcommand(
+            Command::new("index")
+                .about("Manage the rebuildable SQLite query index")
+                .subcommand_required(true)
+                .subcommand(
+                    Command::new("rebuild")
+                        .about("Rebuild the query index from canonical Markdown documents")
+                        .arg(Arg::new("path").required(true)),
+                ),
+        )
+        .subcommand(
+            Command::new("verify")
+                .about("Verify workspace configuration and journal integrity")
+                .arg(Arg::new("path").required(true)),
+        )
+        .subcommand(
+            Command::new("recover")
+                .about("Recover an interrupted workspace or journal update")
+                .arg(Arg::new("path").required(true)),
         )
 }
 
@@ -85,7 +111,155 @@ fn response(args: Vec<std::ffi::OsString>) -> (u8, String, bool) {
             };
             (0, text, false)
         }
-        Ok(_) => usage_error("Specify --version or --help.", json),
+        Ok(matches) => run_command(matches, json),
+    }
+}
+
+fn run_command(matches: clap::ArgMatches, json: bool) -> (u8, String, bool) {
+    let result = match matches.subcommand() {
+        Some(("init", sub_matches)) => {
+            let path = Path::new(
+                sub_matches
+                    .get_one::<String>("path")
+                    .expect("required path"),
+            );
+            eqms_core::workspace::Workspace::initialize(path)
+                .map(|workspace| {
+                    if json {
+                        serde_json::json!({
+                            "schema_version": 1,
+                            "status": "ok",
+                            "command": "init",
+                            "path": workspace.path().display().to_string()
+                        })
+                        .to_string()
+                    } else {
+                        format!(
+                            "Initialized eQMS workspace at {}",
+                            workspace.path().display()
+                        )
+                    }
+                })
+                .map_err(|error| error.to_string())
+        }
+        Some(("index", sub_matches)) => match sub_matches.subcommand() {
+            Some(("rebuild", rebuild_matches)) => {
+                let path = Path::new(
+                    rebuild_matches
+                        .get_one::<String>("path")
+                        .expect("required path"),
+                );
+                eqms_core::workspace::Workspace::open(path)
+                    .map_err(|error| error.to_string())
+                    .and_then(|workspace| {
+                        eqms_core::index::Index::rebuild(&workspace)
+                            .map(|count| (workspace, count))
+                            .map_err(|error| error.to_string())
+                    })
+                    .map(|(workspace, count)| {
+                        if json {
+                            serde_json::json!({
+                                "schema_version": 1,
+                                "status": "ok",
+                                "command": "index.rebuild",
+                                "index_path": workspace.index_path().display().to_string(),
+                                "indexed_documents": count
+                            })
+                            .to_string()
+                        } else {
+                            format!(
+                                "Rebuilt derived index at {} ({count} documents)",
+                                workspace.index_path().display()
+                            )
+                        }
+                    })
+            }
+            _ => unreachable!("clap requires an index subcommand"),
+        },
+        Some(("verify", sub_matches)) => {
+            let path = Path::new(
+                sub_matches
+                    .get_one::<String>("path")
+                    .expect("required path"),
+            );
+            eqms_core::workspace::Workspace::open(path)
+                .map_err(|error| error.to_string())
+                .and_then(|workspace| {
+                    workspace
+                        .verify()
+                        .map(|records| (workspace, records.len()))
+                        .map_err(|error| error.to_string())
+                })
+                .map(|(workspace, count)| {
+                    if json {
+                        serde_json::json!({
+                            "schema_version": 1,
+                            "status": "ok",
+                            "command": "verify",
+                            "path": workspace.path().display().to_string(),
+                            "journal_records": count
+                        })
+                        .to_string()
+                    } else {
+                        format!(
+                            "Verified workspace {} ({count} journal records)",
+                            workspace.path().display()
+                        )
+                    }
+                })
+        }
+        Some(("recover", sub_matches)) => {
+            let path = Path::new(
+                sub_matches
+                    .get_one::<String>("path")
+                    .expect("required path"),
+            );
+            eqms_core::workspace::Workspace::open(path)
+                .map_err(|error| error.to_string())
+                .and_then(|workspace| {
+                    workspace
+                        .recover()
+                        .map(|()| workspace)
+                        .map_err(|error| error.to_string())
+                })
+                .map(|workspace| {
+                    if json {
+                        serde_json::json!({
+                            "schema_version": 1,
+                            "status": "ok",
+                            "command": "recover",
+                            "path": workspace.path().display().to_string()
+                        })
+                        .to_string()
+                    } else {
+                        format!(
+                            "Workspace recovery complete at {}",
+                            workspace.path().display()
+                        )
+                    }
+                })
+        }
+        _ => return usage_error("Specify --version or a command.", json),
+    };
+
+    match result {
+        Ok(text) => (0, text, false),
+        Err(message) => {
+            let text = if json {
+                serde_json::to_string(&ErrorOutput {
+                    schema_version: 1,
+                    status: "error",
+                    error: ErrorDetail {
+                        code: "OPERATION_FAILED",
+                        message: &message,
+                    },
+                })
+                .expect("serializing a string-only error cannot fail")
+            } else {
+                message
+            };
+            (1, text, true)
+        }
     }
 }
 
