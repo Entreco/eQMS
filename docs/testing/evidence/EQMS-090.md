@@ -64,3 +64,31 @@ response commands or fields.
 
 These observations are automated test results, not human approval or compliance
 evidence.
+
+## Folder chooser refinement
+
+- Tested revision: `4be044807dfe9f4d26fa0b5aafdf33181ad325fa`
+- Environment: same macOS/JDK/Gradle environment described above.
+- `./gradlew --no-daemon --rerun-tasks :apps:desktop:test :apps:desktop:jar`
+  passed: 10 desktop tests, including 5 new folder/chooser tests, and JAR build.
+- `git diff --check` passed.
+- An initial compilation attempt failed after removing a still-needed
+  `JFileChooser` import; the import was restored before the passing runs.
+- T090-07 covered normal/spaced names, invalid names, exclusive creation,
+  preservation of existing content, missing-parent failure propagation, and
+  Create-only accessory installation on the Swing event thread.
+- The existing Gradle `run`/`hotRun` local CLI-path fallback is included in this
+  revision. It preserves explicit `EQMS_QMS_PATH` overrides.
+- T090-08 remains pending: no human confirmation of visible button placement,
+  prompt cancellation, folder selection, or error dialogs in Android Studio
+  hotRun is claimed. Cancelling the chooser intentionally leaves any newly
+  created directory on disk without initializing it.
+
+### Additional manual checklist
+
+- [ ] Confirm **New folder** is visible in Create project on macOS hotRun.
+- [ ] Create a folder with spaces, confirm selection, and initialize it.
+- [ ] Confirm invalid/existing names and permission errors are visible.
+- [ ] Cancel the name prompt; confirm no folder is created.
+- [ ] Create a folder then cancel the chooser; confirm it remains empty.
+- [ ] Confirm Open project has no explicit New folder accessory.
