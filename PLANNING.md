@@ -437,7 +437,7 @@ unless explicitly stated otherwise.
 ## Milestone 9 — Desktop and web clients
 
 ### EQMS-090: Build desktop shell (offline-first)
-**Status:** First create/open milestone implemented on `feature/EQMS-090-desktop-create-open`; manual GUI review/testing pending
+**Status:** First create/open milestone implemented on draft PR #46; manual GUI review/testing pending
 **Type:** Feature  
 **Priority:** P2  
 **Description:** Evolve the Kotlin desktop shell to consume versioned Rust-core capabilities through an explicit adapter, preserving offline-first UX.  
