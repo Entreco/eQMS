@@ -312,10 +312,21 @@ impl Workspace {
             ))
         })?;
         ensure_initializable(&path)?;
-        git(&path, &["init"])?;
+        let git_directory = path.join(".git");
+        match fs::create_dir(&git_directory) {
+            Ok(()) => {}
+            Err(io_error) if io_error.kind() == io::ErrorKind::AlreadyExists => {
+                let metadata = fs::symlink_metadata(&git_directory)?;
+                if !metadata.is_dir() || metadata.file_type().is_symlink() {
+                    return Err(error("workspace .git path is not a regular directory"));
+                }
+            }
+            Err(io_error) => return Err(io_error.into()),
+        }
         let workspace = Self { path };
         let _lock = workspace.acquire_lock()?;
         ensure_initializable(&workspace.path)?;
+        git(&workspace.path, &["init"])?;
         ensure_git_identity(&workspace.path)?;
         ensure_workspace_directory(&workspace.path, Path::new(".eqms"))?;
         ensure_workspace_directory(&workspace.path, Path::new("documents"))?;

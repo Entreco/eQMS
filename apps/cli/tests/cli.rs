@@ -281,14 +281,11 @@ fn concurrent_cli_initialization_creates_exactly_one_workspace() {
         Command::new(env!("CARGO_BIN_EXE_qms"))
             .args(["--json", "init"])
             .arg(first_workspace)
-            .env(
-                "GIT_AUTHOR_IDENT",
-                "CLI Test <cli-test@example.invalid> 0 +0000",
-            )
-            .env(
-                "GIT_COMMITTER_IDENT",
-                "CLI Test <cli-test@example.invalid> 0 +0000",
-            )
+            .env("GIT_CONFIG_COUNT", "2")
+            .env("GIT_CONFIG_KEY_0", "user.name")
+            .env("GIT_CONFIG_VALUE_0", "CLI Test")
+            .env("GIT_CONFIG_KEY_1", "user.email")
+            .env("GIT_CONFIG_VALUE_1", "cli-test@example.invalid")
             .output()
             .unwrap()
     });
@@ -298,25 +295,34 @@ fn concurrent_cli_initialization_creates_exactly_one_workspace() {
         Command::new(env!("CARGO_BIN_EXE_qms"))
             .args(["--json", "init"])
             .arg(second_workspace)
-            .env(
-                "GIT_AUTHOR_IDENT",
-                "CLI Test <cli-test@example.invalid> 0 +0000",
-            )
-            .env(
-                "GIT_COMMITTER_IDENT",
-                "CLI Test <cli-test@example.invalid> 0 +0000",
-            )
+            .env("GIT_CONFIG_COUNT", "2")
+            .env("GIT_CONFIG_KEY_0", "user.name")
+            .env("GIT_CONFIG_VALUE_0", "CLI Test")
+            .env("GIT_CONFIG_KEY_1", "user.email")
+            .env("GIT_CONFIG_VALUE_1", "cli-test@example.invalid")
             .output()
             .unwrap()
     });
     let outputs = [first.join().unwrap(), second.join().unwrap()];
 
+    let successful_initializations = outputs
+        .iter()
+        .filter(|output| output.status.success())
+        .count();
     assert_eq!(
+        successful_initializations,
+        1,
+        "init outputs: {}",
         outputs
             .iter()
-            .filter(|output| output.status.success())
-            .count(),
-        1
+            .map(|output| format!(
+                "status: {}\nstdout: {}\nstderr: {}",
+                output.status,
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            ))
+            .collect::<Vec<_>>()
+            .join("\n")
     );
     let verify = Command::new(env!("CARGO_BIN_EXE_qms"))
         .args(["--json", "verify"])
