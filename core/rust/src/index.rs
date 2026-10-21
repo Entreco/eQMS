@@ -54,10 +54,30 @@ const MIGRATIONS: &[Migration] = &[Migration {
             content_sha256 TEXT NOT NULL
         );
     ",
+}, Migration {
+    version: 2,
+    name: "create_saved_draft_search",
+    sql: "
+        CREATE TABLE search_sources (id TEXT PRIMARY KEY, revision TEXT NOT NULL);
+        CREATE TABLE search_state (singleton INTEGER PRIMARY KEY CHECK(singleton=1), snapshot TEXT NOT NULL);
+        CREATE TABLE search_revisions (
+            rowid INTEGER PRIMARY KEY,
+            id TEXT NOT NULL, revision TEXT NOT NULL, ordinal INTEGER NOT NULL,
+            title TEXT NOT NULL, author TEXT NOT NULL, timestamp TEXT NOT NULL,
+            body TEXT NOT NULL,
+            UNIQUE(id, revision)
+        );
+        CREATE INDEX search_revision_document ON search_revisions(id, ordinal);
+        CREATE VIRTUAL TABLE search_fts USING fts5(title, author, body,
+            tokenize='unicode61 remove_diacritics 0', prefix='1 2 3 4');
+        CREATE TABLE search_deletions (
+            key TEXT NOT NULL, term TEXT NOT NULL, PRIMARY KEY(key, term)
+        ) WITHOUT ROWID;
+    ",
 }];
 
 pub struct Index {
-    connection: Connection,
+    pub(crate) connection: Connection,
 }
 
 impl Index {
@@ -100,7 +120,7 @@ impl Index {
         usize::try_from(count).map_err(|e| error(format!("invalid indexed document count: {e}")))
     }
 
-    fn open_unlocked(workspace: &Workspace) -> Result<Self, IndexError> {
+    pub(crate) fn open_unlocked(workspace: &Workspace) -> Result<Self, IndexError> {
         let index_path = workspace.index_path();
         match symlink_metadata(&index_path) {
             Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_file() => {
@@ -317,10 +337,46 @@ mod tests {
                 row.get(0)
             })
             .unwrap();
-        assert_eq!(version, 1);
-        assert_eq!(migration_count, 1);
+        assert_eq!(version, 2);
+        assert_eq!(migration_count, 2);
         drop(connection);
         fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn upgrades_baseline_index_without_losing_existing_rows() {
+        let connection = Connection::open_in_memory().unwrap();
+        apply_migrations(&connection, &MIGRATIONS[..1]).unwrap();
+        connection
+            .execute(
+                "INSERT INTO documents VALUES ('documents/a.md','# Original','digest')",
+                [],
+            )
+            .unwrap();
+        apply_migrations(&connection, MIGRATIONS).unwrap();
+        assert_eq!(
+            connection
+                .query_row("SELECT content FROM documents", [], |row| row
+                    .get::<_, String>(0))
+                .unwrap(),
+            "# Original"
+        );
+        connection
+            .execute(
+                "INSERT INTO search_fts(title,author,body) VALUES ('and','andi','this and that')",
+                [],
+            )
+            .unwrap();
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT count(*) FROM search_fts WHERE search_fts MATCH 'and*'",
+                    [],
+                    |row| row.get::<_, i64>(0)
+                )
+                .unwrap(),
+            1
+        );
     }
 
     #[test]
@@ -346,7 +402,7 @@ mod tests {
     fn rejects_a_future_schema_version() {
         let path = temp_dir().join("index.sqlite3");
         let connection = Connection::open(&path).unwrap();
-        connection.pragma_update(None, "user_version", 2).unwrap();
+        connection.pragma_update(None, "user_version", 3).unwrap();
         let error = apply_migrations(&connection, MIGRATIONS).unwrap_err();
         assert!(error.to_string().contains("newer than supported"));
         drop(connection);
@@ -358,7 +414,7 @@ mod tests {
         let path = temp_dir();
         let workspace = workspace(&path);
         let connection = Connection::open(workspace.index_path()).unwrap();
-        connection.pragma_update(None, "user_version", 2).unwrap();
+        connection.pragma_update(None, "user_version", 3).unwrap();
         drop(connection);
         let error = match Index::open(&workspace) {
             Ok(_) => panic!("future schema version should be rejected"),
@@ -390,7 +446,7 @@ mod tests {
         assert_eq!(Index::rebuild(&workspace).unwrap(), 2);
         assert_eq!(Index::rebuild(&workspace).unwrap(), 2);
         let index = Index::open(&workspace).unwrap();
-        assert_eq!(index.schema_version().unwrap(), 1);
+        assert_eq!(index.schema_version().unwrap(), 2);
         assert_eq!(index.document_count().unwrap(), 2);
         assert_eq!(
             fs::read(path.join(".eqms/journal.jsonl")).unwrap(),

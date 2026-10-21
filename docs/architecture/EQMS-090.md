@@ -16,6 +16,8 @@ native CLI exits successfully and returns the expected versioned JSON result.
 
 Browsing/search, traceability, release status, templates, project packaging, and
 the web client are follow-on work, not part of this milestone.
+[EQMS-050/051](EQMS-050.md) now specifies the separate minimal grouped desktop
+search slice, reusing these project boundaries.
 
 ## Boundary and behavior
 

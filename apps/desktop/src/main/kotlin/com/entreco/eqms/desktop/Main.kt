@@ -107,21 +107,45 @@ internal fun executeProcess(executable: String, arguments: List<String>, input: 
         .redirectErrorStream(true)
         .start()
     val writeError = java.util.concurrent.atomic.AtomicReference<IOException?>()
-    val writer = Thread {
+    val readError = java.util.concurrent.atomic.AtomicReference<IOException?>()
+    val output = java.util.concurrent.atomic.AtomicReference("")
+    val reader = Thread({
+        try {
+            output.set(process.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() })
+        } catch (error: IOException) {
+            readError.set(error)
+        }
+    }, "qms-stdout-${process.pid()}").apply { isDaemon = true; start() }
+    val writer = Thread({
         try {
             process.outputStream.bufferedWriter(Charsets.UTF_8).use { it.write(input ?: "") }
         } catch (error: IOException) {
             writeError.set(error)
         }
-    }.apply { start() }
+    }, "qms-stdin-${process.pid()}").apply { isDaemon = true; start() }
     try {
-        val output = process.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
         val exit = process.waitFor()
+        reader.join()
         writer.join()
+        readError.get()?.let { throw it }
+        // A rejected command can exit before consuming stdin; preserve its diagnostic response.
         if (exit == 0) writeError.get()?.let { throw it }
-        return ProcessResult(exit, output)
+        return ProcessResult(exit, output.get())
     } finally {
         if (process.isAlive) process.destroyForcibly()
+        var interrupted = Thread.interrupted()
+        fun finish(action: () -> Unit) {
+            while (true) {
+                try { action(); return } catch (_: InterruptedException) { interrupted = true }
+            }
+        }
+        finish { process.waitFor() }
+        listOf(process.outputStream, process.inputStream, process.errorStream).forEach {
+            try { it.close() } catch (_: IOException) { /* Preserve the operation's result or original exception. */ }
+        }
+        finish { reader.join() }
+        finish { writer.join() }
+        if (interrupted) Thread.currentThread().interrupt()
     }
 }
 

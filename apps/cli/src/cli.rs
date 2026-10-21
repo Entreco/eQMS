@@ -1,4 +1,4 @@
-use crate::commands::{document, workspace};
+use crate::commands::{document, search, workspace};
 use crate::output::{self, Response};
 use clap::{Arg, ArgAction, Command, error::ErrorKind};
 use std::ffi::OsString;
@@ -23,6 +23,7 @@ fn command() -> Command {
                 .action(ArgAction::SetTrue),
         )
         .subcommand(document::command())
+        .subcommand(search::command())
         .subcommands(workspace::commands())
 }
 
@@ -44,6 +45,15 @@ pub(crate) fn response(args: Vec<OsString>, input: &mut dyn Read) -> Response {
             Response::from_result(Ok(output::version(json)), json, "version")
         }
         Ok(matches) => match matches.subcommand() {
+            Some(("search", args)) => Response::from_result(
+                search::run(args, json),
+                json,
+                if args.get_flag("prepare") {
+                    "search.prepare"
+                } else {
+                    "search"
+                },
+            ),
             Some(("document", args)) => {
                 let command = args
                     .subcommand_name()
@@ -123,6 +133,7 @@ mod tests {
             vec!["qms", "--version"],
             vec!["qms", "document", "--help"],
             vec!["qms", "index", "--help"],
+            vec!["qms", "search", "--help"],
         ] {
             assert_eq!(
                 response(

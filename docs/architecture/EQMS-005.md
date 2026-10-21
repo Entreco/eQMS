@@ -114,8 +114,9 @@ who can replace the complete local Git history.
 
 ## Derived SQLite index
 
-SQLite opens or creates `.eqms/index.sqlite3` only when `qms index rebuild` or
-the Rust index API is used. The database is ignored by Git and is disposable.
+SQLite opens or creates `.eqms/index.sqlite3` when `qms index rebuild`, the Rust
+index API, or [saved-draft search](EQMS-050.md) is used. The database is ignored
+by Git and is disposable.
 Schema version is tracked with SQLite `user_version` and a `schema_migrations`
 table. Ordered migrations run one at a time in transactions; an unsupported
 future version is rejected rather than downgraded.
@@ -126,6 +127,11 @@ and SHA-256 content hash. Rebuild scans regular Markdown files under
 journal, and Git history untouched. A rebuild failure rolls back the row
 replacement. The index is a query substrate, not a second source of truth or a
 historical store.
+
+Migration 2 adds separate saved-draft revision/FTS/vocabulary/source tables for
+EQMS-050/051, without replacing migration 1 rows. Search preparation/rebuild
+derives those rows from verified Git draft histories; the database still owns
+neither authoritative content nor history.
 
 ## Commands
 

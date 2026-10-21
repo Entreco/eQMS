@@ -2,9 +2,16 @@ package com.entreco.eqms.desktop
 
 import com.entreco.eqms.ui.DocumentCapabilities
 import com.entreco.eqms.ui.DocumentSnapshot
+import com.entreco.eqms.ui.SearchHit
+import com.entreco.eqms.ui.SearchPage
+import com.entreco.eqms.ui.SearchPreparation
+import com.entreco.eqms.ui.SearchResults
+import com.entreco.eqms.ui.SearchIndexOutOfDateException
 import java.io.IOException
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.runInterruptible
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.*
 
@@ -18,6 +25,51 @@ internal class DesktopDocumentCapabilities(
         executeProcess(command, arguments, input)
     },
 ) : DocumentCapabilities {
+    override suspend fun prepareSearch(project: String): Result<SearchPreparation> =
+        operation("search.prepare", project, listOf("--prepare"), search = true) { data ->
+            val value = data.jsonObject
+            SearchPreparation(value.nonemptyString("snapshot"), value.nonnegativeInt("indexed_revisions"))
+        }
+
+    override suspend fun searchDocuments(
+        project: String, query: String, snapshot: String?,
+        documentsOffset: Int, authorsOffset: Int, contentOffset: Int,
+    ): Result<SearchResults> {
+        if (listOf(documentsOffset, authorsOffset, contentOffset).any { it < 0 } ||
+            (listOf(documentsOffset, authorsOffset, contentOffset).any { it > 0 } && snapshot.isNullOrBlank())
+        ) return Result.failure(IllegalArgumentException("Search pagination requires a snapshot and nonnegative offsets."))
+        val arguments = listOf("--query", query) +
+            (snapshot?.let { listOf("--snapshot", it) } ?: emptyList()) +
+            listOf("--documents-offset", "$documentsOffset", "--authors-offset", "$authorsOffset", "--content-offset", "$contentOffset")
+        return operation("search", project, arguments, search = true) { data ->
+            val value = data.jsonObject
+            val historical = requireNotNull(value["historical"]).jsonPrimitive
+            require(!historical.isString && historical.booleanOrNull != null) { "Invalid historical flag." }
+            SearchResults(
+                value.nonemptyString("snapshot"), historical.boolean,
+                searchPage(value.getValue("documents"), documentsOffset),
+                searchPage(value.getValue("authors"), authorsOffset),
+                searchPage(value.getValue("content"), contentOffset),
+            ).also { result ->
+                require(snapshot == null || result.snapshot == snapshot) { "Search snapshot changed. Prepare and restart search." }
+            }
+        }
+    }
+
+    override suspend fun showDocument(project: String, id: String, revision: String): Result<DocumentSnapshot> =
+        operation("show", project, listOf(id, "--revision", revision)) {
+            snapshot(it).also { document ->
+                require(document.id == id && document.revision == revision) { "qms returned a different saved revision." }
+            }
+        }
+
+    override suspend fun showLatestDocument(project: String, id: String): Result<DocumentSnapshot> =
+        operation("show", project, listOf(id)) {
+            snapshot(it).also { document ->
+                require(document.id == id) { "qms returned a different document." }
+            }
+        }
+
     override suspend fun listDocuments(project: String): Result<List<DocumentSnapshot>> =
         operation("list", project) { data ->
             data.jsonArray.map(::snapshot).also { documents ->
@@ -26,7 +78,7 @@ internal class DesktopDocumentCapabilities(
         }
 
     override suspend fun createDocument(project: String, title: String, body: String): Result<DocumentSnapshot> =
-        operation("create", project, listOf("--title", title), body, ::snapshot)
+        operation("create", project, listOf("--title", title), body, decode = ::snapshot)
 
     override suspend fun saveDocument(
         project: String, id: String, expected: String, title: String, body: String,
@@ -54,39 +106,75 @@ internal class DesktopDocumentCapabilities(
         project: String,
         arguments: List<String> = emptyList(),
         input: String? = null,
+        search: Boolean = false,
         decode: (JsonElement) -> T,
     ): Result<T> = withContext(Dispatchers.IO) {
         try {
-            val result = executor.execute(executable, listOf("document", command, "--json", project) + arguments, input)
+            val argv = if (search) listOf("search", "--json", project) else listOf("document", command, "--json", project)
+            val result = runInterruptible { executor.execute(executable, argv + arguments, input) }
             val response = Json.parseToJsonElement(result.output.trim()).jsonObject
             require(response.qmsSchemaVersion() == 2) { "qms returned an unsupported JSON schema version." }
             require(response.isQmsJsonV2Envelope()) { "qms returned an invalid or unsupported JSON response." }
-            require(response.stringValue("command") == "document.$command") {
+            require(response.stringValue("command") == if (search) command else "document.$command") {
                 "qms returned a response for an unexpected command."
             }
             if (result.exitCode != 0) {
                 require(response.stringValue("status") == "error") {
-                    "qms document $command failed (${result.exitCode})."
+                    "qms $command failed (${result.exitCode})."
                 }
-                throw IOException(response.errorMessage() ?: "qms document $command failed (${result.exitCode}).")
+                val message = response.errorMessage() ?: "qms $command failed (${result.exitCode})."
+                if (command == "search" &&
+                    (response["error"] as? JsonObject)?.stringValue("code") == "OPERATION_FAILED" &&
+                    message == "Search index is out of date. Run qms search <path> --prepare."
+                ) return@withContext Result.failure(SearchIndexOutOfDateException(message))
+                throw IOException(message)
             }
             require(response.string("status") == "ok") { "qms returned an unsuccessful response." }
-            Result.success(decode(requireNotNull(response["data"]) { "qms returned no document data." }))
+            Result.success(decode(requireNotNull(response["data"]) { "qms returned no operation data." }))
+        } catch (error: CancellationException) {
+            throw error
         } catch (error: IOException) {
             Result.failure(error)
         } catch (error: SerializationException) {
             Result.failure(IOException("qms returned invalid JSON: ${error.message}", error))
         } catch (error: IllegalArgumentException) {
-            Result.failure(IOException("Invalid qms document response: ${error.message}", error))
+            Result.failure(IOException("Invalid qms response: ${error.message}", error))
         } catch (error: IllegalStateException) {
-            Result.failure(IOException("Invalid qms document response: ${error.message}", error))
+            Result.failure(IOException("Invalid qms response: ${error.message}", error))
+        } catch (error: NoSuchElementException) {
+            Result.failure(IOException("Invalid qms response: ${error.message}", error))
         } catch (error: SecurityException) {
             Result.failure(error)
         } catch (error: InterruptedException) {
             Thread.currentThread().interrupt()
-            Result.failure(IOException("The document operation was interrupted.", error))
+            Result.failure(IOException("The qms operation was interrupted.", error))
         }
     }
+}
+
+private fun JsonObject.nonemptyString(name: String): String =
+    string(name).also { require(it.isNotBlank()) { "$name must not be blank." } }
+
+private fun JsonObject.nonnegativeInt(name: String): Int {
+    val value = requireNotNull(this[name]) { "Missing $name." }.jsonPrimitive
+    return requireNotNull(value.takeUnless { it.isString }?.intOrNull) { "$name must be an integer." }
+        .also { require(it >= 0) { "$name must not be negative." } }
+}
+
+private fun searchPage(data: JsonElement, offset: Int): SearchPage {
+    val value = data.jsonObject
+    val hits = value.getValue("hits").jsonArray.map {
+        val hit = it.jsonObject
+        val id = hit.string("id")
+        val revision = hit.string("revision")
+        require(Regex("DOC-[0-9a-f]{32}").matches(id)) { "Invalid search document ID." }
+        require(Regex("([0-9a-f]{40}|[0-9a-f]{64})").matches(revision)) { "Invalid search revision." }
+        SearchHit(id, hit.nonemptyString("title"), revision, hit.string("configured_author"), hit.string("local_timestamp"), hit.string("excerpt"))
+    }
+    require(hits.size <= 5 && hits.map { it.id }.distinct().size == hits.size) { "Invalid search page." }
+    val next = if (value.getValue("next_offset") === JsonNull) null else value.nonnegativeInt("next_offset")
+    require(next == null || (hits.size == 5 && next.toLong() == offset.toLong() + hits.size)) { "Invalid search next offset." }
+    return SearchPage(hits, next)
 }
 
 private fun JsonObject.string(name: String): String {
