@@ -16,6 +16,7 @@ related: [EQMS-023, UN-011, UN-012, UN-015]
 | REQ-023-006 | Provide native human/JSON create/list/show/save/history/diff commands, with versioned envelopes and nonzero errors. |
 | REQ-023-007 | Provide shared Compose document list/editor/history/compare; retain edits on save failure and warn on dirty navigation/project switch/close. |
 | REQ-023-008 | Preserve existing init/verify/recover/index behavior and shared JVM/Wasm compilation; never present Draft as approved or published. |
+| REQ-023-009 | Keep native CLI process I/O separate from parsing/dispatch, command handlers and rendering. Inject document input for direct tests while preserving command syntax, output and exit behavior. |
 
 These requirements support compact authoring (UN-011), exact diff/audit linkage
 (UN-012), and native CLI dogfooding (UN-015). Review/signatures/publication and

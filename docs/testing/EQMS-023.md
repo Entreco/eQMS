@@ -17,6 +17,7 @@ Defined before implementation. Automated outcomes belong in the evidence record.
 | TEST-023-005 | 005, 006 | Native CLI stdin and human/JSON commands; failure envelopes, missing identity, malformed protocol/launch errors, paths with spaces. |
 | TEST-023-006 | 007, 008 | UI create/save/reopen/history/diff, busy state, failed-save edit retention, cancel and dirty document/project/close guards; desktop adapter argv/stdin and response validation. |
 | TEST-023-007 | 008 | Existing Rust workspace/index and CLI tests, Kotlin project tests, shared JVM/Wasm compilation and release build. |
+| TEST-023-008 | 005, 006, 009 | Direct CLI tests use in-memory readers for create/save, reject invalid UTF-8 and read errors without saving, prove read-only commands do not read stdin, and verify rendering/dispatch envelopes. Existing process-level CLI tests guard compatibility. |
 
 Requirement references in the table use the suffix of `REQ-023-`.
 Use existing Cargo and Gradle runners. Do not report unexecuted platform/UI

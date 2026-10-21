@@ -88,6 +88,13 @@ Errors follow the existing CLI error envelope and nonzero exit conventions
 (`INVALID_ARGUMENT`/2, `OPERATION_FAILED`/1). Human output remains readable.
 Git identity and local time are claims, not authenticated identity/trusted time.
 
+The native CLI separates process I/O (`main.rs`), parsing/dispatch (`cli.rs`),
+response rendering (`output.rs`), and document/workspace command handlers
+(`commands/`). Document handlers receive a `Read` input rather than opening
+global stdin, enabling in-memory body and read-failure tests. This internal
+refactor does not change command syntax, output schemas, exit codes or core
+persistence controls; regression coverage guards protocol drift.
+
 Desktop opens a verified project, lists drafts, and offers New document,
 Save, History, and Compare. A new unsaved editor writes nothing until Save.
 The UI retains edits on failure, guards duplicate operations, and asks before
