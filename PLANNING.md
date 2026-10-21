@@ -296,6 +296,7 @@ unless explicitly stated otherwise.
 ## Milestone 5 — Search performance
 
 ### EQMS-050: Implement `SearchEngine` abstraction
+**Status:** First project-search slice implemented; [automated evidence](docs/testing/evidence/EQMS-050.md) recorded, human review/testing pending. Backend configuration and advanced filters deferred.
 **Type:** Feature  
 **Priority:** P0  
 **Description:** Define search interface independent of backend implementation.  
@@ -304,7 +305,14 @@ unless explicitly stated otherwise.
 - CLI search command uses interface only.
 - Backends are swappable via config.
 
+The first slice is specified in [EQMS-050/051](docs/architecture/EQMS-050.md):
+Rust-owned grouped title/author/content search over saved project drafts,
+prefixes, &/and equivalence, one-edit typo matching, five-result snapshot pages,
+and historical fallback only when all current groups have no matches. This slice
+does not complete backend switching/configuration or advanced filter scope above.
+
 ### EQMS-051: Implement SQLite FTS5 backend
+**Status:** Saved-draft search implemented; [automated evidence](docs/testing/evidence/EQMS-050.md) recorded, human review/testing pending.
 **Type:** Feature  
 **Priority:** P0  
 **Description:** Build baseline full-text indexing and query with metadata filtering.  
@@ -312,6 +320,12 @@ unless explicitly stated otherwise.
 - Artifact content and metadata are indexed.
 - Incremental reindex works on content changes.
 - Query latency target defined and measured.
+
+The first slice indexes verified independent draft refs and historical revisions
+into a disposable SQLite FTS5 index, with transactional incremental preparation.
+Warm end-to-end p95 target is 150 ms at 10,000 documents/~100 MiB; initial indexing
+and history fallback are reported separately. See the linked EQMS-050 design,
+requirements and tests; targets are not claims of observed results.
 
 ### EQMS-052: Add Rust/Tantivy backend spike
 **Type:** Spike  

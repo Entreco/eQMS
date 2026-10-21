@@ -2,11 +2,14 @@ package com.entreco.eqms.ui
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 
@@ -21,12 +24,21 @@ data class DocumentSnapshot(
     val localTimestamp: String,
 )
 
-interface DocumentCapabilities {
+interface DocumentCapabilities : SearchCapabilities {
     suspend fun listDocuments(project: String): Result<List<DocumentSnapshot>>
     suspend fun createDocument(project: String, title: String, body: String): Result<DocumentSnapshot>
     suspend fun saveDocument(project: String, id: String, expected: String, title: String, body: String): Result<DocumentSnapshot>
     suspend fun documentHistory(project: String, id: String): Result<List<DocumentSnapshot>>
     suspend fun documentDiff(project: String, id: String, from: String, to: String): Result<String>
+    suspend fun showLatestDocument(project: String, id: String): Result<DocumentSnapshot> =
+        documentHistory(project, id).mapCatching { history ->
+            history.firstOrNull { it.id == id } ?: throw IllegalArgumentException("Saved draft was not found.")
+        }
+    suspend fun showDocument(project: String, id: String, revision: String): Result<DocumentSnapshot> =
+        documentHistory(project, id).mapCatching { history ->
+            history.firstOrNull { it.id == id && it.revision == revision }
+                ?: throw IllegalArgumentException("Saved revision was not found.")
+        }
 }
 
 @Composable
@@ -36,8 +48,27 @@ fun DocumentScreen(
     requestNavigation: (() -> Unit) -> Unit,
     onStateChanged: (dirty: Boolean, busy: Boolean) -> Unit,
     modifier: Modifier = Modifier,
+    onSearchResultsLaidOut: (SearchRenderTiming) -> Unit = {},
+) {
+    key(project, capabilities) {
+        DocumentWorkspace(project, capabilities, requestNavigation, onStateChanged, modifier, onSearchResultsLaidOut)
+    }
+}
+
+@Composable
+private fun DocumentWorkspace(
+    project: String,
+    capabilities: DocumentCapabilities,
+    requestNavigation: (() -> Unit) -> Unit,
+    onStateChanged: (Boolean, Boolean) -> Unit,
+    modifier: Modifier,
+    onSearchResultsLaidOut: (SearchRenderTiming) -> Unit,
 ) {
     val scope = rememberCoroutineScope()
+    val search = remember { DocumentSearch(project, capabilities, scope) }
+    val timingCallback by rememberUpdatedState(onSearchResultsLaidOut)
+    val renderRequest = search.renderRequest
+    val displayedResults = search.results
     var documents by remember { mutableStateOf(emptyList<DocumentSnapshot>()) }
     var selected by remember { mutableStateOf<DocumentSnapshot?>(null) }
     var editing by remember { mutableStateOf(false) }
@@ -47,15 +78,17 @@ fun DocumentScreen(
     var error by remember { mutableStateOf<String?>(null) }
     var history by remember { mutableStateOf<List<DocumentSnapshot>?>(null) }
     var savedMessage by remember { mutableStateOf<String?>(null) }
-    val dirty = editing && (title != (selected?.title ?: "") || body != (selected?.body ?: ""))
+    var historical by remember { mutableStateOf(false) }
+    val dirty = editing && !historical && (title != (selected?.title ?: "") || body != (selected?.body ?: ""))
     SideEffect { onStateChanged(dirty, busy) }
-    DisposableEffect(Unit) { onDispose { onStateChanged(false, false) } }
+    DisposableEffect(Unit) { onDispose { search.dispose(); onStateChanged(false, false) } }
 
     fun select(document: DocumentSnapshot?) {
         selected = document
         title = document?.title ?: ""
         body = document?.body ?: ""
         editing = true
+        historical = false
         savedMessage = null
         error = null
     }
@@ -68,6 +101,7 @@ fun DocumentScreen(
     }
 
     LaunchedEffect(project, capabilities) {
+        search.refresh()
         busy = true
         try { refresh() } finally { busy = false }
     }
@@ -79,41 +113,124 @@ fun DocumentScreen(
                 scope.launch {
                     busy = true
                     error = null
-                    try { refresh() } finally { busy = false }
+                    try { refresh(); search.refresh() } finally { busy = false }
                 }
             }) { Text("Refresh documents") }
         }
         if (busy) Text("Loading documents...")
         error?.let { Text(it, color = MaterialTheme.colors.error) }
+        OutlinedTextField(
+            value = search.query, onValueChange = search::updateQuery,
+            label = { Text("Search saved drafts") }, singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        if (search.preparing) Text("Preparing saved-draft search...")
+        if (search.loading && !search.preparing) Text("Searching saved drafts...")
+        search.error?.let {
+            Text(it, color = MaterialTheme.colors.error)
+            TextButton(onClick = search::refresh) { Text("Refresh search") }
+        }
         Row(Modifier.fillMaxWidth().weight(1f), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            Column(Modifier.width(200.dp).verticalScroll(rememberScrollState())) {
-                Text("Documents", style = MaterialTheme.typography.h6)
-                if (documents.isEmpty() && !busy) Text("No saved drafts yet.")
-                documents.forEach { document ->
-                    Text(
-                        "${document.title} (Draft)",
-                        Modifier.fillMaxWidth().clickable(enabled = !busy) {
-                            requestNavigation { select(document) }
-                        }.padding(vertical = 10.dp),
-                    )
+            key(renderRequest?.generation) {
+            LazyColumn(Modifier.width(200.dp).fillMaxHeight().onGloballyPositioned {
+                renderRequest?.let { request -> search.claimRenderTiming(request)?.let(timingCallback) }
+            }) {
+                if (search.query.isBlank()) {
+                    item { Text("Documents", style = MaterialTheme.typography.h6) }
+                    if (documents.isEmpty() && !busy) item { Text("No saved drafts yet.") }
+                    items(documents, key = { it.id }) { document ->
+                        Text(
+                            "${document.title} (Draft)",
+                            Modifier.fillMaxWidth().clickable(enabled = !busy) {
+                                requestNavigation { select(document) }
+                            }.padding(vertical = 10.dp),
+                        )
+                    }
+                } else {
+                    displayedResults?.let { results ->
+                        if (results.historical) item { Text("Draft/history matches — older saved revisions, read-only.") }
+                        if (SearchGroup.entries.all { results.page(it).hits.isEmpty() }) item { Text("No matching saved drafts.") }
+                        SearchGroup.entries.forEach { group ->
+                            item(key = group) { Text(group.name, style = MaterialTheme.typography.h6) }
+                            items(results.page(group).hits, key = { "${group.name}:${it.id}:${it.revision}" }) { hit ->
+                                val summary = when (group) {
+                                    SearchGroup.Documents -> hit.title
+                                    SearchGroup.Authors -> "${hit.title} | by ${hit.configuredAuthor}"
+                                    SearchGroup.Content -> "${hit.title} | ${hit.excerpt}"
+                                }
+                                Text(
+                                    if (results.historical) "${hit.title} (Draft/history)\n" +
+                                        "Revision: ${hit.revision}\nConfigured author: ${hit.configuredAuthor}\n" +
+                                        "Local timestamp: ${hit.localTimestamp}\n${hit.excerpt}" else summary,
+                                    Modifier.fillMaxWidth().clickable(enabled = !busy) {
+                                        requestNavigation {
+                                            scope.launch {
+                                                busy = true
+                                                error = null
+                                                try {
+                                                    val result = if (results.historical) {
+                                                        capabilities.showDocument(project, hit.id, hit.revision)
+                                                    } else {
+                                                        capabilities.showLatestDocument(project, hit.id)
+                                                    }
+                                                    result.fold(
+                                                        onSuccess = { select(it); historical = results.historical },
+                                                        onFailure = { error = it.message ?: "Could not open saved draft." },
+                                                    )
+                                                } finally { busy = false }
+                                            }
+                                        }
+                                    }.padding(vertical = 10.dp),
+                                )
+                            }
+                            if (results.page(group).nextOffset != null) {
+                                item(key = "more:$group") {
+                                    TextButton(enabled = !search.loading, onClick = { search.more(group) }) {
+                                        Text("Show more ${group.name}")
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
+            }
             }
             if (editing) {
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(if (dirty) "Draft - unsaved changes" else "Draft")
+                    Text(if (historical) "Draft/history — read-only saved revision" else if (dirty) "Draft - unsaved changes" else "Draft")
                     selected?.let { Text(it.id, style = MaterialTheme.typography.caption) }
+                    if (historical) {
+                        Text("Saved working revision, not an approval. Author is configured identity; timestamp is a local claim.")
+                        selected?.let {
+                            Text("Revision: ${it.revision}")
+                            Text("Configured author: ${it.configuredAuthor}")
+                            Text("Local timestamp: ${it.localTimestamp}")
+                        }
+                        TextButton(enabled = !busy, onClick = {
+                            val id = selected?.id ?: return@TextButton
+                            scope.launch {
+                                busy = true
+                                try {
+                                    capabilities.showLatestDocument(project, id).fold(
+                                        onSuccess = { select(it) },
+                                        onFailure = { error = it.message ?: "Could not read latest draft." },
+                                    )
+                                } finally { busy = false }
+                            }
+                        }) { Text("Return to latest draft") }
+                    }
                     OutlinedTextField(
                         value = title, onValueChange = { title = it; savedMessage = null },
                         label = { Text("Document title") }, singleLine = true,
-                        enabled = !busy, modifier = Modifier.fillMaxWidth(),
+                        enabled = !busy, readOnly = historical, modifier = Modifier.fillMaxWidth(),
                     )
                     OutlinedTextField(
                         value = body, onValueChange = { body = it; savedMessage = null },
-                        label = { Text("Markdown body") }, enabled = !busy,
+                        label = { Text("Markdown body") }, enabled = !busy, readOnly = historical,
                         modifier = Modifier.fillMaxWidth().weight(1f).heightIn(min = 100.dp),
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Button(enabled = !busy && title.isNotBlank(), onClick = {
+                        Button(enabled = !busy && !historical && title.isNotBlank(), onClick = {
                             scope.launch {
                                 busy = true
                                 error = null
@@ -129,6 +246,7 @@ fun DocumentScreen(
                                             select(it)
                                             savedMessage = if (previous?.revision == it.revision) "No changes to save." else "Draft saved."
                                             documents = (documents.filterNot { old -> old.id == it.id } + it).sortedBy { doc -> doc.id }
+                                            search.refresh()
                                         },
                                         onFailure = { error = it.message ?: "Save failed. Your edits are still here." },
                                     )

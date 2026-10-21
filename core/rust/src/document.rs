@@ -182,6 +182,42 @@ pub struct Documents {
 }
 
 impl Documents {
+    pub(crate) fn with_search_sources<T>(
+        path: &Path,
+        operation: impl FnOnce(
+            &Self,
+            &Workspace,
+            &BTreeMap<String, String>,
+            &str,
+        ) -> Result<T, WorkspaceError>,
+    ) -> Result<T, WorkspaceError> {
+        let documents = Self {
+            workspace: Workspace::open(path)?,
+        };
+        let _lock = documents.workspace.acquire_lock()?;
+        documents.verify_baseline()?;
+        let refs = git_text(
+            documents.root(),
+            &["for-each-ref", "--format=%(refname) %(objectname)", PREFIX],
+        )?;
+        let mut sources = BTreeMap::new();
+        for line in refs.lines() {
+            let (name, revision) = line
+                .split_once(' ')
+                .ok_or_else(|| error("invalid draft ref"))?;
+            let id = name
+                .strip_prefix(PREFIX)
+                .ok_or_else(|| error("invalid draft ref"))?;
+            validate_id(id)?;
+            if !valid_hex(revision, &[40, 64]) {
+                return Err(error("invalid saved revision"));
+            }
+            sources.insert(id.to_owned(), revision.to_owned());
+        }
+        let baseline = git_text(documents.root(), &["rev-parse", "HEAD"])?;
+        operation(&documents, &documents.workspace, &sources, baseline.trim())
+    }
+
     pub fn open(path: impl AsRef<Path>) -> Result<Self, WorkspaceError> {
         let workspace = Workspace::open(path)?;
         workspace.verify()?;
@@ -422,7 +458,7 @@ impl Documents {
         Ok(document)
     }
 
-    fn history_at(&self, id: &str, head: &str) -> Result<Vec<Document>, WorkspaceError> {
+    pub(crate) fn history_at(&self, id: &str, head: &str) -> Result<Vec<Document>, WorkspaceError> {
         Ok(self.verified_history(id, head)?.documents)
     }
 

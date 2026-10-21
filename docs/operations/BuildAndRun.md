@@ -157,6 +157,73 @@ cargo test --workspace --locked
 ./gradlew :apps:desktop:test :core:ui:jvmTest :core:ui:compileKotlinWasmJs
 ```
 
+## Search saved documents
+
+The desktop search box searches only the open project. Results are grouped into
+**Documents** (titles), **Authors** (configured author), and **Content** (body
+excerpts), with five rows per section and **Show more**. Input is literal text,
+not query syntax: matching ignores case, includes word prefixes, treats `&` as
+`and`, and tolerates one typo in words of at least four characters. All query
+words must match within the group's field. Exact tokens outrank prefixes, which
+outrank typo matches. Search accepts at most 512 characters/32 words.
+
+Only if all three groups have no current saved matches does search include
+older saved revisions. Historical hits are labeled and open read-only; **Return
+to latest draft** resumes editing the current version. Unsaved editor text is
+not searchable. Saved drafts are not approvals; configured author/local time
+are claims. Search preparation and failures are visible; **Refresh search**
+reconciles external changes or retries a failed preparation.
+
+```sh
+./target/release/qms search ./quality-workspace --prepare --json
+./target/release/qms search ./quality-workspace --query 'And' --json
+./target/release/qms search ./quality-workspace --query 'risk managment'
+```
+
+Native `search.prepare` returns indexed revision count and a source snapshot.
+Native `search` returns grouped hits and each group's nullable `next_offset`.
+For later pages pass `--snapshot` from that response and the appropriate
+`--documents-offset`, `--authors-offset`, or `--content-offset`. Pages contain
+five hits; offsets default to zero. Source changes invalidate pagination.
+After external edits, run `--prepare` again. `--prepare --rebuild` rebuilds saved
+search data without changing canonical content, draft refs or the baseline index.
+Preparation runs standard Git `pack-refs --all` housekeeping to keep large
+projects fast: physical ref files may move into packed storage, but every ref
+name/revision, HEAD, staged file and history entry is preserved.
+If SQLite corruption prevents opening it, move only the disposable
+`.eqms/index.sqlite3` and its associated SQLite sidecars aside while no process
+is using it, then prepare again. Never remove Git history or canonical files.
+
+The repeatable CLI benchmark generates genuine draft refs and verifies them
+through production preparation. Use a **new**, explicitly chosen fixture directory:
+
+```sh
+python3 scripts/benchmark_search.py /path/to/new-search-fixture
+python3 scripts/benchmark_search.py /path/to/new-search-fixture --reuse
+```
+
+Default: 10,000 documents, 10,486 body bytes each (~100 MiB), 100 older revisions,
+30 samples and three warmups per query. Output reports hardware, fixture shape,
+first-observed/preparation latency, p50/p95 and raw samples. CLI elapsed time is
+not desktop query-to-render evidence. See [search design](../architecture/EQMS-050.md)
+and [test specification](../testing/EQMS-050.md).
+
+The opt-in Compose benchmark uses that prepared reference fixture and the actual
+desktop/native adapter. It measures 20 warmups and 100 final-input-to-layout
+samples per current query, including debounce, CLI, decoding and layout:
+
+```sh
+EQMS_SEARCH_BENCHMARK_WORKSPACE=/path/to/new-search-fixture \
+EQMS_QMS_PATH="$PWD/target/release/qms" \
+./gradlew :apps:desktop:test --tests '*DesktopSearchBenchmarkTest' --rerun-tasks
+```
+
+The fixture must have 10,000 documents and at least 100 MiB of current body
+text. JSON samples are printed into the Gradle test report/XML. The benchmark
+isolates warm search by omitting initial full-document list loading; it does not
+measure project opening. Without the fixture environment it is explicitly
+skipped. Human responsiveness checks remain separate.
+
 ## Web module tasks
 
 - Build development webpack bundle:

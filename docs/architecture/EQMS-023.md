@@ -38,8 +38,9 @@ canonical bytes determine SHA-256 content hashes.
 One `refs/heads/eqms-drafts/<id>` per document; no user-facing Git controls.
 Creation starts at the selected project's verified HEAD. Saves extend only that
 draft's ref. No working files, index entries, baseline refs, or baseline journal
-are modified. Draft discovery reads refs; SQLite remains disposable and
-baseline-only, not a second history store.
+are modified. Draft discovery reads refs; SQLite remains disposable, not a second history store. The separate
+[EQMS-050/051 search index](EQMS-050.md) derives searchable saved snapshots from
+these refs without changing them; the original baseline index remains compatible.
 
 The user selected Git object construction rather than linked worktrees. Reuse
 the workspace OS lock, require configured Git identity, build blobs/trees and a
