@@ -59,14 +59,18 @@ internal class DesktopDocumentCapabilities(
         try {
             val result = executor.execute(executable, listOf("document", command, "--json", project) + arguments, input)
             val response = Json.parseToJsonElement(result.output.trim()).jsonObject
-            if (result.exitCode != 0) {
-                val message = response["error"]?.jsonObject?.get("message")?.jsonPrimitive
-                throw IOException(message?.takeIf { it.isString }?.content ?: "qms document $command failed (${result.exitCode}).")
+            require(response.qmsSchemaVersion() == 2) { "qms returned an unsupported JSON schema version." }
+            require(response.isQmsJsonV2Envelope()) { "qms returned an invalid or unsupported JSON response." }
+            require(response.stringValue("command") == "document.$command") {
+                "qms returned a response for an unexpected command."
             }
-            val schema = response["schema_version"]?.jsonPrimitive
-            require(schema?.isString == false && schema.intOrNull == 1) { "qms returned an unsupported JSON schema version." }
+            if (result.exitCode != 0) {
+                require(response.stringValue("status") == "error") {
+                    "qms document $command failed (${result.exitCode})."
+                }
+                throw IOException(response.errorMessage() ?: "qms document $command failed (${result.exitCode}).")
+            }
             require(response.string("status") == "ok") { "qms returned an unsuccessful response." }
-            require(response.string("command") == "document.$command") { "qms returned a response for an unexpected command." }
             Result.success(decode(requireNotNull(response["data"]) { "qms returned no document data." }))
         } catch (error: IOException) {
             Result.failure(error)

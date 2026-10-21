@@ -8,8 +8,8 @@ related: [EQMS-090]
 
 | Test ID | Requirement mapping | Test |
 |---|---|---|
-| T090-01 | R090-02, R090-04 | Verify create sends `init`, `--json`, and the selected path as distinct arguments, including a path containing spaces; accept only a successful schema-version-1 `init` response. |
-| T090-02 | R090-03, R090-04 | Verify open sends `verify`, `--json`, and the selected path as distinct arguments; accept only a successful schema-version-1 `verify` response. |
+| T090-01 | R090-02, R090-04 | Verify create sends `init`, `--json`, and the selected path as distinct arguments, including a path containing spaces; accept only a successful schema-version-2 `init` envelope with the path under `data`. |
+| T090-02 | R090-03, R090-04 | Verify open sends `verify`, `--json`, and the selected path as distinct arguments; accept only a successful schema-version-2 `verify` envelope with the path under `data`. |
 | T090-03 | R090-02, R090-03, R090-05 | Verify nonzero exits, structured CLI error output, and launch failure return actionable failures and never success. |
 | T090-04 | R090-04, R090-05 | Verify malformed JSON, unsupported schema versions, wrong response status, and mismatched command are rejected. |
 | T090-05 | R090-01, R090-05, R090-06 | Manual GUI test: confirm the landing actions, chooser cancellation, busy-state behavior, success state, and visible error state. |

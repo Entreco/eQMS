@@ -27,20 +27,22 @@ No arguments display help successfully. `--help`/`-h` show human-readable help;
 usage errors structured, regardless of flag order. Help remains human-readable.
 `--json` alone is a usage error: request version or help explicitly.
 
-JSON schema version 1:
+The initial version-1 output was superseded by the unified schema-version-2
+contract in [EQMS-101](EQMS-101.md). The current version output is:
 
 ```json
-{"schema_version":1,"status":"ok","version":"0.1.0"}
+{"schema_version":2,"status":"ok","command":"version","timestamp_unix_ms":1792600000000,"findings":[],"references":[],"data":{"version":"0.1.0"},"error":null}
 ```
 
 ```json
-{"schema_version":1,"status":"error","error":{"code":"INVALID_ARGUMENT","message":"..."}}
+{"schema_version":2,"status":"error","command":null,"timestamp_unix_ms":1792600000000,"findings":[],"references":[],"data":null,"error":{"code":"INVALID_ARGUMENT","message":"..."}}
 ```
 
 Successful help/version use stdout and exit 0. Usage errors use stderr and exit
-2 with empty stdout. Output-write failures exit 1; stderr diagnostics are
-best-effort if the error stream itself is unavailable. No command creates files.
-`init`, storage, signatures, approvals, MCP and module installation are excluded.
+2 with empty stdout. JSON command and error outputs use schema version 2;
+output-write failures exit 1, and stderr diagnostics are best-effort if the
+error stream itself is unavailable. No command creates files. `init`, storage,
+signatures, approvals, MCP and module installation are excluded from EQMS-004.
 
 ## Risk and security-risk applicability
 

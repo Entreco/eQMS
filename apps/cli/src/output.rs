@@ -1,23 +1,23 @@
 use serde::Serialize;
+use serde_json::{Value, json};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Serialize)]
-struct VersionOutput {
+struct Envelope {
     schema_version: u32,
     status: &'static str,
-    version: &'static str,
+    command: Option<String>,
+    timestamp_unix_ms: i64,
+    findings: Vec<Value>,
+    references: Vec<Value>,
+    data: Option<Value>,
+    error: Option<ErrorDetail>,
 }
 
 #[derive(Serialize)]
-struct ErrorOutput<'a> {
-    schema_version: u32,
-    status: &'static str,
-    error: ErrorDetail<'a>,
-}
-
-#[derive(Serialize)]
-struct ErrorDetail<'a> {
+struct ErrorDetail {
     code: &'static str,
-    message: &'a str,
+    message: String,
 }
 
 pub(crate) struct Response {
@@ -35,17 +35,28 @@ impl Response {
         }
     }
 
-    fn failure(code: u8, error_code: &'static str, message: &str, json: bool) -> Self {
+    fn failure(
+        code: u8,
+        error_code: &'static str,
+        message: &str,
+        json: bool,
+        command: Option<&str>,
+    ) -> Self {
         let text = if json {
-            serde_json::to_string(&ErrorOutput {
-                schema_version: 1,
+            serde_json::to_string(&Envelope {
+                schema_version: 2,
                 status: "error",
-                error: ErrorDetail {
+                command: command.map(str::to_owned),
+                timestamp_unix_ms: timestamp_unix_ms(),
+                findings: Vec::new(),
+                references: Vec::new(),
+                data: None,
+                error: Some(ErrorDetail {
                     code: error_code,
-                    message,
-                },
+                    message: message.to_owned(),
+                }),
             })
-            .expect("serializing a string-only error cannot fail")
+            .expect("serializing the JSON error envelope cannot fail")
         } else {
             message.to_owned()
         };
@@ -57,39 +68,55 @@ impl Response {
     }
 
     pub(crate) fn usage_error(message: &str, json: bool) -> Self {
-        Self::failure(2, "INVALID_ARGUMENT", message, json)
+        Self::failure(2, "INVALID_ARGUMENT", message, json, None)
     }
 
-    pub(crate) fn from_result(result: Result<String, String>, json: bool) -> Self {
+    pub(crate) fn from_result(result: Result<String, String>, json: bool, command: &str) -> Self {
         match result {
-            Ok(text) => Self::success(text),
-            Err(message) => Self::failure(1, "OPERATION_FAILED", &message, json),
+            Ok(text) if !json => Self::success(text),
+            Ok(text) => match success_envelope(&text, command) {
+                Ok(text) => Self::success(text),
+                Err(message) => Self::failure(1, "INVALID_RESPONSE", &message, true, Some(command)),
+            },
+            Err(message) => Self::failure(1, "OPERATION_FAILED", &message, json, Some(command)),
         }
     }
 }
 
 pub(crate) fn version(json: bool) -> String {
     if json {
-        serde_json::to_string(&VersionOutput {
-            schema_version: 1,
-            status: "ok",
-            version: eqms_core::version(),
-        })
-        .expect("serializing static version strings cannot fail")
+        json!({ "version": eqms_core::version() }).to_string()
     } else {
         format!("qms {}", eqms_core::version())
     }
 }
 
-pub(crate) fn document(
-    operation: &str,
-    data: serde_json::Value,
-    json: bool,
-) -> Result<String, String> {
+fn success_envelope(text: &str, command: &str) -> Result<String, String> {
+    let data: Value = serde_json::from_str(text)
+        .map_err(|error| format!("command produced invalid JSON output: {error}"))?;
+    serde_json::to_string(&Envelope {
+        schema_version: 2,
+        status: "ok",
+        command: Some(command.to_owned()),
+        timestamp_unix_ms: timestamp_unix_ms(),
+        findings: Vec::new(),
+        references: Vec::new(),
+        data: Some(data),
+        error: None,
+    })
+    .map_err(|error| format!("cannot serialize JSON response: {error}"))
+}
+
+fn timestamp_unix_ms() -> i64 {
+    match SystemTime::now().duration_since(UNIX_EPOCH) {
+        Ok(duration) => duration.as_millis() as i64,
+        Err(error) => -(error.duration().as_millis() as i64),
+    }
+}
+
+pub(crate) fn document(data: serde_json::Value, json: bool) -> Result<String, String> {
     if json {
-        Ok(serde_json::json!({
-            "schema_version": 1, "status": "ok", "command": format!("document.{operation}"), "data": data
-        }).to_string())
+        serde_json::to_string(&data).map_err(|error| error.to_string())
     } else if let Some(diff) = data.as_str() {
         Ok(diff.to_owned())
     } else {
@@ -107,48 +134,78 @@ mod tests {
         let usage = Response::usage_error("missing argument", true);
         assert_eq!(usage.code, 2);
         assert!(usage.error);
-        assert_eq!(
-            serde_json::from_str::<serde_json::Value>(&usage.text).unwrap(),
-            json!({
-                "schema_version": 1, "status": "error",
-                "error": { "code": "INVALID_ARGUMENT", "message": "missing argument" }
-            })
-        );
-        let operation = Response::from_result(Err("read failed".into()), true);
+        let usage_json: Value = serde_json::from_str(&usage.text).unwrap();
+        assert_envelope(&usage_json, "error");
+        assert_eq!(usage_json["schema_version"], 2);
+        assert_eq!(usage_json["command"], Value::Null);
+        assert_eq!(usage_json["data"], Value::Null);
+        assert_eq!(usage_json["error"]["code"], "INVALID_ARGUMENT");
+
+        let operation = Response::from_result(Err("read failed".into()), true, "verify");
         assert_eq!(operation.code, 1);
         assert!(operation.error);
-        assert_eq!(
-            serde_json::from_str::<serde_json::Value>(&operation.text).unwrap(),
-            json!({
-                "schema_version": 1, "status": "error",
-                "error": { "code": "OPERATION_FAILED", "message": "read failed" }
-            })
-        );
+        let operation_json: Value = serde_json::from_str(&operation.text).unwrap();
+        assert_envelope(&operation_json, "error");
+        assert_eq!(operation_json["command"], "verify");
+        assert_eq!(operation_json["error"]["code"], "OPERATION_FAILED");
+        assert_eq!(operation_json["error"]["message"], "read failed");
         assert_eq!(
             Response::usage_error("plain error", false).text,
             "plain error"
         );
-        let success = Response::from_result(Ok("saved".into()), false);
+        let success = Response::from_result(Ok("saved".into()), false, "save");
         assert_eq!(success.code, 0);
         assert!(!success.error);
         assert_eq!(success.text, "saved");
     }
 
     #[test]
+    fn success_envelope_wraps_command_data_and_reports_invalid_internal_json() {
+        let response = Response::from_result(
+            Ok(json!({ "path": "/workspace", "journal_records": 2 }).to_string()),
+            true,
+            "verify",
+        );
+        assert_eq!(response.code, 0);
+        let value: Value = serde_json::from_str(&response.text).unwrap();
+        assert_envelope(&value, "ok");
+        assert_eq!(value["command"], "verify");
+        assert_eq!(
+            value["data"],
+            json!({ "path": "/workspace", "journal_records": 2 })
+        );
+        assert_eq!(value["error"], Value::Null);
+
+        let invalid = Response::from_result(Ok("not json".to_owned()), true, "verify");
+        assert_eq!(invalid.code, 1);
+        let value: Value = serde_json::from_str(&invalid.text).unwrap();
+        assert_envelope(&value, "error");
+        assert_eq!(value["error"]["code"], "INVALID_RESPONSE");
+    }
+
+    #[test]
     fn document_rendering_preserves_raw_diff_and_json_data() {
         let diff = "-old\n+new\n";
-        assert_eq!(document("diff", json!(diff), false).unwrap(), diff);
+        assert_eq!(document(json!(diff), false).unwrap(), diff);
         assert_eq!(
-            serde_json::from_str::<serde_json::Value>(
-                &document("diff", json!(diff), true).unwrap()
-            )
-            .unwrap(),
-            json!({ "schema_version": 1, "status": "ok", "command": "document.diff", "data": diff }),
+            serde_json::from_str::<serde_json::Value>(&document(json!(diff), true).unwrap())
+                .unwrap(),
+            json!(diff),
         );
         let data = json!({ "title": "Policy" });
         assert_eq!(
-            document("show", data.clone(), false).unwrap(),
+            document(data.clone(), false).unwrap(),
             serde_json::to_string_pretty(&data).unwrap()
         );
+    }
+
+    fn assert_envelope(value: &Value, status: &str) {
+        assert_eq!(value["schema_version"], 2);
+        assert_eq!(value["status"], status);
+        assert!(value["timestamp_unix_ms"].as_i64().is_some());
+        assert!(value["findings"].is_array());
+        assert!(value["references"].is_array());
+        assert!(value.get("data").is_some());
+        assert!(value.get("error").is_some());
     }
 }

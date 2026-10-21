@@ -6,6 +6,7 @@ last_updated: 2026-10-20
 related:
   - EQMS-001
   - EQMS-004
+  - EQMS-101
   - EQMS-090
 ---
 
@@ -59,9 +60,11 @@ Build release first; the script prints JSON including environment, raw samples,
 median and p95. First observed launch is not a controlled cold-cache measurement.
 Use `--samples` and `--warmups` to adjust the sample counts.
 
-JSON command/error contracts and exit codes are documented in the
-[native foundation design](../architecture/EQMS-004.md) and the
-[workspace/index contract](../architecture/EQMS-005.md).
+All native `--json` responses use the schema-version-2 envelope documented in
+the [CLI JSON contract](../architecture/EQMS-101.md). Command payloads are in
+`data`, errors are in `error`, and JSON errors are written to stderr with
+nonzero exit codes. See the [native foundation design](../architecture/EQMS-004.md)
+and [workspace/index contract](../architecture/EQMS-005.md) for related behavior.
 
 ## Kotlin prototype prerequisites
 

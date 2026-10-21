@@ -62,7 +62,7 @@ fn document_commands_persist_drafts_and_report_conflicts() {
         String::from_utf8_lossy(&created.stderr)
     );
     let json: serde_json::Value = serde_json::from_slice(&created.stdout).unwrap();
-    assert_eq!(json["schema_version"], 1);
+    assert_cli_envelope(&json, "ok");
     assert_eq!(json["command"], "document.create");
     let id = json["data"]["id"].as_str().unwrap();
     let first = json["data"]["revision"].as_str().unwrap();
@@ -86,6 +86,7 @@ fn document_commands_persist_drafts_and_report_conflicts() {
             String::from_utf8_lossy(&output.stderr)
         );
         let result: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_cli_envelope(&result, "ok");
         assert_eq!(result["command"], command);
         assert_eq!(result["status"], "ok");
         if command == "document.diff" {
@@ -102,6 +103,7 @@ fn document_commands_persist_drafts_and_report_conflicts() {
     assert_eq!(conflict.status.code(), Some(1));
     assert!(conflict.stdout.is_empty());
     let error: serde_json::Value = serde_json::from_slice(&conflict.stderr).unwrap();
+    assert_cli_envelope(&error, "error");
     assert_eq!(error["error"]["code"], "OPERATION_FAILED");
     let human = Command::new(env!("CARGO_BIN_EXE_qms"))
         .args(["document", "show"])
@@ -116,6 +118,20 @@ fn document_commands_persist_drafts_and_report_conflicts() {
             .contains("Quality policy")
     );
     std::fs::remove_dir_all(root).unwrap();
+}
+
+fn assert_cli_envelope(value: &serde_json::Value, status: &str) {
+    assert_eq!(value["schema_version"], 2);
+    assert_eq!(value["status"], status);
+    assert!(
+        value["command"].is_null() || value["command"].as_str().is_some(),
+        "command must be a string or null"
+    );
+    assert!(value["timestamp_unix_ms"].as_i64().is_some());
+    assert!(value["findings"].is_array());
+    assert!(value["references"].is_array());
+    assert!(value.get("data").is_some());
+    assert!(value.get("error").is_some());
 }
 
 fn run(args: &[&str]) -> Output {
@@ -165,12 +181,10 @@ fn structured_version() {
         assert_eq!(output.status.code(), Some(0));
         assert!(output.stderr.is_empty());
         let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-        assert_eq!(
-            value,
-            serde_json::json!({
-                "schema_version": 1, "status": "ok", "version": eqms_core::version()
-            })
-        );
+        assert_cli_envelope(&value, "ok");
+        assert_eq!(value["command"], "version");
+        assert_eq!(value["data"]["version"], eqms_core::version());
+        assert_eq!(value["error"], serde_json::Value::Null);
     }
 }
 
@@ -198,9 +212,11 @@ fn structured_errors_regardless_of_flag_order() {
         assert_eq!(output.status.code(), Some(2));
         assert!(output.stdout.is_empty());
         let value: serde_json::Value = serde_json::from_slice(&output.stderr).unwrap();
-        assert_eq!(value["schema_version"], 1);
+        assert_cli_envelope(&value, "error");
+        assert_eq!(value["schema_version"], 2);
         assert_eq!(value["status"], "error");
         assert_eq!(value["error"]["code"], "INVALID_ARGUMENT");
+        assert_eq!(value["data"], serde_json::Value::Null);
         assert!(!value["error"]["message"].as_str().unwrap().is_empty());
     }
 }
@@ -235,7 +251,12 @@ fn initializes_and_rebuilds_a_workspace_index() {
         .unwrap();
     assert_eq!(init.status.code(), Some(0));
     let init_json: serde_json::Value = serde_json::from_slice(&init.stdout).unwrap();
+    assert_cli_envelope(&init_json, "ok");
     assert_eq!(init_json["command"], "init");
+    assert_eq!(
+        init_json["data"]["path"],
+        workspace.canonicalize().unwrap().display().to_string()
+    );
     assert!(workspace.join(".eqms/journal.jsonl").is_file());
 
     let branch = Command::new("git")
@@ -261,6 +282,7 @@ fn initializes_and_rebuilds_a_workspace_index() {
         .unwrap();
     assert_eq!(recover.status.code(), Some(0));
     let recover_json: serde_json::Value = serde_json::from_slice(&recover.stdout).unwrap();
+    assert_cli_envelope(&recover_json, "ok");
     assert_eq!(recover_json["command"], "recover");
     assert_eq!(recover_json["status"], "ok");
     let recovered_verify = Command::new(env!("CARGO_BIN_EXE_qms"))
@@ -270,6 +292,7 @@ fn initializes_and_rebuilds_a_workspace_index() {
         .unwrap();
     assert_eq!(recovered_verify.status.code(), Some(0));
     let verify_json: serde_json::Value = serde_json::from_slice(&recovered_verify.stdout).unwrap();
+    assert_cli_envelope(&verify_json, "ok");
     assert_eq!(verify_json["command"], "verify");
 
     std::fs::write(workspace.join("documents/quality-policy.md"), "# Quality\n").unwrap();
@@ -280,10 +303,11 @@ fn initializes_and_rebuilds_a_workspace_index() {
         .unwrap();
     assert_eq!(rebuild.status.code(), Some(0));
     let rebuild_json: serde_json::Value = serde_json::from_slice(&rebuild.stdout).unwrap();
+    assert_cli_envelope(&rebuild_json, "ok");
     assert_eq!(rebuild_json["command"], "index.rebuild");
-    assert_eq!(rebuild_json["indexed_documents"], 1);
+    assert_eq!(rebuild_json["data"]["indexed_documents"], 1);
     assert!(
-        rebuild_json["index_path"]
+        rebuild_json["data"]["index_path"]
             .as_str()
             .unwrap()
             .ends_with(".eqms/index.sqlite3")
@@ -304,6 +328,8 @@ fn initializes_and_rebuilds_a_workspace_index() {
         .unwrap();
     assert_eq!(invalid_index.status.code(), Some(1));
     let error_json: serde_json::Value = serde_json::from_slice(&invalid_index.stderr).unwrap();
+    assert_cli_envelope(&error_json, "error");
+    assert_eq!(error_json["command"], "index.rebuild");
     assert_eq!(error_json["error"]["code"], "OPERATION_FAILED");
     std::fs::remove_dir_all(root).unwrap();
 }
