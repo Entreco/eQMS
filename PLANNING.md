@@ -296,7 +296,7 @@ unless explicitly stated otherwise.
 ## Milestone 5 — Search performance
 
 ### EQMS-050: Implement `SearchEngine` abstraction
-**Status:** First project-search slice implemented on feature branch; evidence and human review pending. Backend configuration and advanced filters deferred.
+**Status:** First project-search slice implemented; [automated evidence](docs/testing/evidence/EQMS-050.md) recorded, human review/testing pending. Backend configuration and advanced filters deferred.
 **Type:** Feature  
 **Priority:** P0  
 **Description:** Define search interface independent of backend implementation.  
@@ -312,7 +312,7 @@ and historical fallback only when all current groups have no matches. This slice
 does not complete backend switching/configuration or advanced filter scope above.
 
 ### EQMS-051: Implement SQLite FTS5 backend
-**Status:** Saved-draft search implementation on feature branch; evidence and human review pending.
+**Status:** Saved-draft search implemented; [automated evidence](docs/testing/evidence/EQMS-050.md) recorded, human review/testing pending.
 **Type:** Feature  
 **Priority:** P0  
 **Description:** Build baseline full-text indexing and query with metadata filtering.  
