@@ -103,6 +103,57 @@ to enter it, then **Select directory**. Desktop filesystem and native CLI access
 remain in `apps:desktop`; the browser shell is not wired to these capabilities.
 Desktop still requires a JVM, not Kotlin/Native.
 
+## Draft documents
+
+After opening a project, select **New document**, enter a title and plain
+Markdown body, and select **Save**. Saved drafts appear in the document list
+and can be reopened after restarting. **History** shows saved working revisions,
+configured author and local timestamp claims; choose two revisions and
+**Compare** for a read-only diff. Unsaved navigation/closing asks before discard.
+Failed saves retain editor text. If another process saved first, copy your
+edits, refresh/reopen the latest draft, reconcile them, and save again.
+
+Native equivalents (body is UTF-8 stdin, not a shell argument):
+
+```sh
+printf '# Quality policy\n' | ./target/release/qms document create ./quality-workspace --title 'Quality policy' --json
+./target/release/qms document list ./quality-workspace --json
+```
+
+Use the returned document ID and full revision in the command syntax below:
+
+```text
+qms document show <project> <id> [--revision <full-revision>]
+qms document save <project> <id> --title <title> --expected <full-revision>
+qms document history <project> <id>
+qms document diff <project> <id> <from-full-revision> <to-full-revision>
+```
+
+Save reads the replacement body from stdin. `--json` uses the versioned
+`document.<operation>` envelope with a `data` field; errors exit nonzero.
+Unchanged canonical content returns the existing revision. Saving never
+publishes: each document has an internal private branch, while the baseline and
+its derived SQLite index remain unchanged. Do not manually check out or edit
+internal draft branches. Backups must include the Git repository and its refs,
+not just baseline working files; no remote synchronization is implemented.
+
+Draft transactions publish only a fully verified Git commit through an atomic
+ref update. A pre-publication interruption leaves no partial document ref;
+unreachable objects are normal Git garbage-collection candidates. If a create
+response is lost, inspect the document list before retrying creation. After a
+lost save response, reopen the latest revision rather than forcing an old
+revision token. No draft-specific repair/reset command is needed.
+
+Review, approval, signatures, publication and reference validation are not yet
+available. See the [draft document contract](../architecture/EQMS-023.md).
+
+Authoring checks:
+
+```sh
+cargo test --workspace --locked
+./gradlew :apps:desktop:test :core:ui:jvmTest :core:ui:compileKotlinWasmJs
+```
+
 ## Web module tasks
 
 - Build development webpack bundle:

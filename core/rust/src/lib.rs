@@ -3,6 +3,7 @@ pub const fn version() -> &'static str {
     env!("CARGO_PKG_VERSION")
 }
 
+pub mod document;
 pub mod index;
 pub mod workspace;
 

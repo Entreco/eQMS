@@ -15,6 +15,14 @@ remains a scaffold. See [PLANNING.md](PLANNING.md) for the roadmap,
 [EQMS-005 workspace contract](docs/architecture/EQMS-005.md), and
 [Build and Run](docs/operations/BuildAndRun.md) for commands.
 
+Document authoring adds **New document**, a plain Markdown editor, explicit
+**Save**, and read-only history/comparison in desktop. Native
+`qms document create/list/show/save/history/diff` owns persistence. Each
+document's Draft history lives on an isolated Git ref; saving does not publish
+or change the controlled baseline. Review, signatures, publication, and
+reference validation remain follow-up work. See the
+[EQMS-023 draft contract](docs/architecture/EQMS-023.md).
+
 ## Core direction
 
 - **Canonical artifacts** use a minimal Markdown-based format for documents, procedures, policies, and records.

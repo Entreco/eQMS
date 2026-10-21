@@ -25,13 +25,33 @@ interface ProjectCapabilities {
 }
 
 @Composable
-fun ProjectScreen(capabilities: ProjectCapabilities) {
+fun ProjectScreen(
+    capabilities: ProjectCapabilities,
+    documentCapabilities: DocumentCapabilities? = null,
+    closeRequested: Boolean = false,
+    onCloseHandled: () -> Unit = {},
+    onCloseConfirmed: () -> Unit = {},
+) {
     val scope = rememberCoroutineScope()
     var project by remember { mutableStateOf<String?>(null) }
     var message by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var creating by remember { mutableStateOf<Boolean?>(null) }
+    var documentDirty by remember { mutableStateOf(false) }
+    var documentBusy by remember { mutableStateOf(false) }
+    var pendingNavigation by remember { mutableStateOf<(() -> Unit)?>(null) }
+
+    fun navigate(action: () -> Unit) {
+        if (documentDirty) pendingNavigation = action else action()
+    }
+
+    LaunchedEffect(closeRequested, busy, documentBusy) {
+        if (closeRequested && !busy && !documentBusy) {
+            navigate(onCloseConfirmed)
+            onCloseHandled()
+        }
+    }
 
     MaterialTheme {
         Surface(Modifier.fillMaxSize()) {
@@ -40,13 +60,39 @@ fun ProjectScreen(capabilities: ProjectCapabilities) {
                 Text("Create a project or open an existing verified workspace.")
                 project?.let { Text("Current project: $it") }
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Button(enabled = !busy, onClick = { creating = true }) { Text("Create project") }
-                    Button(enabled = !busy, onClick = { creating = false }) { Text("Open project") }
+                    Button(enabled = !busy && !documentBusy, onClick = { navigate { creating = true } }) { Text("Create project") }
+                    Button(enabled = !busy && !documentBusy, onClick = { navigate { creating = false } }) { Text("Open project") }
                 }
                 if (busy) Text("Working...")
                 message?.let {
                     Text(it, color = if (error) MaterialTheme.colors.error else MaterialTheme.colors.onSurface)
                 }
+                if (creating == null && !busy) {
+                    project?.let { path ->
+                        documentCapabilities?.let { documents ->
+                            key(path) {
+                                DocumentScreen(
+                                    path, documents, requestNavigation = { navigate(it) },
+                                    onStateChanged = { dirty, working -> documentDirty = dirty; documentBusy = working },
+                                    modifier = Modifier.weight(1f),
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+            pendingNavigation?.let { action ->
+                AlertDialog(
+                    onDismissRequest = { pendingNavigation = null },
+                    title = { Text("Unsaved changes") },
+                    text = { Text("Discard your unsaved document edits?") },
+                    confirmButton = {
+                        TextButton(onClick = { pendingNavigation = null; documentDirty = false; action() }) { Text("Discard changes") }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { pendingNavigation = null }) { Text("Keep editing") }
+                    },
+                )
             }
             creating?.let { create ->
                 DirectoryDialog(
