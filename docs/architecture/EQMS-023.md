@@ -46,6 +46,13 @@ the workspace OS lock, require configured Git identity, build blobs/trees and a
 single-parent commit using Git plumbing, validate the candidate, then
 `update-ref` with the expected old commit. Creation expects an absent ref.
 Save requires an exact full revision token, including for unchanged saves.
+Ref publication uses `update-ref --no-deref` so a symbolic draft ref cannot
+redirect writes to another branch. History parses/hashes the head journal once,
+then checks ancestor journals against its verified prefixes. A changed save
+reuses the verified parent when validating its newly constructed candidate.
+This removes repeated journal decoding/hash-chain validation, not all cumulative
+history cost: ancestor journal bytes are still read and compared, and each
+revision's content/tree/ancestry is still checked.
 Unchanged canonical content returns the existing saved revision.
 
 Only the document and `.eqms/journal.jsonl` change in a draft commit.

@@ -6,7 +6,7 @@ pub(crate) fn command() -> Command {
     Command::new("document")
         .about("Create, save and inspect document drafts")
         .subcommand_required(true)
-        .subcommand(operation("create").arg(Arg::new("title").long("title").required(true)))
+        .subcommand(operation("create").arg(title_argument()))
         .subcommand(operation("list"))
         .subcommand(
             operation("show")
@@ -16,7 +16,7 @@ pub(crate) fn command() -> Command {
         .subcommand(
             operation("save")
                 .arg(Arg::new("id").required(true))
-                .arg(Arg::new("title").long("title").required(true))
+                .arg(title_argument())
                 .arg(Arg::new("expected").long("expected").required(true)),
         )
         .subcommand(operation("history").arg(Arg::new("id").required(true)))
@@ -26,6 +26,13 @@ pub(crate) fn command() -> Command {
                 .arg(Arg::new("from").required(true))
                 .arg(Arg::new("to").required(true)),
         )
+}
+
+fn title_argument() -> Arg {
+    Arg::new("title")
+        .long("title")
+        .required(true)
+        .allow_hyphen_values(true)
 }
 
 fn operation(name: &'static str) -> Command {
@@ -137,6 +144,37 @@ mod tests {
     impl Read for FailingReader {
         fn read(&mut self, _: &mut [u8]) -> io::Result<usize> {
             Err(io::Error::other("injected input failure"))
+        }
+    }
+
+    #[test]
+    fn create_and_save_accept_hyphen_leading_titles() {
+        let fixture = Fixture::new();
+        for create_args in [
+            vec!["create", "--title", "-20\u{00b0}C storage"],
+            vec!["create", "--title=-20\u{00b0}C storage"],
+        ] {
+            let created = fixture
+                .run(&create_args, &mut Cursor::new("original"))
+                .unwrap();
+            assert_eq!(created["data"]["title"], "-20\u{00b0}C storage");
+            let id = created["data"]["id"].as_str().unwrap();
+            let revision = created["data"]["revision"].as_str().unwrap();
+            let saved = fixture
+                .run(
+                    &[
+                        "save",
+                        id,
+                        "--title",
+                        "-20\u{00b0}C storage",
+                        "--expected",
+                        revision,
+                    ],
+                    &mut Cursor::new("updated"),
+                )
+                .unwrap();
+            assert_eq!(saved["data"]["title"], "-20\u{00b0}C storage");
+            assert_eq!(saved["data"]["body"], "updated");
         }
     }
 

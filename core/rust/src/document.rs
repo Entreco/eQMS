@@ -14,6 +14,24 @@ const PREFIX: &str = "refs/heads/eqms-drafts/";
 const JOURNAL: &str = ".eqms/journal.jsonl";
 static NEXT: AtomicU64 = AtomicU64::new(0);
 
+#[cfg(test)]
+thread_local! {
+    static VALIDATED_RECORDS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+fn verify_journal(bytes: &[u8]) -> Result<Vec<JournalRecord>, WorkspaceError> {
+    let records = parse_and_verify_journal(bytes)?;
+    #[cfg(test)]
+    VALIDATED_RECORDS.with(|count| count.set(count.get() + records.len()));
+    Ok(records)
+}
+
+struct VerifiedHistory {
+    documents: Vec<Document>,
+    journal: Vec<u8>,
+    last: JournalRecord,
+}
+
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 struct Metadata {
@@ -272,7 +290,7 @@ impl Documents {
             .trim()
             .to_owned();
         let content = canonical(&id, title, body)?;
-        self.record(&id, &base, None, &content)
+        self.record(&id, &base, None, &content, None)
     }
 
     pub fn save(
@@ -290,12 +308,13 @@ impl Documents {
                 "document changed since it was opened; reopen before saving (your edits were not saved)",
             ));
         }
-        let previous = self.history_at(id, &current)?.remove(0);
+        let verified = self.verified_history(id, &current)?;
+        let previous = &verified.documents[0];
         let content = canonical(id, title, body)?;
         if previous.content_hash == hash(&content) {
-            return Ok(previous);
+            return Ok(previous.clone());
         }
-        self.record(id, &current, Some(expected), &content)
+        self.record(id, &current, Some(expected), &content, Some(&verified))
     }
 
     fn record(
@@ -304,13 +323,22 @@ impl Documents {
         parent: &str,
         expected: Option<&str>,
         content: &[u8],
+        verified_parent: Option<&VerifiedHistory>,
     ) -> Result<Document, WorkspaceError> {
         ensure_git_identity(self.root())?;
-        let mut journal = blob(self.root(), parent, JOURNAL)?;
-        let records = parse_and_verify_journal(&journal)?;
-        let last = records
-            .last()
-            .ok_or_else(|| error("missing journal genesis"))?;
+        let (mut journal, last) = match verified_parent {
+            Some(verified) => (verified.journal.clone(), verified.last.clone()),
+            None => {
+                let journal = blob(self.root(), parent, JOURNAL)?;
+                let records = verify_journal(&journal)?;
+                let last = records
+                    .last()
+                    .ok_or_else(|| error("missing journal genesis"))?
+                    .clone();
+                (journal, last)
+            }
+        };
+        let parent_length = journal.len();
         let path = format!("documents/{id}.md");
         let mut payload = BTreeMap::from([("document_id".to_owned(), id.to_owned())]);
         if expected.is_none() {
@@ -372,12 +400,20 @@ impl Documents {
             ],
             format!("Save draft {id}\n").as_bytes(),
         )?;
-        let document = self.history_at(id, &revision)?.remove(0);
+        if blob(self.root(), &revision, JOURNAL)? != journal {
+            return Err(error("candidate journal differs from constructed event"));
+        }
+        let (document, actual_parent, _) =
+            self.verify_revision(id, &revision, &event, &journal[..parent_length])?;
+        if actual_parent != parent {
+            return Err(error("candidate parent differs from verified parent"));
+        }
         let absent = "0".repeat(revision.len());
         git(
             self.root(),
             &[
                 "update-ref",
+                "--no-deref",
                 &format!("{PREFIX}{id}"),
                 &revision,
                 expected.unwrap_or(&absent),
@@ -387,108 +423,138 @@ impl Documents {
     }
 
     fn history_at(&self, id: &str, head: &str) -> Result<Vec<Document>, WorkspaceError> {
+        Ok(self.verified_history(id, head)?.documents)
+    }
+
+    fn verified_history(&self, id: &str, head: &str) -> Result<VerifiedHistory, WorkspaceError> {
         validate_id(id)?;
         if !valid_hex(head, &[40, 64]) {
             return Err(error("invalid saved revision"));
         }
-        let path = format!("documents/{id}.md");
+        let journal = blob(self.root(), head, JOURNAL)?;
+        let records = verify_journal(&journal)?;
+        let last = records
+            .last()
+            .ok_or_else(|| error("missing document event"))?
+            .clone();
+        let boundaries: Vec<_> = journal
+            .iter()
+            .enumerate()
+            .filter_map(|(index, byte)| (*byte == b'\n').then_some(index + 1))
+            .collect();
+        let mut event_index = records.len() - 1;
         let mut revision = head.to_owned();
         let mut history = Vec::new();
         loop {
-            let parents = git_text(
-                self.root(),
-                &["rev-list", "--parents", "-n", "1", &revision],
+            if event_index == 0 {
+                return Err(error("missing document creation event"));
+            }
+            let event = &records[event_index];
+            // Each parent must equal the head's verified prefix, so it needs no reparse.
+            let (document, parent, created) = self.verify_revision(
+                id,
+                &revision,
+                event,
+                &journal[..boundaries[event_index - 1]],
             )?;
-            let parents: Vec<_> = parents.split_whitespace().collect();
-            if parents.len() != 2 {
-                return Err(error("draft revisions require exactly one parent"));
+            history.push(document);
+            if created {
+                return Ok(VerifiedHistory {
+                    documents: history,
+                    journal,
+                    last,
+                });
             }
-            let parent = parents[1];
-            let bytes = blob(self.root(), &revision, &path)?;
-            for canonical_path in [&path, JOURNAL] {
-                let entry = git(self.root(), &["ls-tree", &revision, "--", canonical_path])?;
-                if !entry.stdout.starts_with(b"100644 blob ") {
-                    return Err(error("document and journal must be regular Git blobs"));
-                }
+            revision = parent;
+            event_index -= 1;
+        }
+    }
+
+    fn verify_revision(
+        &self,
+        id: &str,
+        revision: &str,
+        event: &JournalRecord,
+        parent_journal: &[u8],
+    ) -> Result<(Document, String, bool), WorkspaceError> {
+        let path = format!("documents/{id}.md");
+        let parents = git_text(self.root(), &["rev-list", "--parents", "-n", "1", revision])?;
+        let parents: Vec<_> = parents.split_whitespace().collect();
+        if parents.len() != 2 {
+            return Err(error("draft revisions require exactly one parent"));
+        }
+        let parent = parents[1];
+        let bytes = blob(self.root(), revision, &path)?;
+        for canonical_path in [&path, JOURNAL] {
+            let entry = git(self.root(), &["ls-tree", revision, "--", canonical_path])?;
+            if !entry.stdout.starts_with(b"100644 blob ") {
+                return Err(error("document and journal must be regular Git blobs"));
             }
-            let (title, body) = decode(&bytes, id)?;
-            let journal = blob(self.root(), &revision, JOURNAL)?;
-            let records = parse_and_verify_journal(&journal)?;
-            let event = records
-                .last()
-                .ok_or_else(|| error("missing document event"))?;
-            let parent_journal = blob(self.root(), parent, JOURNAL)?;
-            parse_and_verify_journal(&parent_journal)?;
-            let mut extension = parent_journal;
-            serde_json::to_writer(&mut extension, event).map_err(|e| error(e.to_string()))?;
-            extension.push(b'\n');
-            let created = event.event_type == "document.created";
-            let expected_payload = if created {
-                BTreeMap::from([
-                    ("document_id".to_owned(), id.to_owned()),
-                    ("base_revision".to_owned(), parent.to_owned()),
-                ])
-            } else {
-                BTreeMap::from([("document_id".to_owned(), id.to_owned())])
-            };
-            let changed = git(
-                self.root(),
-                &[
-                    "diff-tree",
-                    "--no-commit-id",
-                    "--name-only",
-                    "-r",
-                    "-z",
-                    parent,
-                    &revision,
-                ],
-            )?
-            .stdout;
-            let changed: Vec<_> = changed
-                .split(|b| *b == 0)
-                .filter(|p| !p.is_empty())
-                .collect();
-            if (!created && event.event_type != "document.saved")
-                || event.payload != expected_payload
-                || extension != journal
-                || event.content_hashes != BTreeMap::from([(path.clone(), hash(&bytes))])
-                || changed.len() != 2
-                || !changed.contains(&JOURNAL.as_bytes())
-                || !changed.contains(&path.as_bytes())
-            {
-                return Err(error("invalid document revision or audit linkage"));
-            }
-            if !created && blob(self.root(), parent, &path)? == bytes {
-                return Err(error("unchanged content recorded as a new revision"));
-            }
-            let author = git_text(
-                self.root(),
-                &["show", "-s", "--format=%an <%ae>", &revision],
-            )?
+        }
+        let (title, body) = decode(&bytes, id)?;
+        if blob(self.root(), parent, JOURNAL)? != parent_journal {
+            return Err(error("ancestor journal differs from verified head prefix"));
+        }
+        let created = event.event_type == "document.created";
+        let expected_payload = if created {
+            BTreeMap::from([
+                ("document_id".to_owned(), id.to_owned()),
+                ("base_revision".to_owned(), parent.to_owned()),
+            ])
+        } else {
+            BTreeMap::from([("document_id".to_owned(), id.to_owned())])
+        };
+        let changed = git(
+            self.root(),
+            &[
+                "diff-tree",
+                "--no-commit-id",
+                "--name-only",
+                "-r",
+                "-z",
+                parent,
+                revision,
+            ],
+        )?
+        .stdout;
+        let changed: Vec<_> = changed
+            .split(|b| *b == 0)
+            .filter(|p| !p.is_empty())
+            .collect();
+        if (!created && event.event_type != "document.saved")
+            || event.payload != expected_payload
+            || event.content_hashes != BTreeMap::from([(path.clone(), hash(&bytes))])
+            || changed.len() != 2
+            || !changed.contains(&JOURNAL.as_bytes())
+            || !changed.contains(&path.as_bytes())
+        {
+            return Err(error("invalid document revision or audit linkage"));
+        }
+        if !created && blob(self.root(), parent, &path)? == bytes {
+            return Err(error("unchanged content recorded as a new revision"));
+        }
+        let author = git_text(self.root(), &["show", "-s", "--format=%an <%ae>", revision])?
             .trim()
             .to_owned();
-            history.push(Document {
-                id: id.to_owned(),
-                title,
-                body,
-                status: "Draft".to_owned(),
-                revision: revision.clone(),
-                content_hash: hash(&bytes),
-                event_hash: event.hash.clone(),
-                configured_author: author,
-                local_timestamp: event.timestamp.clone(),
-            });
-            if created {
-                if !git(self.root(), &["ls-tree", "-z", parent, "--", &path])?
-                    .stdout
-                    .is_empty()
-                {
-                    return Err(error("document creation overwrites an existing document"));
-                }
-                return Ok(history);
-            }
-            revision = parent.to_owned();
+        let document = Document {
+            id: id.to_owned(),
+            title,
+            body,
+            status: "Draft".to_owned(),
+            revision: revision.to_owned(),
+            content_hash: hash(&bytes),
+            event_hash: event.hash.clone(),
+            configured_author: author,
+            local_timestamp: event.timestamp.clone(),
+        };
+        if created
+            && !git(self.root(), &["ls-tree", "-z", parent, "--", &path])?
+                .stdout
+                .is_empty()
+        {
+            return Err(error("document creation overwrites an existing document"));
         }
+        Ok((document, parent.to_owned(), created))
     }
 }
 
@@ -522,6 +588,98 @@ mod tests {
         fn drop(&mut self) {
             fs::remove_dir_all(&self.0).unwrap();
         }
+    }
+
+    #[test]
+    fn symbolic_draft_publication_does_not_advance_its_target() {
+        let f = Fixture::new();
+        let first = f.docs().create("Policy", "original").unwrap();
+        let target = "refs/heads/unrelated";
+        let reference = format!("{PREFIX}{}", first.id);
+        git(&f.0, &["update-ref", target, &first.revision]).unwrap();
+        git(&f.0, &["symbolic-ref", &reference, target]).unwrap();
+        let saved = f
+            .docs()
+            .save(&first.id, &first.revision, "Policy", "updated")
+            .unwrap();
+        assert_ne!(saved.revision, first.revision);
+        assert_eq!(
+            git_text(&f.0, &["rev-parse", target]).unwrap().trim(),
+            first.revision
+        );
+        assert_eq!(f.docs().head(&first.id).unwrap(), saved.revision);
+        assert!(git(&f.0, &["symbolic-ref", &reference]).is_err());
+        assert_eq!(f.docs().show(&first.id, None).unwrap(), saved);
+    }
+
+    #[test]
+    fn history_validates_head_records_once_and_save_reuses_verified_parent() {
+        let f = Fixture::new();
+        let mut latest = f.docs().create("Policy", "0").unwrap();
+        for revisions in 1..=8 {
+            VALIDATED_RECORDS.with(|count| count.set(0));
+            assert_eq!(f.docs().history(&latest.id).unwrap().len(), revisions);
+            assert_eq!(VALIDATED_RECORDS.with(|count| count.get()), revisions + 1);
+            VALIDATED_RECORDS.with(|count| count.set(0));
+            latest = f
+                .docs()
+                .save(
+                    &latest.id,
+                    &latest.revision,
+                    "Policy",
+                    &revisions.to_string(),
+                )
+                .unwrap();
+            assert_eq!(VALIDATED_RECORDS.with(|count| count.get()), revisions + 1);
+        }
+        VALIDATED_RECORDS.with(|count| count.set(0));
+        assert_eq!(f.docs().list().unwrap(), vec![latest]);
+        assert_eq!(VALIDATED_RECORDS.with(|count| count.get()), 10);
+    }
+
+    #[test]
+    fn ancestor_journal_must_match_verified_head_prefix() {
+        let f = Fixture::new();
+        let first = f.docs().create("Policy", "original").unwrap();
+        let second = f
+            .docs()
+            .save(&first.id, &first.revision, "Policy", "updated")
+            .unwrap();
+        let base = git_text(&f.0, &["rev-parse", "HEAD"]).unwrap();
+        let forged_tree = replace_tree(
+            &f.0,
+            &first.revision,
+            ".eqms",
+            "tree",
+            git_text(&f.0, &["rev-parse", &format!("{}:.eqms", base.trim())])
+                .unwrap()
+                .trim(),
+        )
+        .unwrap();
+        let forged_parent = input_git(
+            &f.0,
+            &["commit-tree", &forged_tree, "-p", base.trim()],
+            b"Wrong prefix\n",
+        )
+        .unwrap();
+        let head_tree = git_text(
+            &f.0,
+            &["rev-parse", &format!("{}^{{tree}}", second.revision)],
+        )
+        .unwrap();
+        let forged_head = input_git(
+            &f.0,
+            &["commit-tree", head_tree.trim(), "-p", &forged_parent],
+            b"Preserve head journal\n",
+        )
+        .unwrap();
+        git(
+            &f.0,
+            &["update-ref", &format!("{PREFIX}{}", first.id), &forged_head],
+        )
+        .unwrap();
+        let failure = f.docs().history(&first.id).unwrap_err();
+        assert!(failure.to_string().contains("ancestor journal differs"));
     }
 
     #[test]

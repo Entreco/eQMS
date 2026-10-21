@@ -20,6 +20,11 @@ Defined before implementation. Automated outcomes belong in the evidence record.
 | TEST-023-008 | 005, 006, 009 | Direct CLI tests use in-memory readers for create/save, reject invalid UTF-8 and read errors without saving, prove read-only commands do not read stdin, and verify rendering/dispatch envelopes. Existing process-level CLI tests guard compatibility. |
 
 Requirement references in the table use the suffix of `REQ-023-`.
+Review regressions extend TEST-023-002/004/008: symbolic draft publication must
+not advance its target branch; create/save accept separate hyphen-leading title
+arguments; history validates head journal records once and compares ancestor
+journals to verified prefixes, with changed-save candidate checks reusing the
+verified parent. Instrument record-validation counts rather than wall-clock timing.
 Use existing Cargo and Gradle runners. Do not report unexecuted platform/UI
 coverage as passing; document environmental blockers and exclusions.
 
