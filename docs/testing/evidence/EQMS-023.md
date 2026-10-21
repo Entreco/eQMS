@@ -131,3 +131,48 @@ git diff --cached --check
   rerun. The earlier source-revision evidence above remains their coverage.
 - No new human testing or platform coverage is claimed. Manual gates remain
   unchecked; #15 and draft PR #47 retain their review status.
+
+## Review corrections: ref isolation, title parsing and journal verification
+
+Source revision: `96968386847b312df80f06bc759fa296fd56477d`.
+Evidence is committed separately. Same macOS arm64/Rust environment as above.
+
+```sh
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets --locked -- -D warnings
+cargo test --workspace --locked
+cargo build --workspace --release --locked
+git diff --cached --check
+```
+
+All commands passed: 35 core tests, 7 CLI unit tests and 10 CLI integration
+tests; no failures. Kotlin source was unchanged and its suites were not rerun.
+
+- Symbolic draft regression: a draft ref aliases a separate branch containing
+  valid document history. Saving replaces only the named draft ref with its new
+  direct revision; the symbolic target remains at the original revision.
+  Publication uses `update-ref --no-deref`.
+- Title regression: create accepts both separate `--title` and equals-form
+  arguments containing a hyphen-leading Unicode temperature title. Documents
+  from either form can subsequently be saved using the desktop-compatible
+  separate title argument, with the exact title preserved.
+- Validation-count regression: for 1 through 8 saved revisions, each history
+  request validates exactly N+1 journal records (including genesis). A changed
+  save validates that same parent head once and reuses it for candidate checks,
+  rather than traversing the candidate's history again. List on the resulting
+  9-revision document validates 10 records.
+- The counter is thread-local test instrumentation of document journal parsing,
+  not wall-clock timing or a count of the independent baseline verifier.
+- Ancestor-prefix regression constructs a valid head journal with a mismatched
+  parent journal and confirms explicit rejection. Existing corruption, file
+  mode, changed-path, concurrency, unchanged-save and baseline isolation
+  regressions continue to pass.
+- Maps to TEST-023-002/004/008 and REQ-023-002/003/004/005/006/009.
+
+Limitations: journal record decoding/hash validation is linear in the head
+chain, but historical journal blobs are still read/compared to verified byte
+prefixes and content/ancestry is still inspected per revision. This does not
+claim linear total I/O or benchmarked latency. An intermediate Clippy run
+reported needless borrows and a collapsible conditional during extraction;
+corrected before the committed source revision's passing validation.
+Manual review/testing gates remain unchanged.
