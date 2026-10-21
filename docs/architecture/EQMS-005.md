@@ -132,6 +132,8 @@ Migration 2 adds separate saved-draft revision/FTS/vocabulary/source tables for
 EQMS-050/051, without replacing migration 1 rows. Search preparation/rebuild
 derives those rows from verified Git draft histories; the database still owns
 neither authoritative content nor history.
+Migration 3 adds a covering saved-search result-metadata index to avoid loading
+large body pages when ranking candidates.
 
 ## Commands
 

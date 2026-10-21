@@ -26,6 +26,23 @@ are bound to immutable Git object IDs; the cache is not integrity evidence.
 Local administrators replacing Git objects or the database remain outside the
 trusted local-cache boundary. Verification/preparation failures remain errors.
 
+Preparation also runs Git's standard `pack-refs --all` housekeeping, explicitly
+selected after the 10,000-loose-ref benchmark exceeded the warm latency budget.
+Packing changes physical ref storage, not ref names/OIDs, HEAD, canonical files,
+staged data or history. This avoids a metadata cache or persistent service that
+could hide external ref changes. Every query still enumerates authoritative Git
+refs. Packing failures are visible preparation errors; Git's own ref locking
+and compare-before-prune rules handle concurrent external updates.
+
+Workspace verification batches committed blob reads through binary-safe
+`git cat-file --batch -z`, retaining canonical/schema/journal and exact-byte
+content-hash checks. Input writes and output drains run concurrently; literal
+newline paths and binary bytes are preserved. Current-only FTS queries avoid
+historical deduplication windows because there is one current revision per ID.
+Migration 3 adds a covering result-metadata index so ranking does not load the
+large original body pages for every candidate; only displayed excerpts read bodies.
+No verification is skipped to achieve the latency target.
+
 ## Matching and presentation
 
 Normalize fields and literal input identically: Unicode lowercase, alphanumeric
@@ -79,7 +96,7 @@ Risk Management and Security Risk Management both apply proportionately.
 | Historical content mistaken for current/approved | Global-only fallback, explicit historical/Draft labels and read-only opening | Configured author and local time are not authenticated |
 | Edits lost during navigation | Reuse dirty-navigation guards; never save historical snapshots | Unsaved text is not searchable or crash recovery |
 | Query/content injection | Literal tokenization, parameterized SQL, quoted FTS tokens, direct argv, plain-text excerpts | Native executable and local database remain trusted |
-| Cache corruption or partial refresh | Transactional migration/reconciliation; explicit rebuild; retain prior complete index on failure | Cache integrity is not a substitute for authoritative verification |
+| Cache corruption or partial refresh | Transactional migration/reconciliation; explicit rebuild; retain prior complete index on failure | Cache integrity is not a substitute for authoritative verification; standard Git packing changes physical ref storage |
 | Slow matching freezes editing | Background preparation/query, indexed candidate lookup, stale-response guards, measured latency | Initial indexing/history costs are reported separately |
 
 This is a draft design, not approval or compliance evidence.

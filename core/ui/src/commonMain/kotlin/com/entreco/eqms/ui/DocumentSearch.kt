@@ -27,7 +27,14 @@ data class SearchResults(
 enum class SearchGroup { Documents, Authors, Content }
 
 /** Final-input-to-layout timing, including debounce, native query and decoding. */
-data class SearchRenderTiming(val query: String, val historical: Boolean, val elapsedMilliseconds: Double)
+data class SearchRenderTiming(val query: String, val historical: Boolean, val elapsedMilliseconds: Double, val generation: Int = 0)
+
+internal class SearchRenderRequest(
+    val generation: Int,
+    val query: String,
+    val historical: Boolean,
+    val started: TimeSource.Monotonic.ValueTimeMark,
+)
 
 class SearchIndexOutOfDateException(message: String) : Exception(message)
 
@@ -65,6 +72,9 @@ internal class DocumentSearch(
         private set
     var error by mutableStateOf<String?>(null)
         private set
+    var renderRequest by mutableStateOf<SearchRenderRequest?>(null)
+        private set
+    private var measuredGeneration = -1
     private var prepared = false
     private var generation = 0
     private var disposed = false
@@ -74,18 +84,25 @@ internal class DocumentSearch(
     fun dispose() { disposed = true; generation++; job?.cancel() }
     fun updateQuery(value: String) { started = TimeSource.Monotonic.markNow(); query = value; restart(debounce = true) }
     fun refresh() { started = TimeSource.Monotonic.markNow(); prepared = false; restart(debounce = false) }
-    fun renderTiming() = SearchRenderTiming(query, results?.historical == true, started.elapsedNow().inWholeNanoseconds / 1_000_000.0)
+    fun claimRenderTiming(request: SearchRenderRequest): SearchRenderTiming? {
+        if (!current(request.generation) || renderRequest !== request || measuredGeneration == request.generation) return null
+        measuredGeneration = request.generation
+        return SearchRenderTiming(
+            request.query, request.historical, request.started.elapsedNow().inWholeNanoseconds / 1_000_000.0, request.generation,
+        )
+    }
 
     private fun restart(debounce: Boolean) {
         val request = ++generation
         job?.cancel()
         results = null
+        renderRequest = null
         error = null
         preparing = false
         loading = query.isNotBlank()
         val text = query
         job = scope.launch {
-            if (debounce) delay(20)
+            if (debounce) delay(10)
             if (!prepared) {
                 preparing = true
                 val preparation = capabilities.prepareSearch(project)
@@ -118,7 +135,10 @@ internal class DocumentSearch(
             }
             loading = false
             response.fold(
-                onSuccess = { results = it },
+                onSuccess = {
+                    results = it
+                    renderRequest = SearchRenderRequest(request, text, it.historical, started)
+                },
                 onFailure = { error = it.message ?: "Search failed. Refresh search to retry." },
             )
         }
@@ -129,6 +149,7 @@ internal class DocumentSearch(
         val offset = previous.page(group).nextOffset ?: return
         if (loading || preparing) return
         val request = ++generation
+        renderRequest = null
         val text = query
         loading = true
         error = null

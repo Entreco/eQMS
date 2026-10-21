@@ -1,6 +1,6 @@
 use crate::document::{Document, Documents};
 use crate::index::Index;
-use crate::workspace::{WorkspaceError, error};
+use crate::workspace::{WorkspaceError, error, git};
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
@@ -96,6 +96,9 @@ impl SearchEngine for SqliteSearch {
                     changed.insert(id.clone(), documents.history_at(id, revision)?);
                 }
             }
+            // Standard Git housekeeping preserves ref names/OIDs while avoiding a loose-file
+            // read per saved document on every warm search.
+            git(workspace.path(), &["pack-refs", "--all"])?;
             let transaction = index.connection.transaction().map_err(db_error)?;
             if rebuild {
                 transaction
@@ -349,15 +352,23 @@ fn groups(
         let mut seen = HashSet::new();
         for expression in expressions {
             let expression = format!("{field} : ({expression})");
-            let sql = format!("WITH matches AS MATERIALIZED (
+            let sql = if !historical {
+                "SELECT r.id,r.title,r.revision,r.author,r.timestamp,r.rowid
+                 FROM search_fts JOIN search_revisions r INDEXED BY search_result_metadata ON r.rowid=search_fts.rowid
+                 WHERE search_fts MATCH ?1 AND r.ordinal=0
+                 ORDER BY bm25(search_fts),r.id,r.revision LIMIT ?2"
+                    .to_owned()
+            } else {
+                "WITH matches AS MATERIALIZED (
                 SELECT r.rowid,r.id,r.revision,r.ordinal,r.title,r.author,r.timestamp,
                     bm25(search_fts) AS score
-                FROM search_fts JOIN search_revisions r ON r.rowid=search_fts.rowid
-                WHERE search_fts MATCH ?1 AND r.ordinal {} 0
+                FROM search_fts JOIN search_revisions r INDEXED BY search_result_metadata ON r.rowid=search_fts.rowid
+                WHERE search_fts MATCH ?1 AND r.ordinal > 0
             ), best AS (
                 SELECT *, row_number() OVER (PARTITION BY id ORDER BY score,ordinal,revision) AS rn FROM matches
             ) SELECT id,title,revision,author,timestamp,rowid FROM best WHERE rn=1
-              ORDER BY score,id,ordinal,revision LIMIT ?2", if historical { ">" } else { "=" });
+              ORDER BY score,id,ordinal,revision LIMIT ?2".to_owned()
+            };
             let mut statement = connection.prepare(&sql)?;
             let rows = statement.query_map(params![expression, limit_sql], |r| {
                 Ok((
@@ -615,6 +626,8 @@ mod tests {
         let journal = fs::read(f.0.join(".eqms/journal.jsonl")).unwrap();
         fs::write(f.0.join("untracked.txt"), "leave me").unwrap();
         let before = git(&f.0, &["status", "--porcelain=v1"]).unwrap().stdout;
+        git(&f.0, &["tag", "baseline-marker"]).unwrap();
+        let refs_before = git(&f.0, &["show-ref"]).unwrap().stdout;
         assert!(
             f.engine()
                 .search(&SearchQuery {
@@ -627,6 +640,8 @@ mod tests {
         );
         let prepared = f.engine().prepare(false).unwrap();
         assert_eq!(prepared.indexed_revisions, 7);
+        assert_eq!(git(&f.0, &["show-ref"]).unwrap().stdout, refs_before);
+        assert!(f.0.join(".git/packed-refs").is_file());
         let first = f.search("policy");
         assert_eq!(first.documents.hits.len(), 5);
         let second = f

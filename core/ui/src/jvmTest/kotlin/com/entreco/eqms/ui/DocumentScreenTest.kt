@@ -234,6 +234,28 @@ class DocumentScreenTest {
     }
 
     @Test
+    fun layoutTimingReportsExactlyOnceForEachMatchingQueryGeneration() {
+        val capabilities = Capabilities()
+        val timings = mutableListOf<SearchRenderTiming>()
+        compose.setContent {
+            MaterialTheme {
+                DocumentScreen("/project", capabilities, { it() }, { _, _ -> }, onSearchResultsLaidOut = { timings += it })
+            }
+        }
+        val queries = listOf("And", "risk", "And", "trace", "risk")
+        queries.forEachIndexed { index, query ->
+            compose.onNodeWithText("Search saved drafts").performTextReplacement(query)
+            compose.waitUntil(3000) { timings.size > index }
+            compose.runOnIdle {
+                assertEquals(index + 1, timings.size)
+                assertEquals(query, timings[index].query)
+                assertEquals(timings.size, timings.map { it.generation }.distinct().size)
+                assertEquals(queries.take(index + 1), timings.map { it.query })
+            }
+        }
+    }
+
+    @Test
     fun projectAndCloseNavigationWarnBeforeDiscarding() {
         val projects = object : ProjectCapabilities {
             override suspend fun listDirectory(path: String?) = Result.success(DirectoryListing("/project", null, emptyList()))

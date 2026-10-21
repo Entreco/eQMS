@@ -67,7 +67,8 @@ private fun DocumentWorkspace(
     val scope = rememberCoroutineScope()
     val search = remember { DocumentSearch(project, capabilities, scope) }
     val timingCallback by rememberUpdatedState(onSearchResultsLaidOut)
-    val measured = remember(search.results) { booleanArrayOf(false) }
+    val renderRequest = search.renderRequest
+    val displayedResults = search.results
     var documents by remember { mutableStateOf(emptyList<DocumentSnapshot>()) }
     var selected by remember { mutableStateOf<DocumentSnapshot?>(null) }
     var editing by remember { mutableStateOf(false) }
@@ -130,11 +131,9 @@ private fun DocumentWorkspace(
             TextButton(onClick = search::refresh) { Text("Refresh search") }
         }
         Row(Modifier.fillMaxWidth().weight(1f), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            key(renderRequest?.generation) {
             LazyColumn(Modifier.width(200.dp).fillMaxHeight().onGloballyPositioned {
-                if (search.results != null && !measured[0]) {
-                    measured[0] = true
-                    timingCallback(search.renderTiming())
-                }
+                renderRequest?.let { request -> search.claimRenderTiming(request)?.let(timingCallback) }
             }) {
                 if (search.query.isBlank()) {
                     item { Text("Documents", style = MaterialTheme.typography.h6) }
@@ -148,7 +147,7 @@ private fun DocumentWorkspace(
                         )
                     }
                 } else {
-                    search.results?.let { results ->
+                    displayedResults?.let { results ->
                         if (results.historical) item { Text("Draft/history matches — older saved revisions, read-only.") }
                         if (SearchGroup.entries.all { results.page(it).hits.isEmpty() }) item { Text("No matching saved drafts.") }
                         SearchGroup.entries.forEach { group ->
@@ -194,6 +193,7 @@ private fun DocumentWorkspace(
                         }
                     }
                 }
+            }
             }
             if (editing) {
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {

@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fmt::{self, Display, Formatter};
 #[cfg(not(unix))]
@@ -494,8 +494,16 @@ impl Workspace {
                 "workspace has no initial Git commit; run `qms recover <path>`",
             ));
         }
-        ensure_matches_head(&self.path, CONFIG_PATH, &config_bytes)?;
-        ensure_matches_head(&self.path, JOURNAL_PATH, &journal_bytes)?;
+        let content_hashes = &records
+            .last()
+            .expect("genesis record is required")
+            .content_hashes;
+        let mut paths = BTreeSet::from([CONFIG_PATH, JOURNAL_PATH, MODULE_MANIFEST_PATH]);
+        paths.extend(content_hashes.keys().map(String::as_str));
+        let head_blobs = read_head_blobs(&self.path, &paths.into_iter().collect::<Vec<_>>())?;
+        for (path, bytes) in [(CONFIG_PATH, &config_bytes), (JOURNAL_PATH, &journal_bytes)] {
+            ensure_matches_committed(&self.path, path, bytes, &head_blobs[path])?;
+        }
         if let Some(expected_hash) = pending_manifest_hash {
             let actual_hash = format!("sha256:{:x}", Sha256::digest(&manifest_bytes));
             if actual_hash != expected_hash {
@@ -504,15 +512,14 @@ impl Workspace {
                 ));
             }
         } else {
-            ensure_matches_head(&self.path, MODULE_MANIFEST_PATH, &manifest_bytes)?;
+            ensure_matches_committed(
+                &self.path,
+                MODULE_MANIFEST_PATH,
+                &manifest_bytes,
+                &head_blobs[MODULE_MANIFEST_PATH],
+            )?;
         }
-        verify_head_content_hashes(
-            &self.path,
-            &records
-                .last()
-                .expect("genesis record is required")
-                .content_hashes,
-        )?;
+        verify_blob_hashes(&head_blobs, content_hashes)?;
         Ok(records)
     }
 
@@ -1063,9 +1070,16 @@ fn verify_head_content_hashes(
     root: &Path,
     content_hashes: &BTreeMap<String, String>,
 ) -> Result<(), WorkspaceError> {
+    let paths: Vec<_> = content_hashes.keys().map(String::as_str).collect();
+    verify_blob_hashes(&read_head_blobs(root, &paths)?, content_hashes)
+}
+
+fn verify_blob_hashes(
+    blobs: &BTreeMap<String, Vec<u8>>,
+    content_hashes: &BTreeMap<String, String>,
+) -> Result<(), WorkspaceError> {
     for (relative_path, expected_hash) in content_hashes {
-        let output = git(root, &["show", &format!("HEAD:{relative_path}")])?;
-        let actual_hash = format!("sha256:{:x}", Sha256::digest(output.stdout));
+        let actual_hash = format!("sha256:{:x}", Sha256::digest(&blobs[relative_path]));
         if actual_hash != *expected_hash {
             return Err(error(format!(
                 "Git commit does not contain the declared content for {relative_path}"
@@ -1073,6 +1087,85 @@ fn verify_head_content_hashes(
         }
     }
     Ok(())
+}
+
+fn read_head_blobs(
+    root: &Path,
+    paths: &[&str],
+) -> Result<BTreeMap<String, Vec<u8>>, WorkspaceError> {
+    if paths.is_empty() {
+        return Ok(BTreeMap::new());
+    }
+    let mut requests = Vec::new();
+    for path in paths {
+        if path.contains('\0') {
+            return Err(error("Git content path contains NUL"));
+        }
+        requests.extend_from_slice(format!("HEAD:{path}\0").as_bytes());
+    }
+    let mut child = Command::new("git")
+        .arg("--literal-pathspecs")
+        .arg("-C")
+        .arg(root)
+        .args(["cat-file", "--batch", "-z"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| error(format!("cannot execute Git: {e}")))?;
+    let mut input = child
+        .stdin
+        .take()
+        .ok_or_else(|| error("Git stdin unavailable"))?;
+    // Drain stdout concurrently with request writes, including large manifest batches.
+    let bytes = std::thread::scope(|scope| {
+        let writer = scope.spawn(move || input.write_all(&requests));
+        let output = child.wait_with_output();
+        let written = writer
+            .join()
+            .map_err(|_| error("Git batch input writer failed"))?;
+        let output = output?;
+        if !output.status.success() {
+            return Err(error(format!(
+                "Git cat-file failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            )));
+        }
+        written?;
+        Ok(output.stdout)
+    })?;
+    let mut remaining = bytes.as_slice();
+    let mut blobs = BTreeMap::new();
+    for path in paths {
+        let newline = remaining
+            .iter()
+            .position(|b| *b == b'\n')
+            .ok_or_else(|| error("incomplete Git batch header"))?;
+        let header =
+            std::str::from_utf8(&remaining[..newline]).map_err(|e| error(e.to_string()))?;
+        let parts: Vec<_> = header.split_whitespace().collect();
+        if parts.len() != 3 || parts[1] != "blob" {
+            return Err(error(format!(
+                "Git HEAD does not contain a readable blob for {path}"
+            )));
+        }
+        let size: usize = parts[2]
+            .parse()
+            .map_err(|_| error("invalid Git batch blob size"))?;
+        remaining = &remaining[newline + 1..];
+        let content = remaining
+            .get(..size)
+            .ok_or_else(|| error("incomplete Git batch blob"))?;
+        if remaining.get(size) != Some(&b'\n') {
+            return Err(error("missing Git batch blob delimiter"));
+        }
+        blobs.insert((*path).to_owned(), content.to_vec());
+        remaining = &remaining[size + 1..];
+    }
+    if !remaining.is_empty() {
+        return Err(error("unexpected extra Git batch output"));
+    }
+    Ok(blobs)
 }
 
 pub(crate) fn parse_and_verify_journal(bytes: &[u8]) -> Result<Vec<JournalRecord>, WorkspaceError> {
@@ -1149,7 +1242,16 @@ fn ensure_matches_head(
     bytes: &[u8],
 ) -> Result<(), WorkspaceError> {
     let output = git(path, &["show", &format!("HEAD:{relative_path}")])?;
-    if output.stdout != bytes {
+    ensure_matches_committed(path, relative_path, bytes, &output.stdout)
+}
+
+fn ensure_matches_committed(
+    path: &Path,
+    relative_path: &str,
+    bytes: &[u8],
+    committed: &[u8],
+) -> Result<(), WorkspaceError> {
+    if committed != bytes {
         return Err(error(format!(
             "{relative_path} differs from committed Git history; run `qms recover {}` if this is an interrupted journal update",
             path.display()
@@ -1230,6 +1332,41 @@ mod tests {
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].event_type, "workspace.genesis");
         assert!(workspace.index_path().ends_with(".eqms/index.sqlite3"));
+        fs::remove_dir_all(path).unwrap();
+    }
+
+    #[test]
+    fn batch_blob_reads_are_binary_safe_and_drain_large_requests() {
+        let path = temp_dir();
+        configure_git(&path);
+        Workspace::initialize(&path).unwrap();
+        let bytes = [b'a', 0, b'\n', 255].repeat(32);
+        fs::write(path.join("documents/batch.md"), &bytes).unwrap();
+        git(&path, &["add", "documents/batch.md"]).unwrap();
+        git(&path, &["commit", "--quiet", "-m", "Batch read fixture"]).unwrap();
+        let paths = vec!["documents/batch.md"; 5000];
+        let blobs = read_head_blobs(&path, &paths).unwrap();
+        assert_eq!(blobs["documents/batch.md"], bytes);
+        assert!(read_head_blobs(&path, &["documents/missing.md"]).is_err());
+        assert!(read_head_blobs(&path, &["documents"]).is_err());
+        assert!(read_head_blobs(&path, &["documents/\0bad"]).is_err());
+        fs::remove_dir_all(path).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn batch_blob_reads_preserve_newlines_in_paths() {
+        let path = temp_dir();
+        configure_git(&path);
+        Workspace::initialize(&path).unwrap();
+        let relative = "documents/line\nbreak.md";
+        fs::write(path.join(relative), b"original\n").unwrap();
+        git(&path, &["add", relative]).unwrap();
+        git(&path, &["commit", "--quiet", "-m", "Literal path fixture"]).unwrap();
+        assert_eq!(
+            read_head_blobs(&path, &[relative]).unwrap()[relative],
+            b"original\n"
+        );
         fs::remove_dir_all(path).unwrap();
     }
 

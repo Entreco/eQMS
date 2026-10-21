@@ -187,6 +187,9 @@ For later pages pass `--snapshot` from that response and the appropriate
 five hits; offsets default to zero. Source changes invalidate pagination.
 After external edits, run `--prepare` again. `--prepare --rebuild` rebuilds saved
 search data without changing canonical content, draft refs or the baseline index.
+Preparation runs standard Git `pack-refs --all` housekeeping to keep large
+projects fast: physical ref files may move into packed storage, but every ref
+name/revision, HEAD, staged file and history entry is preserved.
 If SQLite corruption prevents opening it, move only the disposable
 `.eqms/index.sqlite3` and its associated SQLite sidecars aside while no process
 is using it, then prepare again. Never remove Git history or canonical files.
@@ -206,7 +209,7 @@ not desktop query-to-render evidence. See [search design](../architecture/EQMS-0
 and [test specification](../testing/EQMS-050.md).
 
 The opt-in Compose benchmark uses that prepared reference fixture and the actual
-desktop/native adapter. It measures five warmups and 30 final-input-to-layout
+desktop/native adapter. It measures 20 warmups and 100 final-input-to-layout
 samples per current query, including debounce, CLI, decoding and layout:
 
 ```sh

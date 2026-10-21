@@ -35,17 +35,22 @@ class DesktopSearchBenchmarkTest {
         assertEquals(10_000 + fixture.getValue("historical_revisions").jsonPrimitive.int, preparation.indexedRevisions)
         val failure = AtomicReference<Throwable?>()
         val timings = Collections.synchronizedList(mutableListOf<SearchRenderTiming>())
+        val nativeTimings = Collections.synchronizedMap(mutableMapOf<String, MutableList<Double>>())
         val capabilities = object : DocumentCapabilities by native {
             override suspend fun listDocuments(project: String) = Result.success(emptyList<DocumentSnapshot>())
             override suspend fun searchDocuments(
                 project: String, query: String, snapshot: String?,
                 documentsOffset: Int, authorsOffset: Int, contentOffset: Int,
-            ): Result<SearchResults> = native.searchDocuments(project, query, snapshot, documentsOffset, authorsOffset, contentOffset)
+            ): Result<SearchResults> {
+                val started = System.nanoTime()
+                return native.searchDocuments(project, query, snapshot, documentsOffset, authorsOffset, contentOffset)
+                .also { nativeTimings.getOrPut(query) { mutableListOf() }.add((System.nanoTime() - started) / 1_000_000.0) }
                 .onFailure { failure.set(it) }
                 .onSuccess {
                     check(!it.historical) { "Warm current query unexpectedly fell back to history." }
                     check(it.content.hits.isNotEmpty()) { "Reference query did not produce expected body matches." }
                 }
+            }
         }
         compose.setContent {
             MaterialTheme {
@@ -57,15 +62,20 @@ class DesktopSearchBenchmarkTest {
         }
         val queries = listOf("And", "risk", "managment", "trace")
         fun query(text: String): SearchRenderTiming {
-            val previous = timings.size
+            val previousGeneration = synchronized(timings) { timings.maxOfOrNull { it.generation } ?: -1 }
             compose.onNodeWithText("Search saved drafts").performTextReplacement(text)
-            compose.waitUntil(30_000) { failure.get() != null || timings.size > previous }
+            fun matches() = synchronized(timings) { timings.filter { it.query == text && it.generation > previousGeneration } }
+            compose.waitUntil(30_000) { failure.get() != null || matches().isNotEmpty() }
             failure.get()?.let { throw AssertionError("Real native search failed", it) }
-            return timings.last().also { assertEquals(text, it.query) }
+            return matches().single().also {
+                assertEquals(text, it.query)
+                assertTrue(it.generation > previousGeneration)
+                synchronized(timings) { assertEquals(1, timings.count { row -> row.generation == it.generation }) }
+            }
         }
-        repeat(5) { queries.forEach { query(it) } }
+        repeat(20) { queries.forEach { query(it) } }
         val samples = queries.associateWith { mutableListOf<SearchRenderTiming>() }
-        repeat(30) { queries.forEach { samples.getValue(it) += query(it) } }
+        repeat(100) { queries.forEach { samples.getValue(it) += query(it) } }
         fun percentile(values: List<Double>, percentile: Double): Double =
             values.sorted()[(ceil(values.size * percentile).toInt() - 1).coerceAtLeast(0)]
         fun command(vararg args: String): String = try {
@@ -79,9 +89,9 @@ class DesktopSearchBenchmarkTest {
             put("fixture", fixture)
             put("snapshot", preparation.snapshot)
             put("initial_preparation_ms", preparationMs)
-            put("debounce_ms", 20)
-            put("warmups_per_query", 5)
-            put("runs_per_query", 30)
+            put("debounce_ms", 10)
+            put("warmups_per_query", 20)
+            put("runs_per_query", 100)
             put("initial_list", "empty override; real search and no-op preparation")
             put("os", "${System.getProperty("os.name")} ${System.getProperty("os.version")}")
             put("arch", System.getProperty("os.arch"))
@@ -89,6 +99,7 @@ class DesktopSearchBenchmarkTest {
             put("physical_memory_bytes", if (System.getProperty("os.name") == "Mac OS X") command("sysctl", "-n", "hw.memsize") else "unavailable")
             put("available_processors", Runtime.getRuntime().availableProcessors())
             put("java", System.getProperty("java.runtime.version"))
+            put("gc_collection_time_ms", java.lang.management.ManagementFactory.getGarbageCollectorMXBeans().sumOf { it.collectionTime.coerceAtLeast(0) })
             put("revision", command("git", "rev-parse", "HEAD"))
             put("working_tree", command("git", "status", "--porcelain"))
             put("binary", executable)
@@ -108,6 +119,7 @@ class DesktopSearchBenchmarkTest {
                         put("p95_ms", percentile(values, 0.95))
                         put("historical", rows.any { it.historical })
                         put("samples_ms", buildJsonArray { values.forEach { add(it) } })
+                        put("native_adapter_samples_ms", buildJsonArray { nativeTimings.getValue(text).takeLast(rows.size).forEach { add(it) } })
                     })
                 }
             })

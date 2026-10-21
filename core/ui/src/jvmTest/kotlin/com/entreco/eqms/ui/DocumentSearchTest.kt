@@ -194,4 +194,34 @@ class DocumentSearchTest {
         assertEquals("stale", search.error)
         search.dispose()
     }
+
+    @Test
+    fun renderTimingBelongsToOneCompletedGenerationAndRejectsStaleLayouts() = runBlocking {
+        val capabilities = object : SearchCapabilities {
+            override suspend fun prepareSearch(project: String) = Result.success(SearchPreparation("snapshot", 1))
+            override suspend fun searchDocuments(project: String, query: String, snapshot: String?, documentsOffset: Int, authorsOffset: Int, contentOffset: Int) =
+                Result.success(results("same result"))
+        }
+        val search = DocumentSearch("project", capabilities, this)
+        search.updateQuery("And")
+        await { search.renderRequest != null }
+        val first = search.renderRequest!!
+        search.updateQuery("risk")
+        assertNull(search.claimRenderTiming(first))
+        await { search.renderRequest != null }
+        val second = search.renderRequest!!
+        assertNull(search.claimRenderTiming(first))
+        val timing = search.claimRenderTiming(second)!!
+        assertEquals("risk", timing.query)
+        assertTrue(timing.generation > first.generation)
+        assertNull(search.claimRenderTiming(second))
+        search.updateQuery("risk")
+        await { search.renderRequest != null }
+        val repeated = search.renderRequest!!
+        assertTrue(repeated.generation > second.generation)
+        assertEquals("risk", search.claimRenderTiming(repeated)?.query)
+        assertNull(search.claimRenderTiming(repeated))
+        search.dispose()
+        assertNull(search.claimRenderTiming(repeated))
+    }
 }
