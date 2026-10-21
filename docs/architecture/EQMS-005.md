@@ -136,3 +136,15 @@ historical store.
 
 `--json` emits schema-versioned command results and errors; operational failures
 exit nonzero. Help remains human-readable.
+
+## Document draft extension
+
+[EQMS-023](EQMS-023.md) adds private `eqms-drafts/<document-id>` branches.
+Authoring constructs committed blobs/trees directly under the existing
+repository lock and advances only the document ref atomically; it never checks
+out a draft or changes baseline working files/index entries. Every draft has
+its own journal extension of its creation baseline. `qms verify` continues to
+verify the selected baseline; document list/show/history/save verify the
+selected drafts separately. The derived baseline index does not include private
+draft contents. `qms recover` is unchanged: draft saves expose either a complete
+revision or no ref update, not a partially appended baseline journal.

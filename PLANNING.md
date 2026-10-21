@@ -203,16 +203,20 @@ unless explicitly stated otherwise.
 - Canonical formatter normalizes output.
 - Stable content hash is reproducible.
 
-### EQMS-023: Add document creation and history commands
+### EQMS-023: Create and save document drafts with durable history
 **Type:** Feature  
 **Priority:** P0  
-**Dependencies:** EQMS-003, EQMS-010, EQMS-020, EQMS-030  
-**Description:** Create and inspect compact documents/process definitions through the native CLI.
+**Dependencies:** EQMS-003, EQMS-010, EQMS-020, EQMS-030, EQMS-090
+
+**Description:** Create/save/reopen Draft documents through native CLI and shared desktop UI, with isolated Git-backed history and read-only comparison. Minimal document identity/encoding/draft-event contracts are specified in [EQMS-023](docs/architecture/EQMS-023.md); generalized prerequisite scopes remain open.
 **Acceptance criteria:**
-- `qms document create`, `qms document history`, and `qms document diff` have documented human/JSON contracts.
-- Creation validates metadata, assigns stable artifact IDs, and defaults to Draft.
-- Each recorded revision binds canonical content to Git history and the audit journal.
-- Diff/history identify exact versions; invalid paths and conflicting edits fail explicitly without data loss.
+- `qms document create/list/show/save/history/diff` have documented human/JSON contracts.
+- New document validates a required title and generates a stable ID; plain Markdown is always Draft.
+- Each changed save atomically binds exact canonical content to a private Git draft ref and its hash-chained journal, leaving baseline files/refs and index untouched.
+- Explicit expected revisions reject stale saves; unchanged content creates no revision.
+- Desktop provides document list, reopen/edit, saved history and read-only comparison without Git terminology, retains failed edits, and guards dirty navigation/close.
+- Exact history/diff reject unrelated revisions and corrupted content/events. Risks, requirements, tests and evidence are linked before draft PR review.
+- Review/signatures, publication, reference validation, autosave, rich text, attachments and distributed blockchain are excluded.
 
 ### EQMS-021: Implement document lifecycle workflow
 **Type:** Feature  

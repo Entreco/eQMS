@@ -3,6 +3,121 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 static NEXT: AtomicUsize = AtomicUsize::new(0);
 
+#[test]
+fn document_commands_persist_drafts_and_report_conflicts() {
+    use std::io::Write;
+    use std::process::Stdio;
+    let root = std::env::temp_dir().join(format!(
+        "eqms-cli-documents-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    std::fs::create_dir(&root).unwrap();
+    for args in [
+        &["init", "--quiet"][..],
+        &["config", "user.name", "CLI Test"],
+        &["config", "user.email", "cli@example.invalid"],
+    ] {
+        assert!(
+            Command::new("git")
+                .arg("-C")
+                .arg(&root)
+                .args(args)
+                .status()
+                .unwrap()
+                .success()
+        );
+    }
+    assert!(
+        Command::new(env!("CARGO_BIN_EXE_qms"))
+            .arg("init")
+            .arg(&root)
+            .output()
+            .unwrap()
+            .status
+            .success()
+    );
+    let invoke = |args: &[&str], body: &str| {
+        let mut child = Command::new(env!("CARGO_BIN_EXE_qms"))
+            .args(["--json", "document", args[0]])
+            .arg(&root)
+            .args(&args[1..])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(body.as_bytes())
+            .unwrap();
+        child.wait_with_output().unwrap()
+    };
+    let created = invoke(&["create", "--title", "Quality policy"], "First\n");
+    assert!(
+        created.status.success(),
+        "{}",
+        String::from_utf8_lossy(&created.stderr)
+    );
+    let json: serde_json::Value = serde_json::from_slice(&created.stdout).unwrap();
+    assert_eq!(json["schema_version"], 1);
+    assert_eq!(json["command"], "document.create");
+    let id = json["data"]["id"].as_str().unwrap();
+    let first = json["data"]["revision"].as_str().unwrap();
+    let saved = invoke(
+        &["save", id, "--title", "Quality policy", "--expected", first],
+        "Second\n",
+    );
+    assert!(saved.status.success());
+    let saved: serde_json::Value = serde_json::from_slice(&saved.stdout).unwrap();
+    let second = saved["data"]["revision"].as_str().unwrap();
+    for (args, command) in [
+        (vec!["list"], "document.list"),
+        (vec!["show", id, "--revision", first], "document.show"),
+        (vec!["history", id], "document.history"),
+        (vec!["diff", id, first, second], "document.diff"),
+    ] {
+        let output = invoke(&args, "");
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let result: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(result["command"], command);
+        assert_eq!(result["status"], "ok");
+        if command == "document.diff" {
+            assert!(result["data"].as_str().unwrap().contains("+Second"));
+        }
+        if command == "document.history" {
+            assert_eq!(result["data"].as_array().unwrap().len(), 2);
+        }
+    }
+    let conflict = invoke(
+        &["save", id, "--title", "Quality policy", "--expected", first],
+        "Lost",
+    );
+    assert_eq!(conflict.status.code(), Some(1));
+    assert!(conflict.stdout.is_empty());
+    let error: serde_json::Value = serde_json::from_slice(&conflict.stderr).unwrap();
+    assert_eq!(error["error"]["code"], "OPERATION_FAILED");
+    let human = Command::new(env!("CARGO_BIN_EXE_qms"))
+        .args(["document", "show"])
+        .arg(&root)
+        .arg(id)
+        .output()
+        .unwrap();
+    assert!(human.status.success());
+    assert!(
+        String::from_utf8(human.stdout)
+            .unwrap()
+            .contains("Quality policy")
+    );
+    std::fs::remove_dir_all(root).unwrap();
+}
+
 fn run(args: &[&str]) -> Output {
     let dir = std::env::temp_dir().join(format!(
         "eqms-cli-{}-{}",

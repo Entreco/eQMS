@@ -1,6 +1,6 @@
 package com.entreco.eqms.desktop
 
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.*
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
@@ -137,21 +137,42 @@ private fun JsonObject.intValue(key: String): Int? =
         null
     }
 
-private fun executeProcess(executable: String, arguments: List<String>): ProcessResult {
+internal fun executeProcess(executable: String, arguments: List<String>, input: String? = null): ProcessResult {
     val process = ProcessBuilder(listOf(executable) + arguments)
         .redirectErrorStream(true)
         .start()
-    val output = process.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
-    return ProcessResult(process.waitFor(), output)
+    val writeError = java.util.concurrent.atomic.AtomicReference<IOException?>()
+    val writer = Thread {
+        try {
+            process.outputStream.bufferedWriter(Charsets.UTF_8).use { it.write(input ?: "") }
+        } catch (error: IOException) {
+            writeError.set(error)
+        }
+    }.apply { start() }
+    try {
+        val output = process.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+        val exit = process.waitFor()
+        writer.join()
+        if (exit == 0) writeError.get()?.let { throw it }
+        return ProcessResult(exit, output)
+    } finally {
+        if (process.isAlive) process.destroyForcibly()
+    }
 }
 
 fun main() = application {
     val capabilities = remember { DesktopProjectCapabilities() }
+    val documents = remember { DesktopDocumentCapabilities() }
+    var closeRequested by remember { mutableStateOf(false) }
     Window(
-        onCloseRequest = ::exitApplication,
+        onCloseRequest = { closeRequested = true },
         title = "eQMS",
-        state = rememberWindowState(width = 840.dp, height = 560.dp),
+        state = rememberWindowState(width = 1100.dp, height = 800.dp),
     ) {
-        ProjectScreen(capabilities)
+        ProjectScreen(
+            capabilities, documents, closeRequested,
+            onCloseHandled = { closeRequested = false },
+            onCloseConfirmed = ::exitApplication,
+        )
     }
 }

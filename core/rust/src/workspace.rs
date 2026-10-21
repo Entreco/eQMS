@@ -244,7 +244,7 @@ impl From<io::Error> for WorkspaceError {
     }
 }
 
-fn error(message: impl Into<String>) -> WorkspaceError {
+pub(crate) fn error(message: impl Into<String>) -> WorkspaceError {
     WorkspaceError(message.into())
 }
 
@@ -776,7 +776,7 @@ fn write_journal(root: &Path, records: &[JournalRecord]) -> Result<(), Workspace
     Ok(())
 }
 
-fn timestamp() -> Result<String, WorkspaceError> {
+pub(crate) fn timestamp() -> Result<String, WorkspaceError> {
     let duration = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_err(|e| error(format!("system clock is before Unix epoch: {e}")))?;
@@ -787,7 +787,7 @@ fn timestamp() -> Result<String, WorkspaceError> {
     ))
 }
 
-fn with_hash(mut record: JournalRecord) -> Result<JournalRecord, WorkspaceError> {
+pub(crate) fn with_hash(mut record: JournalRecord) -> Result<JournalRecord, WorkspaceError> {
     let event = JournalEvent {
         schema_version: record.schema_version,
         sequence: record.sequence,
@@ -1075,7 +1075,7 @@ fn verify_head_content_hashes(
     Ok(())
 }
 
-fn parse_and_verify_journal(bytes: &[u8]) -> Result<Vec<JournalRecord>, WorkspaceError> {
+pub(crate) fn parse_and_verify_journal(bytes: &[u8]) -> Result<Vec<JournalRecord>, WorkspaceError> {
     if !bytes.ends_with(b"\n") {
         return Err(error("journal ends with an incomplete record"));
     }
@@ -1130,7 +1130,7 @@ fn parse_and_verify_journal(bytes: &[u8]) -> Result<Vec<JournalRecord>, Workspac
     Ok(records)
 }
 
-fn ensure_git_identity(path: &Path) -> Result<(), WorkspaceError> {
+pub(crate) fn ensure_git_identity(path: &Path) -> Result<(), WorkspaceError> {
     for variable in ["GIT_AUTHOR_IDENT", "GIT_COMMITTER_IDENT"] {
         let output = git(path, &["-c", "user.useConfigOnly=true", "var", variable])?;
         let identity = String::from_utf8_lossy(&output.stdout);
@@ -1167,13 +1167,13 @@ fn has_head(path: &Path) -> bool {
         .is_ok_and(|output| output.status.success())
 }
 
-fn git_text(path: &Path, args: &[&str]) -> Result<String, WorkspaceError> {
+pub(crate) fn git_text(path: &Path, args: &[&str]) -> Result<String, WorkspaceError> {
     let output = git(path, args)?;
     String::from_utf8(output.stdout)
         .map_err(|e| error(format!("Git returned non-UTF-8 output: {e}")))
 }
 
-fn git(path: &Path, args: &[&str]) -> Result<Output, WorkspaceError> {
+pub(crate) fn git(path: &Path, args: &[&str]) -> Result<Output, WorkspaceError> {
     let output = Command::new("git")
         .arg("--literal-pathspecs")
         .arg("-C")
