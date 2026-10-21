@@ -13,7 +13,7 @@ class WorkspaceCliTest {
         val executor = RecordingExecutor(
             ProcessResult(
                 exitCode = 0,
-                output = """{"schema_version":1,"status":"ok","command":"init","path":"a project"}""",
+                output = success("init", """{"path":"a project"}"""),
             ),
         )
 
@@ -29,7 +29,7 @@ class WorkspaceCliTest {
         val executor = RecordingExecutor(
             ProcessResult(
                 exitCode = 0,
-                output = """{"schema_version":1,"status":"ok","command":"verify","path":"/tmp/project","journal_records":1}""",
+                output = success("verify", """{"path":"/tmp/project","journal_records":1}"""),
             ),
         )
 
@@ -45,7 +45,7 @@ class WorkspaceCliTest {
         val executor = RecordingExecutor(
             ProcessResult(
                 exitCode = 1,
-                output = """{"schema_version":1,"status":"error","error":{"code":"OPERATION_FAILED","message":"workspace is invalid"}}""",
+                output = failure("verify", "OPERATION_FAILED", "workspace is invalid"),
             ),
         )
 
@@ -59,19 +59,21 @@ class WorkspaceCliTest {
     fun malformedUnsupportedAndMismatchedResponsesAreRejected() {
         val outputs = listOf(
             "not json" to "qms returned an invalid JSON response.",
-            """{"schema_version":2,"status":"ok","command":"init","path":"/tmp/project"}""" to
+            success("init", """{"path":"/tmp/project"}""").replace("\"schema_version\":2", "\"schema_version\":\"2\"") to
                 "qms returned an unsupported JSON schema version.",
-            """{"schema_version":1,"status":"error","command":"init","path":"/tmp/project"}""" to
+            success("init", """{"path":"/tmp/project"}""").replace("\"schema_version\":2", "\"schema_version\":1") to
+                "qms returned an unsupported JSON schema version.",
+            failure("init", "INVALID_ARGUMENT", "invalid") to
                 "qms returned an unsuccessful response.",
-            """{"schema_version":1,"status":"ok","command":"verify","path":"/tmp/project"}""" to
+            success("verify", """{"path":"/tmp/project"}""") to
                 "qms returned a response for an unexpected command.",
-            """{"schema_version":1,"status":"ok","command":"init"}""" to
+            success("init", "{}") to
                 "qms returned a response without a project path.",
-            """{"schema_version":1,"status":"ok","command":"init","path":42}""" to
+            success("init", """{"path":42}""") to
                 "qms returned a response without a project path.",
-            """{"schema_version":{},"status":"ok","command":"init","path":"/tmp/project"}""" to
+            success("init", """{"path":"/tmp/project"}""").replace("\"schema_version\":2", "\"schema_version\":{}") to
                 "qms returned an unsupported JSON schema version.",
-            """{"schema_version":"1","status":"ok","command":"init","path":"/tmp/project"}""" to
+            success("init", """{"path":"/tmp/project"}""").replace("\"schema_version\":2", "\"schema_version\":\"2\"") to
                 "qms returned an unsupported JSON schema version.",
         )
 
@@ -83,6 +85,12 @@ class WorkspaceCliTest {
             assertEquals(WorkspaceCommandResult.Failure(expectedMessage), result)
         }
     }
+
+    private fun success(command: String, data: String) =
+        """{"schema_version":2,"status":"ok","command":"$command","timestamp_unix_ms":1792600000000,"findings":[],"references":[],"data":$data,"error":null}"""
+
+    private fun failure(command: String, code: String, message: String) =
+        """{"schema_version":2,"status":"error","command":"$command","timestamp_unix_ms":1792600000000,"findings":[],"references":[],"data":null,"error":{"code":"$code","message":"$message"}}"""
 
     @Test
     fun executableLaunchFailureIsReported() {

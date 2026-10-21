@@ -40,17 +40,27 @@ pub(crate) fn response(args: Vec<OsString>, input: &mut dyn Read) -> Response {
             Response::success(error.to_string())
         }
         Err(error) => Response::usage_error(&error.to_string(), json),
-        Ok(matches) if matches.get_flag("version") => Response::success(output::version(json)),
-        Ok(matches) => {
-            let result = match matches.subcommand() {
-                Some(("document", args)) => document::run(args, json, input),
-                Some((operation @ ("init" | "index" | "verify" | "recover"), args)) => {
-                    workspace::run(operation, args, json)
-                }
-                _ => return Response::usage_error("Specify --version or a command.", json),
-            };
-            Response::from_result(result, json)
+        Ok(matches) if matches.get_flag("version") => {
+            Response::from_result(Ok(output::version(json)), json, "version")
         }
+        Ok(matches) => match matches.subcommand() {
+            Some(("document", args)) => {
+                let command = args
+                    .subcommand_name()
+                    .map(|operation| format!("document.{operation}"))
+                    .unwrap_or_else(|| "document".to_owned());
+                Response::from_result(document::run(args, json, input), json, &command)
+            }
+            Some((operation @ ("init" | "index" | "verify" | "recover"), args)) => {
+                let command = if operation == "index" {
+                    "index.rebuild"
+                } else {
+                    operation
+                };
+                Response::from_result(workspace::run(operation, args, json), json, command)
+            }
+            _ => Response::usage_error("Specify --version or a command.", json),
+        },
     }
 }
 
@@ -90,6 +100,12 @@ mod tests {
             assert_eq!(result.code, 2);
             assert!(result.error);
             let json: serde_json::Value = serde_json::from_str(&result.text).unwrap();
+            assert_eq!(json["schema_version"], 2);
+            assert_eq!(json["status"], "error");
+            assert_eq!(json["data"], serde_json::Value::Null);
+            assert!(json["findings"].is_array());
+            assert!(json["references"].is_array());
+            assert!(json["timestamp_unix_ms"].as_i64().is_some());
             assert_eq!(json["error"]["code"], "INVALID_ARGUMENT");
         }
     }

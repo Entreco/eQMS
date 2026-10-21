@@ -69,9 +69,15 @@ class DesktopProjectCapabilitiesTest {
             val cli = WorkspaceCli("test-qms", ProcessExecutor { _, arguments ->
                 commands += arguments
                 if (arguments.first() == "init") {
-                    ProcessResult(0, """{"schema_version":1,"status":"ok","command":"init","path":"/project with spaces"}""")
+                    ProcessResult(
+                        0,
+                        """{"schema_version":2,"status":"ok","command":"init","timestamp_unix_ms":1792600000000,"findings":[],"references":[],"data":{"path":"/project with spaces"},"error":null}""",
+                    )
                 } else {
-                    ProcessResult(1, """{"error":{"message":"Invalid workspace"}}""")
+                    ProcessResult(
+                        1,
+                        """{"schema_version":2,"status":"error","command":"verify","timestamp_unix_ms":1792600000000,"findings":[],"references":[],"data":null,"error":{"code":"OPERATION_FAILED","message":"Invalid workspace"}}""",
+                    )
                 }
             })
             val capabilities = DesktopProjectCapabilities(cli)

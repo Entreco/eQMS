@@ -24,9 +24,11 @@ and process adaptation; it does not implement initialization, journal
 verification, or Git behavior. The process adapter passes the executable,
 `--json`, command, and path as separate process arguments (never through a
 shell), then validates the exit status and JSON `schema_version`, `status`, and
-command. Nonzero exits, structured CLI errors, malformed output, and executable
-launch failures are shown as failures. A cancelled directory chooser performs
-no operation. The interface remains responsive while the CLI runs.
+command. It requires the schema-version-2 envelope from
+[EQMS-101](EQMS-101.md) and reads the project path from `data.path`. Nonzero
+exits, structured CLI errors, malformed output, and executable launch failures
+are shown as failures. A cancelled directory chooser performs no operation.
+The interface remains responsive while the CLI runs.
 
 The executable is resolved from `EQMS_QMS_PATH` when configured, otherwise
 `qms` on `PATH`. Gradle desktop launches (`run` and `hotRun`) supply the absolute

@@ -134,8 +134,9 @@ historical store.
 - `qms recover <path>` — recover only supported interrupted operations
 - `qms index rebuild <path>` — create/upgrade and rebuild the derived index
 
-`--json` emits schema-versioned command results and errors; operational failures
-exit nonzero. Help remains human-readable.
+`--json` follows the shared schema-version-2 response contract in
+[EQMS-101](EQMS-101.md), including structured command results and errors;
+operational failures exit nonzero. Help remains human-readable.
 
 ## Document draft extension
 

@@ -12,7 +12,7 @@ Defined before implementation. [Requirements](../requirements/EQMS-004.md).
 |---|---|
 | T004-01 | Unit-test nonempty core version; build native release and review core dependency tree (no third-party dependencies). |
 | T004-02 | Invoke empty args, --help, -h: exit 0, help on stdout, empty stderr. |
-| T004-03 | Invoke --version, -V, --json --version and reversed order: exit 0; JSON parses and version matches core. |
+| T004-03 | Invoke --version, -V, --json --version and reversed order: exit 0; JSON parses as schema version 2 and `data.version` matches core. |
 | T004-04 | Unknown command/flag, unexpected value and --json alone: exit 2, empty stdout, actionable stderr; JSON parses with expected code. |
 | T004-05 | Invalid arguments with --json before/after them produce structured errors; JSON plus help remains human-readable. |
 | T004-06 | Run smoke tests in isolated temp directories; verify directory remains empty after each call. |

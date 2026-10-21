@@ -9,7 +9,7 @@ class DesktopDocumentCapabilitiesTest {
     private val revision = "a".repeat(40)
     private val document = """{"id":"$id","title":"Policy","body":"# Policy\n","status":"Draft","revision":"$revision","content_hash":"sha256:${"b".repeat(64)}","event_hash":"${"c".repeat(64)}","configured_author":"Test <test@example.invalid>","local_timestamp":"1.000000000"}"""
     private fun response(command: String, data: String) =
-        """{"schema_version":1,"status":"ok","command":"document.$command","data":$data}"""
+        """{"schema_version":2,"status":"ok","command":"document.$command","timestamp_unix_ms":1792600000000,"findings":[],"references":[],"data":$data,"error":null}"""
 
     @Test
     fun createAndSaveSendBodyOnStdinAndArgumentsWithoutShell() = runBlocking {
@@ -43,12 +43,14 @@ class DesktopDocumentCapabilitiesTest {
     fun malformedProtocolAndWrongDocumentCannotLookSuccessful() = runBlocking {
         val invalid = listOf(
             "not JSON",
-            response("save", document).replace("\"schema_version\":1", "\"schema_version\":\"1\""),
+            response("save", document).replace("\"schema_version\":2", "\"schema_version\":\"2\""),
             response("create", document),
             response("save", document.replace("\"Draft\"", "\"Approved\"")),
             response("save", document.replace(id, "DOC-${"1".repeat(32)}")),
             response("save", document.replace("\"revision\":\"$revision\"", "\"revision\":42")),
-            """{"schema_version":1,"status":"ok","command":"document.save"}""",
+            response("save", document).replace("\"timestamp_unix_ms\":1792600000000", "\"timestamp_unix_ms\":\"bad\""),
+            response("save", document).replace("\"findings\":[]", "\"findings\":{}"),
+            response("save", document).replace("\"schema_version\":2", "\"schema_version\":1"),
         )
         invalid.forEach { output ->
             val capabilities = DesktopDocumentCapabilities("qms", DocumentExecutor { _, _, _ -> ProcessResult(0, output) })
@@ -59,7 +61,7 @@ class DesktopDocumentCapabilitiesTest {
     @Test
     fun operationalAndLaunchErrorsAreVisible() = runBlocking {
         val failed = DesktopDocumentCapabilities("qms", DocumentExecutor { _, _, _ ->
-            ProcessResult(1, """{"schema_version":1,"status":"error","error":{"code":"OPERATION_FAILED","message":"stale save"}}""")
+            ProcessResult(1, """{"schema_version":2,"status":"error","command":"document.create","timestamp_unix_ms":1792600000000,"findings":[],"references":[],"data":null,"error":{"code":"OPERATION_FAILED","message":"stale save"}}""")
         })
         assertEquals("stale save", failed.createDocument("project", "Policy", "").exceptionOrNull()?.message)
         val missing = DesktopDocumentCapabilities("missing", DocumentExecutor { _, _, _ -> throw IOException("not found") })

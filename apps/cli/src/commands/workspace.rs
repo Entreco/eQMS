@@ -37,7 +37,6 @@ pub(crate) fn run(operation: &str, matches: &ArgMatches, json: bool) -> Result<S
             .map(|workspace| {
                 if json {
                     serde_json::json!({
-                        "schema_version": 1, "status": "ok", "command": "init",
                         "path": workspace.path().display().to_string()
                     })
                     .to_string()
@@ -59,7 +58,6 @@ pub(crate) fn run(operation: &str, matches: &ArgMatches, json: bool) -> Result<S
             .map(|(workspace, count)| {
                 if json {
                     serde_json::json!({
-                        "schema_version": 1, "status": "ok", "command": "index.rebuild",
                         "index_path": workspace.index_path().display().to_string(),
                         "indexed_documents": count
                     })
@@ -82,7 +80,6 @@ pub(crate) fn run(operation: &str, matches: &ArgMatches, json: bool) -> Result<S
             .map(|(workspace, count)| {
                 if json {
                     serde_json::json!({
-                        "schema_version": 1, "status": "ok", "command": "verify",
                         "path": workspace.path().display().to_string(), "journal_records": count
                     })
                     .to_string()
@@ -104,7 +101,6 @@ pub(crate) fn run(operation: &str, matches: &ArgMatches, json: bool) -> Result<S
             .map(|workspace| {
                 if json {
                     serde_json::json!({
-                        "schema_version": 1, "status": "ok", "command": "recover",
                         "path": workspace.path().display().to_string()
                     })
                     .to_string()

@@ -81,7 +81,7 @@ pub(crate) fn run(
         _ => unreachable!("known document operation"),
     }
     .map_err(|e| e.to_string())?;
-    output::document(operation, data, json)
+    output::document(data, json)
 }
 
 #[cfg(test)]
@@ -157,9 +157,9 @@ mod tests {
             let created = fixture
                 .run(&create_args, &mut Cursor::new("original"))
                 .unwrap();
-            assert_eq!(created["data"]["title"], "-20\u{00b0}C storage");
-            let id = created["data"]["id"].as_str().unwrap();
-            let revision = created["data"]["revision"].as_str().unwrap();
+            assert_eq!(created["title"], "-20\u{00b0}C storage");
+            let id = created["id"].as_str().unwrap();
+            let revision = created["revision"].as_str().unwrap();
             let saved = fixture
                 .run(
                     &[
@@ -173,8 +173,8 @@ mod tests {
                     &mut Cursor::new("updated"),
                 )
                 .unwrap();
-            assert_eq!(saved["data"]["title"], "-20\u{00b0}C storage");
-            assert_eq!(saved["data"]["body"], "updated");
+            assert_eq!(saved["title"], "-20\u{00b0}C storage");
+            assert_eq!(saved["body"], "updated");
         }
     }
 
@@ -187,9 +187,9 @@ mod tests {
                 &mut Cursor::new("# Policy\n"),
             )
             .unwrap();
-        assert_eq!(created["data"]["body"], "# Policy\n");
-        let id = created["data"]["id"].as_str().unwrap();
-        let revision = created["data"]["revision"].as_str().unwrap();
+        assert_eq!(created["body"], "# Policy\n");
+        let id = created["id"].as_str().unwrap();
+        let revision = created["revision"].as_str().unwrap();
         let saved = fixture
             .run(
                 &[
@@ -203,20 +203,15 @@ mod tests {
                 &mut Cursor::new("Updated\n"),
             )
             .unwrap();
-        assert_eq!(saved["data"]["body"], "Updated\n");
-        assert_eq!(saved["data"]["title"], "Updated policy");
-        assert_ne!(saved["data"]["revision"], revision);
+        assert_eq!(saved["body"], "Updated\n");
+        assert_eq!(saved["title"], "Updated policy");
+        assert_ne!(saved["revision"], revision);
 
         for args in [
             vec!["list"],
             vec!["show", id],
             vec!["history", id],
-            vec![
-                "diff",
-                id,
-                revision,
-                saved["data"]["revision"].as_str().unwrap(),
-            ],
+            vec!["diff", id, revision, saved["revision"].as_str().unwrap()],
         ] {
             assert!(fixture.run(&args, &mut FailingReader).is_ok());
         }
@@ -235,7 +230,7 @@ mod tests {
                 .is_err()
         );
         assert_eq!(
-            fixture.run(&["list"], &mut FailingReader).unwrap()["data"],
+            fixture.run(&["list"], &mut FailingReader).unwrap(),
             serde_json::json!([])
         );
 
@@ -245,13 +240,13 @@ mod tests {
                 &mut Cursor::new("original"),
             )
             .unwrap();
-        let id = created["data"]["id"].as_str().unwrap();
-        let revision = created["data"]["revision"].as_str().unwrap();
+        let id = created["id"].as_str().unwrap();
+        let revision = created["revision"].as_str().unwrap();
         let args = ["save", id, "--title", "Policy", "--expected", revision];
         assert!(fixture.run(&args, &mut FailingReader).is_err());
         assert!(fixture.run(&args, &mut Cursor::new([0xff])).is_err());
         let shown = fixture.run(&["show", id], &mut FailingReader).unwrap();
-        assert_eq!(shown["data"]["revision"], revision);
-        assert_eq!(shown["data"]["body"], "original");
+        assert_eq!(shown["revision"], revision);
+        assert_eq!(shown["body"], "original");
     }
 }

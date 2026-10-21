@@ -86,12 +86,13 @@ All commands accept the project `path` first and global `--json`:
 | `qms document history <path> <id>` | None |
 | `qms document diff <path> <id> <from> <to>` | Two full saved commit IDs |
 
-JSON envelopes use `schema_version: 1`, `status: "ok"`, command
-`document.<operation>`, and `data`. Documents return ID, title, body, Draft
+JSON responses use the schema-version-2 envelope defined by
+[EQMS-101](EQMS-101.md), with command `document.<operation>` and the existing
+command payload under `data`. Documents return ID, title, body, Draft
 status, revision, content hash, event hash, configured author and local
 timestamp. List returns document snapshots; history returns newest-first
 snapshots; diff returns a read-only unified textual diff of canonical content.
-Errors follow the existing CLI error envelope and nonzero exit conventions
+Errors use the shared envelope and nonzero exit conventions
 (`INVALID_ARGUMENT`/2, `OPERATION_FAILED`/1). Human output remains readable.
 Git identity and local time are claims, not authenticated identity/trusted time.
 
