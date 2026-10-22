@@ -5,7 +5,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
-import com.entreco.eqms.ui.ProjectScreen
+import com.entreco.eqms.feature.scaffold.ProjectScreen
 import java.io.IOException
 import java.nio.file.Path
 import kotlinx.serialization.SerializationException

@@ -465,7 +465,7 @@ requirements and tests; targets are not claims of observed results.
 - Launching the desktop app presents **Create project** and **Open project** actions.
 - Create selects a destination and invokes `qms init --json <path>`; existing non-empty data is never overwritten and success is shown only after CLI success.
 - The Create chooser offers an explicit **New folder** action, validates a single child name, creates without overwriting, and selects the new folder. Open remains an existing-folder selection flow.
-- Compose screens and folder dialogs live in `core:ui`; EQMS-092 places Jewel presentation in `jvmMain` while contracts/state retain JVM/Wasm targets. Platform capabilities stay in desktop adapters; browser integration is deferred.
+- Compose screens and folder dialogs live in `feature:scaffold/document/search/ui`; EQMS-092 places Jewel presentation in `jvmMain` while contracts/state retain JVM/Wasm targets. Platform capabilities stay in desktop adapters; browser integration is deferred.
 - Open selects a directory and invokes `qms verify --json <path>`; it is marked open only after verification succeeds.
 - Cancellation, unavailable CLI, malformed responses, invalid workspaces, and command failures are handled explicitly.
 - The Kotlin UI uses the versioned native CLI through an explicit adapter and does not reimplement workspace rules.
@@ -495,7 +495,7 @@ requirements and tests; targets are not claims of observed results.
 - Verified pinned Jewel/Compose dependencies and JBR launch/test runtime.
 - Dark-first IntelliJ-style shell, session light/dark toggle, document/search sidebar, single editor, history/diff panel and truthful status.
 - Preserve create/open, folders, draft saves/conflicts, search, read-only history, visible errors and unsaved navigation/close guards.
-- Keep JVM presentation in `core:ui`, common contracts/state reusable, and native adapters in `apps:desktop`; web bootstrap remains unchanged.
+- Keep JVM presentation in `feature:scaffold/document/search/ui`, common contracts/state reusable, and native adapters in `apps:desktop`; web bootstrap remains unchanged. `core/` is Rust-only; Rust crate splitting is deferred.
 - Runnable real-adapter preview, reproducible captures, mapped regression evidence and draft PR; manual review/testing remains required.
 **Risk and Security Risk Management:** Applicable proportionately; preserve edit-loss, process/error and historical/read-only safeguards. Runtime/dependency provenance and human accessibility review remain limitations. No approval/signature/release workflow or compliance claim.
 

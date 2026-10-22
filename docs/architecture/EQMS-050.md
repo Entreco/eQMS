@@ -59,7 +59,9 @@ historical hits to the best revision per document in each group. Excerpts are
 short plain text. Each group has five rows per page and independent Show more;
 pages are bound to the same source snapshot.
 
-Shared Compose `core:ui` owns the search box/results state and capability DTOs.
+Compose `feature:search` owns search state, capability DTOs and JVM search
+presentation; `feature:document` injects document-list content and selected-hit
+callbacks without a reverse search-to-editor dependency.
 Desktop owns direct-argv native CLI calls on IO dispatchers. Debounce and
 out-of-order response guards must fit the total latency budget. Blank input
 restores the normal list; loading, history fallback, errors and no results differ.

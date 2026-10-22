@@ -6,7 +6,7 @@ plugins {
 }
 
 subprojects {
-    if (path == ":core:ui" || path == ":apps:desktop") {
+    if (path.startsWith(":feature:") || path == ":apps:desktop") {
         pluginManager.withPlugin("org.jetbrains.kotlin.jvm") {
             configureJewelRuntime()
         }

@@ -109,13 +109,35 @@ names, existing paths, and permission errors are shown without overwriting.
 Cancelling the chooser leaves any folder already created on disk but does not
 initialize a workspace. **Open project** selects an existing workspace.
 
-The Jewel project screen and directory dialogs live in `core:ui/jvmMain`.
+The Jewel project screen and directory dialogs live in `feature:scaffold/jvmMain`.
 Capability interfaces, DTOs, and reusable search state remain in `commonMain`,
 with JVM and Wasm targets; Jewel is not available on Wasm. Use **Go** to
 browse an entered directory path, **Up** for its parent, or click a child folder
 to enter it, then **Select directory**. Desktop filesystem and native CLI access
 remain in `apps:desktop`; the browser shell is not wired to these capabilities.
 Desktop still requires a JVM, not Kotlin/Native.
+
+## Source layout
+
+`core/` is Rust-only. `core/rust` currently contains the authoritative domain
+modules (`document`, `search`, `workspace`, `index`); this UI restructuring does
+not split or rename its Cargo crate.
+
+Kotlin UI modules live in `feature/`:
+
+| Module | Owns |
+|---|---|
+| `feature:scaffold` | Project shell, theme, navigation/close guards, directory chooser and project capability contracts |
+| `feature:document` | Draft contracts, document list/editor, save, history and comparison |
+| `feature:search` | Search contracts/state, query field, grouped results, pagination and layout timing |
+| `feature:ui` | Shared Jewel fields, dialogs, rows and focus styling |
+
+Dependencies are one-way: scaffold -> document -> search -> ui, with scaffold
+and document also using ui directly. Contracts/state use `commonMain`;
+Jewel presentation uses `jvmMain`. Each feature retains JVM and Wasm targets.
+The desktop injects filesystem/native CLI adapters; web remains a bootstrap,
+not a browser implementation of these capabilities. The old `core:ui` Gradle
+project and package namespace have been removed.
 
 ## Jewel desktop preview
 
@@ -203,7 +225,8 @@ Authoring checks:
 
 ```sh
 cargo test --workspace --locked
-./gradlew :apps:desktop:test :core:ui:jvmTest :core:ui:compileKotlinWasmJs
+./gradlew :apps:desktop:test :feature:scaffold:jvmTest :feature:document:jvmTest :feature:search:jvmTest :feature:ui:jvmTest
+./gradlew :feature:scaffold:compileKotlinWasmJs :feature:document:compileKotlinWasmJs :feature:search:compileKotlinWasmJs :feature:ui:compileKotlinWasmJs
 ```
 
 ## Search saved documents

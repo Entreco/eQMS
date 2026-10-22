@@ -26,6 +26,11 @@ reference validation remain follow-up work. See the
 
 ## Core direction
 
+`core/` contains Rust domain code (`core/rust`); Kotlin UI is separated into
+`feature:scaffold`, `feature:document`, `feature:search` and shared `feature:ui`.
+Filesystem/native process adapters remain in `apps:desktop`; Rust does not
+depend on UI frameworks. See [source layout](docs/operations/BuildAndRun.md#source-layout).
+
 - **Canonical artifacts** use a minimal Markdown-based format for documents, procedures, policies, and records.
 - **History and auditability** combine Git-backed documents and readable diffs with a hash-chained audit journal. Local hashes alone do not prevent complete history replacement or prove signer identity.
 - **Core modules** cover ledger/auditability, signatures, traceability, search, and release management.

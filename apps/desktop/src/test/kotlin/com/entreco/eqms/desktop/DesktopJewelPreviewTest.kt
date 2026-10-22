@@ -3,7 +3,7 @@ package com.entreco.eqms.desktop
 import androidx.compose.ui.graphics.toAwtImage
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
-import com.entreco.eqms.ui.ProjectScreen
+import com.entreco.eqms.feature.scaffold.ProjectScreen
 import java.io.File
 import java.nio.file.Files
 import javax.imageio.ImageIO

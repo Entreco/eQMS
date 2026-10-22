@@ -20,7 +20,7 @@ tasks.withType<JavaExec>().configureEach {
 }
 
 dependencies {
-    implementation(project(":core:ui"))
+    implementation(project(":feature:scaffold"))
     implementation(compose.desktop.currentOs) { exclude(group = "org.jetbrains.compose.material") }
     implementation(libs.jewel.standalone)
     implementation(libs.kotlinx.coroutines.core)

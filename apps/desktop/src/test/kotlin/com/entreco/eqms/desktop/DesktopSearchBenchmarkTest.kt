@@ -3,7 +3,8 @@ package com.entreco.eqms.desktop
 import org.jetbrains.jewel.intui.standalone.theme.IntUiTheme
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
-import com.entreco.eqms.ui.*
+import com.entreco.eqms.feature.document.*
+import com.entreco.eqms.feature.search.*
 import java.io.File
 import java.security.MessageDigest
 import java.util.Collections

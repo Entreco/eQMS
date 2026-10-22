@@ -28,9 +28,22 @@ Revision selectors use stable `ListComboBox`, not experimental dropdown menus.
 
 ## Boundaries and behavior
 
-`core:ui/commonMain` retains capability contracts, DTOs and reusable search
-state. Desktop composables move to `core:ui/jvmMain`, which alone depends on
-Jewel. `apps:desktop` retains filesystem and native process adapters unchanged.
+Kotlin presentation lives under `feature/`, not Rust-only `core/`:
+
+| Gradle module | Responsibility | Dependencies |
+|---|---|---|
+| feature:ui | Shared Jewel fields, dialogs, selectable rows and focus styling | Compose/Jewel only |
+| feature:search | Common search contracts/state, JVM query/group/pagination presentation | feature:ui |
+| feature:document | Common document contracts and JVM editor/history/diff | feature:search, feature:ui |
+| feature:scaffold | Common project capabilities and JVM project shell/chooser/theme/navigation | feature:document, feature:ui |
+
+Each module retains common contracts/state and a Wasm target; Jewel composables
+are JVM-only. Public contract dependencies use Gradle `api`; implementation-only
+UI dependencies do not leak through the graph. Search accepts injected document
+list content and selection callbacks, never depends back on the editor or
+scaffold, and owns render timing at its actual result-list layout.
+The desktop app depends on the scaffold and its exposed capability contracts.
+`apps:desktop` retains filesystem and native process adapters unchanged.
 Wasm remains buildable; the web bootstrap is not a working browser UI.
 This supersedes the common-screen implementation boundary of R090-08, not its
 platform capability separation or workflow requirements.
@@ -58,13 +71,11 @@ and JDBC dependency too, leaving the Kotlin CLI an explicit placeholder.
 Do not migrate or delete existing database files. Rust search/index, document,
 workspace and authoritative native CLI behavior remain unchanged.
 
-The intended follow-on structure is Rust-only `core/` (feature crates where
-dependency boundaries justify them), Kotlin UI `feature:scaffold`,
-`feature:document`, `feature:search`, and platform adapters in `apps:desktop`.
-The scaffold may depend on document UI, which may depend on search UI/contracts;
-search must not depend back on scaffold or require a document-editor dependency.
-No crate split or `core:ui` move is included in this cleanup. Consequently
-`core/` is not yet Rust-only. PR creation is paused by the user.
+The user subsequently approved moving/splitting `core:ui` into the feature
+modules above. `core/` now contains only the existing Rust crate, whose
+document/search/workspace/index modules remain unchanged. Independent Rust
+crates are deferred until dependency boundaries justify a separate change.
+PR creation remains paused by the user.
 
 Cleanup risks: dangling Gradle references and accidentally removing native
 functionality or user data. Mitigate with all-app compilation, dependency

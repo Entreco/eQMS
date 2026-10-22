@@ -48,7 +48,7 @@ After creation the browser navigates into the new folder. Cancelling the
 prompt creates nothing; cancelling the chooser does not invoke init or delete a
 folder already created. Open has no folder-creation action.
 
-The `core:ui` Kotlin Multiplatform module contains the UI components. The
+The `feature:scaffold` Kotlin Multiplatform module contains the project UI. The
 [EQMS-092 Jewel scaffold](EQMS-092.md) supersedes the initial common-screen
 implementation: screens, directory browser, folder-name prompt and error
 rendering now live in JVM Compose code because Jewel is desktop-only. Its

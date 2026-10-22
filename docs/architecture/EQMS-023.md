@@ -8,7 +8,7 @@ related: [EQMS-003, EQMS-005, EQMS-020, EQMS-023, EQMS-030, EQMS-090]
 
 ## Boundary and prerequisite contracts
 
-Rust owns authoring; native `qms` is its adapter. Compose in `core:ui`
+Rust owns authoring; native `qms` is its adapter. Compose in `feature:document`
 provides the editor; desktop owns process execution. Under
 [EQMS-092](EQMS-092.md), Jewel presentation is JVM-only and contracts/state
 remain common. This slice defines only the
