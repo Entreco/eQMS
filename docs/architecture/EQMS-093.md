@@ -39,6 +39,7 @@ menu for About/Settings and the existing guarded window close.
 
 The supplied `apps/desktop/src/main/resources/branding/logo.png` is canonical
 launcher artwork, including its dark tile background and rounded corners.
+Preserve padding present in the source PNG; do not trim it.
 Center it on a square canvas without cropping, stretching or additional outer
 padding (the supplied 164 x 165 source needs one extra transparent column),
 then resize to generate PNG, multi-resolution ICO and ICNS assets.

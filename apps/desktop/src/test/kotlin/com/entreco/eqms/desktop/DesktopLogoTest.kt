@@ -73,7 +73,7 @@ class DesktopLogoTest {
         }
         assertEquals(164, source.width)
         assertEquals(165, source.height)
-        for ((x, y) in listOf(512 to 30, 512 to 950, 30 to 512, 970 to 512)) {
+        for ((x, y) in listOf(512 to 150, 512 to 850, 150 to 512, 850 to 512)) {
             val pixel = image.getRGB(x, y)
             assertEquals(255, pixel ushr 24, "Tile background must stay opaque")
             assertTrue((pixel shr 16 and 255) < 50 && (pixel shr 8 and 255) < 50 && (pixel and 255) < 70)

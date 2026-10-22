@@ -127,7 +127,9 @@ Generated `icon.png` (1024 square),
 Windows and macOS launcher icons respectively. The PNG also supplies the
 desktop window/taskbar icon where supported.
 Generation preserves the tile background, rounded-corner transparency and aspect
-ratio, with no added outer padding. The supplied PNG is 164 x 165; it is
+ratio, including the padding supplied within logo.png. It does not trim that
+padding. The conversion adds no further outer padding.
+The supplied PNG is 164 x 165; it is
 centered on a 165-square canvas before resizing. Larger assets are upscaled,
 not additional source detail.
 
