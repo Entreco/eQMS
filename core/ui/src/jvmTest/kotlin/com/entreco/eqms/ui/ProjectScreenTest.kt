@@ -44,7 +44,7 @@ class ProjectScreenTest {
         compose.setContent { ProjectScreen(capabilities) }
         compose.onNodeWithText("Create project").performClick()
         compose.onNodeWithText("New folder").performClick()
-        compose.onNodeWithText("Folder name").performTextInput("project with spaces")
+        compose.onNodeWithContentDescription("Folder name").performTextInput("project with spaces")
         compose.onNodeWithText("Create folder").performClick()
         compose.onAllNodesWithText("/home/project with spaces").onFirst().assertExists()
         compose.runOnIdle {
@@ -74,7 +74,7 @@ class ProjectScreenTest {
         val capabilities = Capabilities()
         compose.setContent { ProjectScreen(capabilities) }
         compose.onNodeWithText("Open project").performClick()
-        compose.onNodeWithText("Directory path").performTextReplacement("/missing")
+        compose.onNodeWithContentDescription("Directory path").performTextReplacement("/missing")
         compose.onNodeWithText("Select directory").assertIsNotEnabled()
         compose.onNodeWithText("Go").performClick()
         compose.onNodeWithText("Directory not found").assertExists()
@@ -89,7 +89,7 @@ class ProjectScreenTest {
         compose.setContent { ProjectScreen(capabilities) }
         compose.onNodeWithText("Create project").performClick()
         compose.onNodeWithText("New folder").performClick()
-        compose.onNodeWithText("Folder name").performTextInput("existing")
+        compose.onNodeWithContentDescription("Folder name").performTextInput("existing")
         compose.onNodeWithText("Create folder").performClick()
         compose.onNodeWithText("Already exists").assertExists()
         compose.onAllNodesWithText("Cancel").onLast().performClick()
@@ -106,7 +106,7 @@ class ProjectScreenTest {
         compose.setContent { ProjectScreen(capabilities) }
         compose.onNodeWithText("Create project").performClick()
         compose.onNodeWithText("New folder").performClick()
-        compose.onNodeWithText("Folder name").performTextInput("kept folder")
+        compose.onNodeWithContentDescription("Folder name").performTextInput("kept folder")
         compose.onNodeWithText("Create folder").performClick()
         compose.onNodeWithText("Cancel").performClick()
         compose.onNodeWithText("Project selection cancelled.").assertExists()

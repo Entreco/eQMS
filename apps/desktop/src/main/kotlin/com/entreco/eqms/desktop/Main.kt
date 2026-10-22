@@ -158,6 +158,7 @@ fun main() = application {
         title = "eQMS",
         state = rememberWindowState(width = 1100.dp, height = 800.dp),
     ) {
+        SideEffect { window.minimumSize = java.awt.Dimension(960, 720) }
         ProjectScreen(
             capabilities, documents, closeRequested,
             onCloseHandled = { closeRequested = false },

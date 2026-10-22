@@ -2,12 +2,13 @@
 title: Build and Run
 status: active
 owner: eQMS
-last_updated: 2026-10-20
+last_updated: 2026-10-22
 related:
   - EQMS-001
   - EQMS-004
   - EQMS-101
   - EQMS-090
+  - EQMS-092
 ---
 
 # Build and Run
@@ -69,6 +70,12 @@ and [workspace/index contract](../architecture/EQMS-005.md) for related behavior
 ## Kotlin prototype prerequisites
 
 - JDK installed and available for Gradle
+- Desktop Jewel UI and UI tests require **JetBrains Runtime 25**. Set
+  `JAVA_HOME` to its home directory before launching Gradle (an IDE-bundled JBR
+  is suitable if it is version 25). The desktop JavaExec and UI/desktop test
+  tasks select vendor JetBrains explicitly; another JDK is not a supported
+  fallback. If Gradle cannot discover it, configure
+  `org.gradle.java.installations.paths` with its installation path.
 - Use the project wrapper: `./gradlew`
 
 ## Kotlin build
@@ -99,12 +106,51 @@ names, existing paths, and permission errors are shown without overwriting.
 Cancelling the chooser leaves any folder already created on disk but does not
 initialize a workspace. **Open project** selects an existing workspace.
 
-The project screen and directory dialogs are shared Compose Multiplatform
-components in `core:ui` (JVM and Wasm targets), without Swing UI. Use **Go** to
+The Jewel project screen and directory dialogs live in `core:ui/jvmMain`.
+Capability interfaces, DTOs, and reusable search state remain in `commonMain`,
+with JVM and Wasm targets; Jewel is not available on Wasm. Use **Go** to
 browse an entered directory path, **Up** for its parent, or click a child folder
 to enter it, then **Select directory**. Desktop filesystem and native CLI access
 remain in `apps:desktop`; the browser shell is not wired to these capabilities.
 Desktop still requires a JVM, not Kotlin/Native.
+
+## Jewel desktop preview
+
+The desktop uses Jewel `0.41.0-262.10968.63` standalone with Compose `1.12.0`
+and Kotlin `2.4.10`. These are pinned together; do not update Compose independently
+of Jewel's supported dependency matrix. The matching IntelliJ platform icon
+artifact supplies component glyphs, including combo-box arrows.
+
+The shell defaults to IntelliJ New UI dark styling. **Light theme** / **Dark
+theme** switches the current session without reopening the project or resetting
+editor/search state. The native OS title bar is retained. Open a project to
+preview the document/search sidebar, single active editor, and **History**
+panel with **Compare** and **Close history**. Cancelling project selection or a
+failed open leaves the existing editor intact; successfully reopening refreshes
+the workspace, including when selecting the same directory.
+
+[Dark](../testing/evidence/EQMS-092-dark.png),
+[light](../testing/evidence/EQMS-092-light.png), and
+[history](../testing/evidence/EQMS-092-history.png), and
+[comparison](../testing/evidence/EQMS-092-diff.png) previews show synthetic
+drafts rendered with the real native adapters. No review/approval or release
+workflow is implied. See the [Jewel assessment/design](../architecture/EQMS-092.md).
+
+To regenerate captures without touching existing workspaces, choose an output
+directory outside the repository; the opt-in test creates a fresh workspace
+with synthetic drafts and repository-local synthetic Git identity:
+
+```sh
+cargo build --workspace --release --locked
+EQMS_JEWEL_PREVIEW_DIR="<absolute-output-directory>" \
+EQMS_QMS_PATH="$PWD/target/release/qms" \
+./gradlew :apps:desktop:test --tests '*DesktopJewelPreviewTest' --rerun-tasks
+```
+
+The test retains its generated `preview-*/jewel-preview` workspace under that
+directory, which can then be selected with **Open project** in the actual app.
+Captures are Compose content only, not OS window chrome or human visual-review
+evidence. Ordinary tests skip this capture when no output directory is supplied.
 
 ## Draft documents
 

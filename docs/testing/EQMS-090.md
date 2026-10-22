@@ -18,6 +18,11 @@ related: [EQMS-090]
 | T090-08 | R090-02, R090-05, R090-07 | Manual GUI test in hotRun: create a named folder, confirm it is selected, initialize it, and reopen it. Verify prompt cancellation, visible filesystem/name errors, and that chooser cancellation preserves the created empty folder without invoking init. |
 | T090-09 | R090-01, R090-02, R090-03, R090-05, R090-06, R090-07, R090-08 | Compile `core:ui` for JVM and Wasm; verify common sources have no Java/Swing imports. Automated Compose tests cover create/select, open without New folder, failed navigation, visible folder errors, cancellation without workspace operations, and busy-state duplicate prevention. Run desktop adapter and folder regressions. Manually confirm native filesystem integration and dialog layout. |
 
+EQMS-092 supersedes T090-09's common-screen placement check: compile shared
+contracts/state for JVM and Wasm, while Jewel presentation is JVM-only in
+`core:ui`. Native adapters remain in `apps:desktop`. The behavior regressions
+and stable T090 IDs remain applicable; see [Jewel test mappings](EQMS-092.md).
+
 Automated adapter tests are expected to use an injected process executor and
 must not depend on a developer's Git identity or a globally installed `qms`.
 Manual GUI and native CLI integration checks remain separate from automated

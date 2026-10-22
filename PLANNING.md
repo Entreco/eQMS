@@ -465,7 +465,7 @@ requirements and tests; targets are not claims of observed results.
 - Launching the desktop app presents **Create project** and **Open project** actions.
 - Create selects a destination and invokes `qms init --json <path>`; existing non-empty data is never overwritten and success is shown only after CLI success.
 - The Create chooser offers an explicit **New folder** action, validates a single child name, creates without overwriting, and selects the new folder. Open remains an existing-folder selection flow.
-- Shared Compose screen and folder dialogs live in `core:ui` with JVM/Wasm targets; platform capabilities stay in desktop adapters. Desktop remains JVM-based; browser capability integration is deferred.
+- Compose screens and folder dialogs live in `core:ui`; EQMS-092 places Jewel presentation in `jvmMain` while contracts/state retain JVM/Wasm targets. Platform capabilities stay in desktop adapters; browser integration is deferred.
 - Open selects a directory and invokes `qms verify --json <path>`; it is marked open only after verification succeeds.
 - Cancellation, unavailable CLI, malformed responses, invalid workspaces, and command failures are handled explicitly.
 - The Kotlin UI uses the versioned native CLI through an explicit adapter and does not reimplement workspace rules.
@@ -484,6 +484,20 @@ requirements and tests; targets are not claims of observed results.
 - Performance baseline documented.
 - Feature scope aligns with read-first agent/human needs.
 - Core controls are enforced at the adapter boundary rather than trusted to the browser.
+
+---
+
+### EQMS-092: Functional Jewel desktop scaffold
+**Type:** Feature
+**Dependencies:** EQMS-090, EQMS-023, EQMS-050/051 implementations; no prerequisite approval assumed.
+**Description:** Replace Material desktop presentation with genuine Jewel standalone components, retaining Rust-backed workflows. See #50 and [design](docs/architecture/EQMS-092.md).
+**Acceptance criteria:**
+- Verified pinned Jewel/Compose dependencies and JBR launch/test runtime.
+- Dark-first IntelliJ-style shell, session light/dark toggle, document/search sidebar, single editor, history/diff panel and truthful status.
+- Preserve create/open, folders, draft saves/conflicts, search, read-only history, visible errors and unsaved navigation/close guards.
+- Keep JVM presentation in `core:ui`, common contracts/state reusable, and native adapters in `apps:desktop`; web bootstrap remains unchanged.
+- Runnable real-adapter preview, reproducible captures, mapped regression evidence and draft PR; manual review/testing remains required.
+**Risk and Security Risk Management:** Applicable proportionately; preserve edit-loss, process/error and historical/read-only safeguards. Runtime/dependency provenance and human accessibility review remain limitations. No approval/signature/release workflow or compliance claim.
 
 ---
 

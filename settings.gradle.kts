@@ -8,10 +8,10 @@ pluginManagement {
     }
 
     plugins {
-        id("org.jetbrains.kotlin.multiplatform") version "2.3.10"
-        id("org.jetbrains.kotlin.jvm") version "2.3.10"
-        id("org.jetbrains.compose") version "1.12.2"
-        id("org.jetbrains.kotlin.plugin.compose") version "2.3.10"
+        id("org.jetbrains.kotlin.multiplatform") version "2.4.10"
+        id("org.jetbrains.kotlin.jvm") version "2.4.10"
+        id("org.jetbrains.compose") version "1.12.0"
+        id("org.jetbrains.kotlin.plugin.compose") version "2.4.10"
     }
 }
 
@@ -20,6 +20,9 @@ dependencyResolutionManagement {
     repositories {
         mavenCentral()
         google()
+        maven("https://www.jetbrains.com/intellij-repository/releases") {
+            content { includeGroup("com.jetbrains.intellij.platform") }
+        }
         ivy("https://nodejs.org/dist") {
             name = "Node.js distributions"
             patternLayout {
