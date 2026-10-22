@@ -68,7 +68,6 @@ internal fun ChromeDialog(
         onDismissRequest = { if (!saving) onDismiss() },
         title = {
             Text(when (command) {
-                DesktopCommand.About -> "About DutchDoxx"
                 DesktopCommand.Settings -> "Settings"
                 else -> "Check for updates"
             })
@@ -76,11 +75,6 @@ internal fun ChromeDialog(
         text = {
             Column(Modifier.width(440.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 when (command) {
-                    DesktopCommand.About -> {
-                        chrome.aboutLogo()
-                        Text("DutchDoxx ${chrome.version}")
-                        Text("An eQMS quality workspace. Drafts are not approvals.")
-                    }
                     DesktopCommand.Settings -> {
                         Text("Appearance: ${if (dark) "Dark" else "Light"}")
                         OutlinedButton(enabled = !saving, onClick = { onAppearance(!dark) }) {

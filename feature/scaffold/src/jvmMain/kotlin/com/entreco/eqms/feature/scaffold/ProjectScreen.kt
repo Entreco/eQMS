@@ -50,6 +50,8 @@ fun ProjectScreen(
     }
     var savingAppearance by remember { mutableStateOf(false) }
     var chromeDialog by remember { mutableStateOf<DesktopCommand?>(null) }
+    var aboutVisible by remember { mutableStateOf(false) }
+    var aboutRequest by remember { mutableIntStateOf(0) }
     val interactive = !busy && !documentBusy && creating == null && pendingNavigation == null &&
         chromeDialog == null && !savingAppearance
 
@@ -85,6 +87,10 @@ fun ProjectScreen(
         val command = chrome?.consume()
         if (command != null && interactive) {
             when (command) {
+                DesktopCommand.About -> {
+                    aboutVisible = true
+                    aboutRequest++
+                }
                 DesktopCommand.NewProject -> navigate { creating = true }
                 DesktopCommand.CloseProject -> if (project != null) navigate {
                     project = null
@@ -107,6 +113,9 @@ fun ProjectScreen(
     }
 
     IntUiTheme(isDark = dark) {
+        if (aboutVisible && chrome != null) {
+            AboutWindow(chrome, dark, aboutRequest, onClose = { aboutVisible = false })
+        }
         Box(Modifier.fillMaxSize().background(JewelTheme.globalColors.panelBackground)) {
             Column {
                 Row(

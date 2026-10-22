@@ -123,8 +123,15 @@ Desktop branding artwork lives in `apps/desktop/src/main/resources/branding/`.
 `logo.svg` is the canonical supplied artwork. Generated `icon.png` (1024 square),
 `icon.ico` (16-256 pixels) and `icon.icns` (up to 1024 pixels) provide Linux,
 Windows and macOS launcher icons respectively. The PNG also supplies the
-desktop window/taskbar icon where supported and the accessible logo in About.
+desktop window/taskbar icon where supported.
 Transparent padding keeps the original aspect ratio and colors.
+
+About now uses the separate full-width `branding/about.jpg` artwork, not the
+launcher PNG. Replace that JPG to update only the About banner; preserve its
+intended aspect ratio. About opens in a single independent, non-modal window
+with native title bar and close controls. The workspace stays usable; choosing
+About again restores/focuses it. Closing About does not close the application.
+It follows the selected theme and retains the build version and draft notice.
 
 Normal builds use the committed icons and need no conversion tools. To update
 artwork, replace `logo.svg`, then regenerate and check the outputs using Python

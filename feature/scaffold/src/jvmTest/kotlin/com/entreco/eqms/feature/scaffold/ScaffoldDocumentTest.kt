@@ -145,6 +145,31 @@ class ScaffoldDocumentTest {
     )
 
     @Test
+    fun aboutWindowKeepsEditorUsableAndApplicationExitGuarded() {
+        val chrome = chrome()
+        var closeRequested by mutableStateOf(false)
+        var exited = false
+        compose.setContent {
+            ProjectScreen(
+                Projects(), Documents(), closeRequested,
+                onCloseHandled = { closeRequested = false },
+                onCloseConfirmed = { exited = true }, chrome = chrome,
+            )
+        }
+        compose.onNodeWithText("Open project").performClick()
+        compose.onNodeWithText("Select directory").performClick()
+        compose.onNodeWithText("Policy (Draft)").performClick()
+        compose.runOnIdle { chrome.request(DesktopCommand.About) }
+        compose.onNodeWithText("DutchDoxx 1.0.0-dev").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Markdown body").performTextReplacement("edit while About is open")
+        compose.runOnIdle { closeRequested = true }
+        compose.onNodeWithText("Unsaved changes").assertExists()
+        compose.onNodeWithText("Keep editing").performClick()
+        compose.onNodeWithContentDescription("Markdown body").assertTextContains("edit while About is open")
+        compose.runOnIdle { assertFalse(exited) }
+    }
+
+    @Test
     fun closeProjectMenuGuardsDirtyStateAndDoesNotQuit() {
         val chrome = chrome()
         var quit = false

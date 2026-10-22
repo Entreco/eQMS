@@ -3,6 +3,7 @@ package com.entreco.eqms.desktop
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.graphics.toAwtImage
+import androidx.compose.ui.semantics.SemanticsActions
 import com.entreco.eqms.feature.scaffold.*
 import javax.imageio.ImageIO
 import kotlin.test.*
@@ -29,15 +30,34 @@ class DesktopLogoTest {
             compose.runOnIdle { chrome.request(DesktopCommand.About) }
             compose.onNodeWithContentDescription("DutchDoxx logo").assertIsDisplayed()
             compose.onNodeWithText("DutchDoxx ${desktopVersion()}").assertIsDisplayed()
-            val pixels = compose.onNodeWithContentDescription("DutchDoxx logo").captureToImage().toAwtImage()
-            assertTrue(pixels.width > 0 && pixels.height > 0)
-            val colors = (0 until pixels.width).flatMap { x ->
-                (0 until pixels.height).map { y -> pixels.getRGB(x, y) and 0xffffff }
-            }
-            assertTrue(colors.any { color -> (color shr 16 and 255) > 180 && (color shr 8 and 255) in 60..140 && (color and 255) < 80 })
-            compose.onNodeWithText("Close").performClick()
+            compose.onNodeWithText("An eQMS quality workspace. Drafts are not approvals.").assertIsDisplayed()
+            compose.onNodeWithText("Close").performSemanticsAction(SemanticsActions.OnClick) { it() }
             if (theme == 0) compose.onNodeWithText("Light theme").performClick()
         }
+    }
+
+    @Test
+    fun fullArtworkRendersWithoutDistortion() {
+        compose.setContent {
+            org.jetbrains.jewel.intui.standalone.theme.IntUiTheme(isDark = true) { DesktopLogo() }
+        }
+        val pixels = compose.onNodeWithContentDescription("DutchDoxx logo").captureToImage().toAwtImage()
+        assertEquals(564.0 / 165, pixels.width.toDouble() / pixels.height, 0.03)
+        assertTrue((0 until pixels.width).any { x ->
+            (0 until pixels.height).any { y ->
+                val color = pixels.getRGB(x, y)
+                (color shr 16 and 255) > 180 && (color shr 8 and 255) in 60..140 && (color and 255) < 80
+            }
+        })
+    }
+
+    @Test
+    fun fullAboutArtworkIsPackagedIndependentlyOfLauncherIcon() {
+        val artwork = checkNotNull(javaClass.getResourceAsStream("/branding/about.jpg")).use {
+            checkNotNull(ImageIO.read(it))
+        }
+        assertEquals(564, artwork.width)
+        assertEquals(165, artwork.height)
     }
 
     @Test
