@@ -6,6 +6,30 @@ related: [EQMS-093]
 
 # Observed automated evidence
 
+## Supplied launcher padding refresh
+
+Tested revision `a3d55968f15eaa79a1c51310b6f1df6024acaedb` regenerates all three
+launcher assets from the user's updated, padded logo.png without trimming it.
+Source dimensions remain 164 x 165. About artwork is unchanged.
+
+In the same environment as below, these commands exited 0:
+
+```sh
+python3 scripts/generate_desktop_icons.py --check
+./gradlew :apps:desktop:test --tests '*DesktopLogoTest' \
+  --tests '*DesktopNativeMenuTest' --rerun-tasks --console=plain --quiet
+JAVA_HOME="$JBR_SDK" ./gradlew :apps:desktop:createDistributable \
+  --no-daemon --console=plain --quiet
+cmp apps/desktop/src/main/resources/branding/icon.icns \
+  apps/desktop/build/compose/binaries/main/app/DutchDoxx.app/Contents/Resources/DutchDoxx.icns
+```
+
+Five selected tests passed, zero failures/errors/skips. The original background
+sample points fell within the newly supplied transparent padding, causing an
+initial assertion failure; samples now check inside the tile instead.
+Reproducible asset equality and macOS bundled icon equality passed.
+Windows/Linux target-host and manual visual review limitations remain unchanged.
+
 ## Dark-tile PNG launcher correction
 
 Issue #52, R093-08/T093-07. Tested revision:
