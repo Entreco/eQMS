@@ -25,3 +25,5 @@ Use isolated fixtures/preferences; never modify existing workspaces in tests.
 Evidence must identify the tested code revision before a separate evidence
 commit, JBR/environment, commands, observed failures/exclusions, OS integration
 observations, and limitations. Human review and manual testing remain unchecked.
+
+Observed results: [EQMS-093 evidence](evidence/EQMS-093.md).
