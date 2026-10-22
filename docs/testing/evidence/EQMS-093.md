@@ -6,6 +6,68 @@ related: [EQMS-093]
 
 # Observed automated evidence
 
+## Launcher and About artwork increment
+
+Issue #52, R093-08/T093-07. Tested implementation:
+`194c0f2de33ba9a796f408826aea77d8d0013444`.
+Artwork design, requirement and test mapping preceded implementation in
+`9f60f84`. Evidence is committed separately. The supplied SVG is preserved in
+`apps/desktop/src/main/resources/branding/logo.svg`.
+
+Using the same macOS/JBR environment recorded below:
+
+```sh
+python3 scripts/generate_desktop_icons.py --check
+./gradlew :apps:desktop:test :feature:scaffold:jvmTest \
+  :feature:scaffold:compileKotlinWasmJs :apps:web:compileKotlinWasmJs \
+  --rerun-tasks --console=plain --quiet
+JAVA_HOME="$JBR_SDK" ./gradlew :apps:desktop:createDistributable \
+  --no-daemon --console=plain --quiet
+cmp apps/desktop/src/main/resources/branding/icon.icns \
+  apps/desktop/build/compose/binaries/main/app/DutchDoxx.app/Contents/Resources/DutchDoxx.icns
+```
+
+All commands exited 0. Generation used an isolated Python 3.9 environment with
+CairoSVG 2.8.2 and Pillow 11.3.0, with Homebrew Cairo located using
+`DYLD_FALLBACK_LIBRARY_PATH=/opt/homebrew/lib`. Initial converter discovery
+failed because CairoSVG was not installed and then because the native Cairo
+library was not on the loader search path. Isolated optional tools and the
+documented library path resolved these failures; no runtime/build conversion
+dependency was added.
+
+- Desktop: 36 tests, 34 passed, two existing opt-in skips, no failures/errors.
+  Scaffold: 16 tests passed. Both requested Wasm compilation targets passed.
+- `DesktopLogoTest` decoded the real packaged PNG, verified square 1024-pixel
+  dimensions, transparent corners and the exact three SVG layer colors.
+  It rendered the real About dialog in both themes, asserted accessible logo
+  and version visibility, and checked captured logo pixels for the orange layer.
+- `DesktopNativeMenuTest` installed the actual window icon and exercised
+  taskbar icon installation where supported. The initial test wrongly expected
+  the source's 1024-pixel size in the AWT icon; Compose rasterizes it for the
+  host (192 pixels here). The final test checks positive square dimensions;
+  source dimensions/colors are covered separately by `DesktopLogoTest`.
+- Icon generation was repeated with byte-for-byte equality against all three
+  committed assets. Pillow decoded the PNG, all seven ICO frames
+  (16/24/32/48/64/128/256), and all eight ICNS entries through 1024 pixels.
+  All frames have transparent corners. The frame-inspection command emitted
+  a Pillow deprecation warning for its ICNS size-selection API, not a failure;
+  the generation script does not use that API.
+- Native distribution configuration points macOS/Windows/Linux at their
+  respective ICNS/ICO/PNG assets. The macOS bundle's `CFBundleIconFile` is
+  `DutchDoxx.icns`; the embedded icon matches the committed ICNS exactly.
+- The packaged application started with its bundled JBR and a responsive idle
+  AWT event thread; identity remained DutchDoxx. The agent stopped this process
+  after inspection.
+
+Windows/Linux launcher installation and display were not executed on this
+macOS host; generated/decoded assets and build configuration are not a claim
+of target-host execution. Existing native visual, accessibility, signing and
+manual-testing limitations remain. The two skipped tests are the same opt-in
+benchmark/preview tests identified below; neither is passing logo coverage.
+
+- [ ] Human checks launcher/Dock/taskbar appearance on macOS, Windows and Linux.
+- [ ] Human checks About artwork proportions, both themes and accessibility.
+
 ## Product-name correction
 
 The user corrected the product name to **DutchDoxx** (double x).
