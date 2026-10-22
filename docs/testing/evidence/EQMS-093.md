@@ -6,6 +6,51 @@ related: [EQMS-093]
 
 # Observed automated evidence
 
+## Dark-tile PNG launcher correction
+
+Issue #52, R093-08/T093-07. Tested revision:
+`547c8dff5859ee8747a017aebed9fe6e3eaf709e`.
+Updated source/design/test mapping preceded implementation in `3aa2d2b`.
+The launcher source is now the supplied `branding/logo.png`, not logo.svg.
+About continues to use the unchanged about.jpg.
+
+At this revision, in the same macOS/JBR environment described below:
+
+```sh
+python3 scripts/generate_desktop_icons.py --check
+./gradlew :apps:desktop:test --tests '*DesktopLogoTest' \
+  --tests '*DesktopNativeMenuTest' --rerun-tasks --console=plain --quiet
+JAVA_HOME="$JBR_SDK" ./gradlew :apps:desktop:createDistributable \
+  --no-daemon --console=plain --quiet
+cmp apps/desktop/src/main/resources/branding/icon.icns \
+  apps/desktop/build/compose/binaries/main/app/DutchDoxx.app/Contents/Resources/DutchDoxx.icns
+```
+
+All exited 0. Five selected tests passed; no failures/errors/skips.
+Tests cover actual About banner/version rendering, source JPEG, tiled launcher
+background/rounded-corner transparency and native window/taskbar installation.
+Generation requires only Pillow 11.3.0, not CairoSVG/native Cairo.
+
+Additional pixel/frame inspection verified:
+
+- Source PNG is 164 x 165 with alpha; the dark tile itself is opaque, with alpha
+  retained at its rounded corners. Centering on a 165-square canvas adds only
+  the unavoidable one-column difference; no previous 10% padding is retained.
+- Generated 1024-square PNG pixels exactly match source composition and Lanczos
+  resizing. Larger sizes are upscaled; no new high-resolution detail is claimed.
+- All seven ICO frames (16/24/32/48/64/128/256) and eight ICNS entries through
+  1024 decoded and retained opaque dark tile pixels. The inspection API emitted
+  the same Pillow ICNS size-selection deprecation warning noted below, not a
+  generation or decoding failure.
+- The macOS bundle contains the corrected ICNS byte-for-byte.
+
+Only affected logo/native-menu tests and bundle generation were rerun; domain
+logic, About window behavior and Wasm sources were not changed. Earlier full
+suite observations remain historical evidence, not new full-suite results.
+Windows/Linux installer execution and human visual review remain pending.
+
+- [ ] Human reviews the new tiled icon in macOS/Windows/Linux launchers.
+
 ## Independent About window and full banner
 
 Issue #52, R093-09/T093-08. Final tested revision:
