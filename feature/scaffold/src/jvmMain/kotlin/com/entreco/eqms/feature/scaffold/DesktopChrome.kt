@@ -67,7 +67,7 @@ internal fun ChromeDialog(
         onDismissRequest = { if (!saving) onDismiss() },
         title = {
             Text(when (command) {
-                DesktopCommand.About -> "About DutchDox"
+                DesktopCommand.About -> "About DutchDoxx"
                 DesktopCommand.Settings -> "Settings"
                 else -> "Check for updates"
             })
@@ -76,7 +76,7 @@ internal fun ChromeDialog(
             Column(Modifier.width(440.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 when (command) {
                     DesktopCommand.About -> {
-                        Text("DutchDox ${chrome.version}")
+                        Text("DutchDoxx ${chrome.version}")
                         Text("An eQMS quality workspace. Drafts are not approvals.")
                     }
                     DesktopCommand.Settings -> {

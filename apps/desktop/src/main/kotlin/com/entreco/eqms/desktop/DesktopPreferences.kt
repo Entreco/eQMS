@@ -6,7 +6,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 internal class DesktopPreferences(
-    private val node: () -> Preferences = { Preferences.userRoot().node("com/entreco/dutchdox") },
+    private val node: () -> Preferences = { Preferences.userRoot().node("com/entreco/dutchdoxx") },
 ) {
     fun readDark(): Result<Boolean> = access {
         when (node().get("appearance", null)) {

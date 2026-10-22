@@ -114,7 +114,7 @@ fun ProjectScreen(
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text("DutchDox", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                    Text("DutchDoxx", fontWeight = FontWeight.Bold, fontSize = 18.sp)
                     Text(
                         project?.substringAfterLast('/')?.substringAfterLast('\\') ?: "Quality workspace",
                         Modifier.weight(1f),

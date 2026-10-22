@@ -13,10 +13,10 @@ internal val isMacOS: Boolean get() = System.getProperty("os.name").startsWith("
 
 internal fun desktopVersion(): String =
     Properties().apply {
-        checkNotNull(DesktopChrome::class.java.getResourceAsStream("/dutchdox-build.properties")) {
-            "DutchDox build metadata is missing."
+        checkNotNull(DesktopChrome::class.java.getResourceAsStream("/dutchdoxx-build.properties")) {
+            "DutchDoxx build metadata is missing."
         }.use { load(it) }
-    }.getProperty("version").also { check(!it.isNullOrBlank()) { "DutchDox build version is missing." } }
+    }.getProperty("version").also { check(!it.isNullOrBlank()) { "DutchDoxx build version is missing." } }
 
 @Composable
 internal fun FrameWindowScope.DesktopMenus(chrome: DesktopChrome, onQuit: () -> Unit) {

@@ -1,5 +1,5 @@
 ---
-title: EQMS-093 DutchDox menu requirements
+title: EQMS-093 DutchDoxx menu requirements
 status: draft
 related: [EQMS-093]
 ---
@@ -11,7 +11,7 @@ avoiding a native application-menu bridge.
 
 | ID | Requirement |
 |---|---|
-| R093-01 | Desktop menu identity, title, About and launch/package name are DutchDox, not MainKt. Keep native title bar and eQMS domain names. Version comes from one desktop build source and identifies development builds. |
+| R093-01 | Desktop menu identity, title, About and launch/package name are DutchDoxx, not MainKt. Keep native title bar and eQMS domain names. Version comes from one desktop build source and identifies development builds. |
 | R093-02 | macOS native application menu provides OS-standard About/Settings and system items. File provides New project and Close project; Edit/View have no custom commands; Help provides Check for updates. Non-macOS remains launchable. |
 | R093-03 | Menu New reuses guarded existing creation. Close project returns to welcome, never deletes data/exits; dirty cancellation preserves edits. Prevent competing busy/modal operations and preserve guarded Quit/window close. |
 | R093-04 | Settings and toolbar share persistent light/dark appearance, default dark only when unset. Invalid preferences and IO failures are visible; changing theme preserves project/editor/search state. |

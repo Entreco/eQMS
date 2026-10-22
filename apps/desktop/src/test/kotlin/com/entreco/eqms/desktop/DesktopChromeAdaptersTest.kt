@@ -125,7 +125,7 @@ class DesktopChromeAdaptersTest {
 
     @Test
     fun realPreferenceStorageSurvivesReloadInIsolatedNode() = runBlocking {
-        val node = Preferences.userRoot().node("com/entreco/dutchdox-test-${java.util.UUID.randomUUID()}")
+        val node = Preferences.userRoot().node("com/entreco/dutchdoxx-test-${java.util.UUID.randomUUID()}")
         try {
             DesktopPreferences { node }.saveDark(false).getOrThrow()
             val classpath = listOf(AppearancePreferenceProbe::class.java, Unit::class.java)

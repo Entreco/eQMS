@@ -39,7 +39,7 @@ internal class GitHubReleaseTransport : ReleaseTransport {
             .timeout(Duration.ofSeconds(15))
             .header("Accept", "application/vnd.github+json")
             .header("X-GitHub-Api-Version", "2022-11-28")
-            .header("User-Agent", "DutchDox")
+            .header("User-Agent", "DutchDoxx")
             .GET().build()
         val response = withTimeoutOrNull(15_000) {
             suspendCancellableCoroutine<HttpResponse<ByteArray>> { continuation ->
@@ -146,8 +146,8 @@ internal class DesktopUpdates(
         } else {
             val comparison = latest.zip(current).firstOrNull { (a, b) -> a != b }?.let { (a, b) -> a.compareTo(b) } ?: 0
             when {
-                comparison > 0 -> "DutchDox $tag is available. Installed: $version."
-                comparison == 0 -> "DutchDox $version is up to date."
+                comparison > 0 -> "DutchDoxx $tag is available. Installed: $version."
+                comparison == 0 -> "DutchDoxx $version is up to date."
                 else -> "Installed: $version, newer than the latest published release ($tag)."
             }
         }

@@ -501,10 +501,10 @@ requirements and tests; targets are not claims of observed results.
 
 ---
 
-### EQMS-093: DutchDox native desktop menus
+### EQMS-093: DutchDoxx native desktop menus
 **Type:** Feature
 **Dependencies:** EQMS-092 (#50), merged PR #51.
-**Description:** Give the desktop DutchDox identity and native menus; see #52 and [design/risk assessment](docs/architecture/EQMS-093.md).
+**Description:** Give the desktop DutchDoxx identity and native menus; see #52 and [design/risk assessment](docs/architecture/EQMS-093.md).
 **Acceptance criteria:**
 - Native application About/Settings and standard system items; File New/Close project, empty Edit/View, Help Check for updates. Help placement avoids a native bridge.
 - Persistent light/dark appearance shared with the toolbar; truthful build version and user-triggered stable-release checks with explicit errors, no automatic update installation.

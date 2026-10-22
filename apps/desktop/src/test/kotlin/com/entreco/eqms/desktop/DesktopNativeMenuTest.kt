@@ -12,7 +12,7 @@ import org.junit.Test
 class DesktopNativeMenuTest {
     @Test
     fun realWindowInstallsMenuOrderAndNativeApplicationHandlers() {
-        System.setProperty("apple.awt.application.name", "DutchDox")
+        System.setProperty("apple.awt.application.name", "DutchDoxx")
         System.setProperty("apple.laf.useScreenMenuBar", "true")
         val chrome = DesktopChrome(
             desktopVersion(), Result.success(true), { Result.success(Unit) },
@@ -20,12 +20,12 @@ class DesktopNativeMenuTest {
         )
         var failure: Throwable? = null
         application(exitProcessOnExit = false) {
-            Window(onCloseRequest = ::exitApplication, title = "DutchDox") {
+            Window(onCloseRequest = ::exitApplication, title = "DutchDoxx") {
                 DesktopMenus(chrome, ::exitApplication)
                 LaunchedEffect(Unit) {
                     try {
                         delay(300)
-                        assertEquals("DutchDox", window.title)
+                        assertEquals("DutchDoxx", window.title)
                         val menus = checkNotNull(window.menuBar)
                         val expected = if (isMacOS) listOf("File", "Edit", "View", "Help")
                             else listOf("Application", "File", "Edit", "View", "Help")

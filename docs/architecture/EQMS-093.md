@@ -1,10 +1,10 @@
 ---
-title: EQMS-093 DutchDox desktop menus
+title: EQMS-093 DutchDoxx desktop menus
 status: draft
 related: [EQMS-092, EQMS-093]
 ---
 
-# DutchDox desktop menus
+# DutchDoxx desktop menus
 
 Issue: #52. Dependency: EQMS-092 (#50), merged PR #51. Manual approval of
 these new records is not implied.
@@ -15,13 +15,13 @@ Use Compose Window MenuBar for File (New project, Close project), empty Edit
 and View, and Help (Check for updates). Set macOS application identity before
 AWT initializes, including Gradle run/hotRun JVM arguments and bundle name.
 Use public `java.awt.Desktop` About/Preferences/Quit handlers for the native
-DutchDox application menu; retain OS-provided labels/system items and title bar.
+DutchDoxx application menu; retain OS-provided labels/system items and title bar.
 JBR 25 exposes no public API for inserting arbitrary application-menu items.
 The user approved moving Check for updates to Help rather than adding a native
 bridge, dependency, reflection, or internal JDK access.
 
-Desktop branding is DutchDox; eQMS repository/domain/CLI names are unchanged.
-`dutchDoxVersion` is the desktop version source, default `1.0.0-dev`, independent
+Desktop branding is DutchDoxx; eQMS repository/domain/CLI names are unchanged.
+`dutchDoxxVersion` is the desktop version source, default `1.0.0-dev`, independent
 of the Rust CLI version. Build resources, About, update comparison and native
 package metadata derive from it. Development versions are not comparable to
 published stable releases. The numeric portion supplies the package version;

@@ -48,8 +48,8 @@ class DesktopChromeTest {
         compose.setContent { ProjectScreen(projects, chrome = chrome) }
         compose.onNodeWithText("Could not load appearance: invalid value").assertExists()
         compose.runOnIdle { chrome.request(DesktopCommand.About) }
-        compose.onNodeWithText("About DutchDox").assertExists()
-        compose.onNodeWithText("DutchDox 1.0.0-dev").assertExists()
+        compose.onNodeWithText("About DutchDoxx").assertExists()
+        compose.onNodeWithText("DutchDoxx 1.0.0-dev").assertExists()
     }
 
     @Test
@@ -116,7 +116,7 @@ class DesktopChromeTest {
         compose.onNodeWithText("Select directory").performClick()
         compose.onNodeWithText("Working...").assertExists()
         compose.runOnIdle { assertFalse(chrome.enabled); chrome.request(DesktopCommand.About) }
-        compose.onNodeWithText("About DutchDox").assertDoesNotExist()
+        compose.onNodeWithText("About DutchDoxx").assertDoesNotExist()
         compose.runOnIdle { result.complete(Result.success("/project")) }
         compose.onNodeWithText("Project created successfully.").assertExists()
         compose.runOnIdle { assertTrue(chrome.enabled); assertTrue(chrome.hasProject) }

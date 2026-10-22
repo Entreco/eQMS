@@ -117,9 +117,14 @@ to enter it, then **Select directory**. Desktop filesystem and native CLI access
 remain in `apps:desktop`; the browser shell is not wired to these capabilities.
 Desktop still requires a JVM, not Kotlin/Native.
 
-## DutchDox desktop menus and settings
+## DutchDoxx desktop menus and settings
 
-The desktop application is named **DutchDox**; the repository, workspace
+Desktop branding artwork belongs in `apps/desktop/src/main/resources/branding/`.
+Use `logo.svg` (preferred) or a transparent `logo.png` as source artwork.
+Adding the file alone does not wire window, About, or launcher icons; native
+packaging will also require platform icon assets derived from it.
+
+The desktop application is named **DutchDoxx**; the repository, workspace
 formats, and native `qms` CLI keep their eQMS names. On macOS the native
 application menu supplies OS-standard **About** and **Settings/Preferences**
 alongside standard system items. **File > New project** uses the existing
@@ -138,12 +143,12 @@ automatically classified as up to date.
 
 Settings contains only light/dark appearance. It defaults to dark when unset
 and persists in the current OS user's Java Preferences node
-`com/entreco/dutchdox`; it is not stored in a project. The existing toolbar theme
+`com/entreco/dutchdoxx`; it is not stored in a project. The existing toolbar theme
 control uses the same preference. Storage errors are visible and changing theme
 does not reopen a workspace or reset the editor/search.
 
 The desktop version defaults to `1.0.0-dev`, independently of the Rust CLI.
-Override it with `-PdutchDoxVersion=1.0.0` for a corresponding release build;
+Override it with `-PdutchDoxxVersion=1.0.0` for a corresponding release build;
 do not label unreleased code as a published release. About and update comparison
 use the full version; native bundle metadata uses its numeric portion.
 
@@ -156,7 +161,7 @@ With `JAVA_HOME` pointing to that SDK:
 ./gradlew :apps:desktop:runDistributable
 ```
 
-On macOS this creates `apps/desktop/build/compose/binaries/main/app/DutchDox.app`.
+On macOS this creates `apps/desktop/build/compose/binaries/main/app/DutchDoxx.app`.
 It is a local, unsigned development distribution, not an installer or a
 provenance-assured release. It does not bundle `qms`: configure `EQMS_QMS_PATH`
 or install the trusted native executable on PATH, as with direct JVM launches.

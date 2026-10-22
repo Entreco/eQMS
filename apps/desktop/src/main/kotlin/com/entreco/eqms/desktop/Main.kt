@@ -151,7 +151,7 @@ internal fun executeProcess(executable: String, arguments: List<String>, input: 
 }
 
 fun main() {
-    System.setProperty("apple.awt.application.name", "DutchDox")
+    System.setProperty("apple.awt.application.name", "DutchDoxx")
     System.setProperty("apple.laf.useScreenMenuBar", "true")
     val preferences = DesktopPreferences()
     val version = desktopVersion()
@@ -167,7 +167,7 @@ private fun launchDesktop(chrome: DesktopChrome) = application {
     val requestClose = remember { { closeRequested = true } }
     Window(
         onCloseRequest = requestClose,
-        title = "DutchDox",
+        title = "DutchDoxx",
         state = rememberWindowState(width = 1100.dp, height = 800.dp),
     ) {
         SideEffect { window.minimumSize = java.awt.Dimension(960, 720) }
