@@ -2,10 +2,12 @@ package com.entreco.eqms.desktop
 
 import androidx.compose.runtime.*
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import com.entreco.eqms.feature.scaffold.ProjectScreen
+import com.entreco.eqms.feature.scaffold.DesktopChrome
 import java.io.IOException
 import java.nio.file.Path
 import kotlinx.serialization.SerializationException
@@ -149,20 +151,38 @@ internal fun executeProcess(executable: String, arguments: List<String>, input: 
     }
 }
 
-fun main() = application {
+fun main() {
+    System.setProperty("apple.awt.application.name", "DutchDoxx")
+    System.setProperty("apple.laf.useScreenMenuBar", "true")
+    val preferences = DesktopPreferences()
+    val version = desktopVersion()
+    val updates = DesktopUpdates(version)
+    val chrome = DesktopChrome(
+        version, preferences.readDark(), preferences::saveDark, updates::check, updates::open,
+        aboutLogo = { DesktopLogo() },
+    )
+    launchDesktop(chrome)
+}
+
+private fun launchDesktop(chrome: DesktopChrome) = application {
     val capabilities = remember { DesktopProjectCapabilities() }
     val documents = remember { DesktopDocumentCapabilities() }
     var closeRequested by remember { mutableStateOf(false) }
+    val requestClose = remember { { closeRequested = true } }
+    LaunchedEffect(Unit) { installTaskbarIcon() }
     Window(
-        onCloseRequest = { closeRequested = true },
-        title = "eQMS",
+        onCloseRequest = requestClose,
+        title = "DutchDoxx",
+        icon = painterResource("branding/icon.png"),
         state = rememberWindowState(width = 1100.dp, height = 800.dp),
     ) {
         SideEffect { window.minimumSize = java.awt.Dimension(960, 720) }
+        DesktopMenus(chrome, requestClose)
         ProjectScreen(
             capabilities, documents, closeRequested,
             onCloseHandled = { closeRequested = false },
             onCloseConfirmed = ::exitApplication,
+            chrome = chrome,
         )
     }
 }
