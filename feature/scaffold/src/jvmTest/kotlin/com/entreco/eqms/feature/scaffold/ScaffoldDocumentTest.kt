@@ -147,11 +147,13 @@ class ScaffoldDocumentTest {
     @Test
     fun aboutWindowKeepsEditorUsableAndApplicationExitGuarded() {
         val chrome = chrome()
+        val projects = Projects()
+        val documents = Documents()
         var closeRequested by mutableStateOf(false)
         var exited = false
         compose.setContent {
             ProjectScreen(
-                Projects(), Documents(), closeRequested,
+                projects, documents, closeRequested,
                 onCloseHandled = { closeRequested = false },
                 onCloseConfirmed = { exited = true }, chrome = chrome,
             )
@@ -161,7 +163,11 @@ class ScaffoldDocumentTest {
         compose.onNodeWithText("Policy (Draft)").performClick()
         compose.runOnIdle { chrome.request(DesktopCommand.About) }
         compose.onNodeWithText("DutchDoxx 1.0.0-dev").assertIsDisplayed()
-        compose.onNodeWithContentDescription("Markdown body").performTextReplacement("edit while About is open")
+        compose.onNodeWithContentDescription("Markdown body")
+            .performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.SetText) {
+                it(androidx.compose.ui.text.AnnotatedString("edit while About is open"))
+            }
+        compose.onNodeWithContentDescription("Markdown body").assertTextContains("edit while About is open")
         compose.runOnIdle { closeRequested = true }
         compose.onNodeWithText("Unsaved changes").assertExists()
         compose.onNodeWithText("Keep editing").performClick()
