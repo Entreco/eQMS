@@ -37,12 +37,15 @@ menu for About/Settings and the existing guarded window close.
 
 ### Application artwork
 
-The supplied SVG is canonical desktop artwork in
-`apps/desktop/src/main/resources/branding/logo.svg`. Generate square transparent
-PNG, multi-resolution ICO and ICNS assets from it, preserving aspect ratio and
-adding an equal 10% outer margin. Check generated assets into the repository;
+The supplied `apps/desktop/src/main/resources/branding/logo.png` is canonical
+launcher artwork, including its dark tile background and rounded corners.
+Center it on a square canvas without cropping, stretching or additional outer
+padding (the supplied 164 x 165 source needs one extra transparent column),
+then resize to generate PNG, multi-resolution ICO and ICNS assets.
+Retain `logo.svg` as original artwork, but do not use it for launcher generation.
+Check generated assets into the repository;
 normal builds must not require conversion tools. A documented Python generation
-script uses CairoSVG/Pillow for all three formats.
+script uses Pillow for all three formats.
 Set platform-specific Compose native-distribution icons for macOS, Windows
 and Linux, and a Compose window icon for unpackaged launches. Inject About
 artwork from the desktop into the scaffold as a composable slot, rather than
@@ -77,7 +80,7 @@ guards remain unchanged. The workspace stays interactive while About is open.
 Repeated About requests focus/restore the existing window instead of creating
 duplicates. Its theme follows the workspace. The desktop artwork slot loads
 the full supplied `branding/about.jpg` with its aspect ratio preserved; launcher
-icons continue using the SVG-derived PNG/ICO/ICNS, not the About banner.
+icons use the tile artwork in logo.png, not the About banner.
 Update checking is user-triggered only, on an IO dispatcher with bounded
 connect/request time and response size, no credentials or workspace data.
 Query GitHub's latest published stable release endpoint for Entreco/eQMS.
