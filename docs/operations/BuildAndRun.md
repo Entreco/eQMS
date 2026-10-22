@@ -87,6 +87,9 @@ and [workspace/index contract](../architecture/EQMS-005.md) for related behavior
 
 - Prototype CLI (not native `qms`):
   - `./gradlew :apps:cmd:run`
+  - Prints a placeholder notice only; no SQLite database is created. The
+    obsolete Kotlin ledger/search modules and JDBC bootstrap have been removed.
+    Existing prototype databases are not deleted or migrated.
 - Desktop app (build the native CLI first; Gradle `run` and `hotRun` use the
   repository's absolute `target/release/qms` path, or `qms.exe` on Windows,
   unless `EQMS_QMS_PATH` explicitly selects another executable):

@@ -9,7 +9,8 @@ operations, and structured errors. Build it with
 `cargo build --workspace --release --locked`, then run `./target/release/qms --help`.
 `qms init`, `qms verify`, `qms recover`, and
 `qms index rebuild` manage a Git-backed workspace and its rebuildable Rust-owned
-SQLite index. The Kotlin CLI/JVM SQLite bootstrap remains a prototype;
+SQLite index. The Kotlin CLI remains a placeholder; its obsolete JVM SQLite
+bootstrap and Kotlin search/ledger stub modules have been removed.
 the Compose Desktop app provides the first create/open project flow, and web
 remains a scaffold. See [PLANNING.md](PLANNING.md) for the roadmap,
 [EQMS-005 workspace contract](docs/architecture/EQMS-005.md), and

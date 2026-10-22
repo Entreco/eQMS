@@ -49,6 +49,29 @@ Drafts and configured identity/local timestamp claims retain their warnings.
 No review, approval, signatures, publication, multi-buffer editor, docking,
 rich-text editing, browser authoring, or runtime fallback is introduced.
 
+## Pre-PR legacy module cleanup
+
+The user requested removal of obsolete Kotlin `core:search` and `core:ledger`
+before PR creation. `SearchModule`/`LedgerModule` are placeholders; the only
+executed consumer is the Kotlin CLI's SQLite bootstrap. Remove that bootstrap
+and JDBC dependency too, leaving the Kotlin CLI an explicit placeholder.
+Do not migrate or delete existing database files. Rust search/index, document,
+workspace and authoritative native CLI behavior remain unchanged.
+
+The intended follow-on structure is Rust-only `core/` (feature crates where
+dependency boundaries justify them), Kotlin UI `feature:scaffold`,
+`feature:document`, `feature:search`, and platform adapters in `apps:desktop`.
+The scaffold may depend on document UI, which may depend on search UI/contracts;
+search must not depend back on scaffold or require a document-editor dependency.
+No crate split or `core:ui` move is included in this cleanup. Consequently
+`core/` is not yet Rust-only. PR creation is paused by the user.
+
+Cleanup risks: dangling Gradle references and accidentally removing native
+functionality or user data. Mitigate with all-app compilation, dependency
+inspection, CLI placeholder execution and no changes to Rust or databases.
+The intended loss of prototype SQLite initialization is explicit, not a
+replacement implementation or a successful native operation.
+
 ## Risk applicability
 
 Risk Management and Security Risk Management both apply proportionately.

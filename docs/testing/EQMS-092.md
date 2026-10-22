@@ -17,6 +17,7 @@ Issue: #50. Define mappings before implementation. Preserve existing test IDs.
 | T092-05 | R092-06 | Existing DocumentSearchTest, DocumentScreenTest and desktop search adapter tests: groups, pagination, latest/history selection and exactly-once render timings. Preserve benchmark opt-in; measure real prepared fixture if available. |
 | T092-06 | R092-08 | Automated keyboard focus/activation check; human review of focus, readability, status honesty, both themes, scrolling and native dialog integration remains pending. |
 | T092-07 | R092-01, R092-09 | Build native CLI, launch real app under JBR against isolated sample drafts, capture dark/light views if available. Record environment and exact limitations; never claim human review from automation. |
+| T092-08 | R092-10 | Inspect Gradle projects/dependencies for removed modules/JDBC; build/run Kotlin CLI placeholder without creating SQLite state, compile desktop and web, run affected UI/adapter regressions. Confirm no Rust or database changes. Historical evidence is preserved as historical, not rewritten. |
 
 Run focused selectors while iterating, then:
 

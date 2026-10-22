@@ -19,5 +19,6 @@ Issue: #50.
 | R092-07 | JVM presentation remains in core:ui; common contracts/state remain reusable; native adapters remain apps:desktop; Wasm and existing web bootstrap compile without Jewel. This supersedes R090-08's common-screen requirement only. |
 | R092-08 | Status and history never imply implemented approval, trusted identity/time, signatures or publication; keyboard focus and errors remain visible in both themes. |
 | R092-09 | A real-adapter desktop launch and documented commands allow preview; evidence accurately distinguishes automated results, GUI capture limitations and pending human review. |
+| R092-10 | Remove obsolete Kotlin core:search/core:ledger, app dependencies, unused JDBC catalog entries and the prototype SQLite initializer; retain the Kotlin CLI as an explicit placeholder. Preserve Rust implementations and existing databases. Defer Rust crate/UI feature splitting and pause PR creation as requested. |
 
 Risk applicability and limitations: [design](../architecture/EQMS-092.md).
