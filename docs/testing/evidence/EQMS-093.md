@@ -6,6 +6,34 @@ related: [EQMS-093]
 
 # Observed automated evidence
 
+## Product-name correction
+
+The user corrected the product name to **DutchDoxx** (double x).
+Correction revision: `69acfcde88ce9b76218e0fb7635de57a1e137924`.
+Earlier observations below retain the historical DutchDox spelling and tested
+revision; they have not been rewritten as new evidence.
+
+At the correction revision these commands passed:
+
+```sh
+./gradlew :apps:desktop:test :feature:scaffold:jvmTest \
+  :apps:desktop:hotRunArgfile --rerun-tasks --console=plain --quiet
+JAVA_HOME="$JBR_SDK" ./gradlew :apps:desktop:createDistributable \
+  --no-daemon --console=plain --quiet
+```
+
+Same macOS/JBR environment as below. Desktop: 32 passed, 2 existing opt-in
+skips; scaffold: 16 passed; zero failures/errors. The actual AWT window title
+and About tests now assert DutchDoxx. Generated bundle
+`apps/desktop/build/compose/binaries/main/app/DutchDoxx.app` reports
+`CFBundleName=DutchDoxx`, `CFBundleIdentifier=com.entreco.dutchdoxx`.
+Build resource, version property (`dutchDoxxVersion`), HTTP user agent and
+preference node (`com/entreco/dutchdoxx`) use the corrected name.
+No preference migration is supplied for the unreleased misspelling.
+Native OS visual inspection/manual testing limitations remain unchanged.
+Logo integration is not included; source artwork can be added under
+`apps/desktop/src/main/resources/branding/` for a subsequent change.
+
 Issue: #52. Tested implementation revision:
 `7da29103b25073fab44f418a776a60508cf118af`.
 This evidence is committed separately after testing that revision.
