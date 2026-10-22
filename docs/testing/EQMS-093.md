@@ -17,6 +17,7 @@ Issue: #52. Defined before implementation.
 | T093-05 | R093-01, R093-05 | About shows generated version, development builds remain incomparable. Package metadata derives from same numeric version. |
 | T093-06 | R093-07 | Affected scaffold/document/search/desktop tests and feature/web Wasm compilation. No Rust implementation changes; native menus are not proven by Compose-only tests. |
 | T093-07 | R093-08 | Regenerate/compare icon assets, inspect PNG/ICO/ICNS dimensions and transparency, decode the packaged resource, assert the real About logo and version render, verify window icon and macOS app bundle icon. Configure Windows/Linux packaging assets but record host-specific execution as pending if unavailable. |
+| T093-08 | R093-09 | Inspect actual visible AWT About frame: native decoration/title, no modal Dialog, one instance on repeat request, restoration after minimizing, disposal/reopen via native close, workspace usability and retained state. Render the full JPG in both themes, check source/rendered aspect ratio, version/draft notice, and About Close action. Re-run desktop/scaffold tests, affected Wasm compilation and macOS packaging. |
 
 Start with `:feature:scaffold:jvmTest :apps:desktop:test`, then affected
 `:feature:document:jvmTest :feature:search:jvmTest` and feature/web Wasm

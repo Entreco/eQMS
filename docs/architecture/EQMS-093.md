@@ -70,6 +70,14 @@ The existing theme button and Settings share this state. Persistence failure
 does not discard project/editor state or claim the change was saved.
 
 About displays the desktop version and an explicit draft/not-approval notice.
+About is a single independent, non-modal Compose Window with native decoration
+and title `About DutchDoxx`, not the in-window WorkspaceDialog. Its native close
+button and Close action dispose only About; application Quit/window-close
+guards remain unchanged. The workspace stays interactive while About is open.
+Repeated About requests focus/restore the existing window instead of creating
+duplicates. Its theme follows the workspace. The desktop artwork slot loads
+the full supplied `branding/about.jpg` with its aspect ratio preserved; launcher
+icons continue using the SVG-derived PNG/ICO/ICNS, not the About banner.
 Update checking is user-triggered only, on an IO dispatcher with bounded
 connect/request time and response size, no credentials or workspace data.
 Query GitHub's latest published stable release endpoint for Entreco/eQMS.
