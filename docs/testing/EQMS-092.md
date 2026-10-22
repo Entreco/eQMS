@@ -30,4 +30,5 @@ cargo build --workspace --release --locked
 ```
 
 Evidence: [EQMS-092 observed results](evidence/EQMS-092.md).
+Feature restructuring: [revision-specific results](evidence/EQMS-092-feature-split.md).
 Human review/testing must remain unchecked until actually performed.

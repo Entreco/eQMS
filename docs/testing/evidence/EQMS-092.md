@@ -6,6 +6,11 @@ related: [EQMS-092, EQMS-090, EQMS-023, EQMS-050]
 
 # Jewel scaffold and legacy-module cleanup evidence
 
+This is historical evidence for the revisions below. The subsequent
+[feature split evidence](EQMS-092-feature-split.md) records the implemented
+Rust-only core/Kotlin feature layout and supersedes the deferred-layout status
+here without rewriting its original commands or results.
+
 Issue: #50. Implementation revisions:
 
 - Jewel scaffold: `f4aac4b6c0f003c5dd33be6c906ae3885b94db1b`.
