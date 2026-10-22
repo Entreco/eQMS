@@ -6,6 +6,73 @@ related: [EQMS-093]
 
 # Observed automated evidence
 
+## Independent About window and full banner
+
+Issue #52, R093-09/T093-08. Final tested revision:
+`3e7278dbb6205932049168e22cce00f95594aff8`
+(implementation `398258d`, stable test fixture follow-up `3e7278d`).
+Design/requirements/tests preceded implementation in `60f178c`.
+The supplied `branding/about.jpg` (564 x 165) is used only for About;
+SVG-derived launcher icons remain unchanged.
+
+Commands, in the same macOS/JBR environment as below:
+
+```sh
+./gradlew :apps:desktop:test :feature:scaffold:jvmTest \
+  :feature:scaffold:compileKotlinWasmJs :apps:web:compileKotlinWasmJs \
+  --rerun-tasks --console=plain --quiet
+JAVA_HOME="$JBR_SDK" ./gradlew :apps:desktop:createDistributable \
+  --no-daemon --console=plain --quiet
+cmp apps/desktop/src/main/resources/branding/icon.icns \
+  apps/desktop/build/compose/binaries/main/app/DutchDoxx.app/Contents/Resources/DutchDoxx.icns
+```
+
+All exited 0 at the final revision. Desktop: 38 tests, 36 passed, two existing
+opt-in skips; scaffold: 18 passed; zero failures/errors. The two requested
+Wasm targets compiled and macOS bundle creation passed. ZIP inspection verified
+that the packaged app JAR's `branding/about.jpg` exactly matches the supplied
+file. The bundled launcher ICNS still matches the existing asset.
+
+Observed automated coverage:
+
+- Actual visible AWT About frame has title `About DutchDoxx` and native
+  decoration (`isUndecorated=false`); no modal Dialog is introduced.
+- Repeated About requests reuse the same frame. Minimizing and requesting
+  About restores it. Native WINDOW_CLOSING disposes that frame alone;
+  reopening creates a new single frame and Close disposes it.
+- Main workspace remains enabled, theme control works while About is open,
+  project state survives About closure, and editing while About is open retains
+  the unsaved application-exit guard. Keep editing does not exit the application.
+- Real About-window semantics show accessible artwork, version and draft
+  notice in both themes. Separate direct rendering of the same DesktopLogo
+  composable verifies the banner's 564:165 aspect ratio and orange artwork
+  pixels; source JPEG decoding verifies dimensions.
+
+Investigation limitations and resolved failures:
+
+- The test runner's simulated pointer injection into a real native window
+  hit a Swing EDT assertion. The Close-action check now dispatches its semantic
+  OnClick action; native close is independently tested with WINDOW_CLOSING.
+- Compose's test-scene screenshot capture of a separate native window did not
+  reliably contain its rendered pixels. Native-window semantics/decoration
+  and standalone artwork pixel rendering are tested separately rather than
+  claiming those screenshots prove OS-visible appearance.
+- A minimize/restore check exposed asynchronous frame state; restoration now
+  explicitly clears ICONIFIED as well as the Compose minimized state.
+- The added dirty-exit test initially recreated fake capability objects when
+  its close-request state recomposed, resetting the fixture's document state.
+  The follow-up commit stabilizes those injected instances and uses explicit
+  text-edit semantics while About has native focus. Final revision-specific
+  rerun passed.
+
+No new Rust behavior, live network check, Windows/Linux execution, or human
+testing is claimed. Previous native OS visual/accessibility limitations and
+the same two opt-in skips still apply.
+
+- [ ] Human verifies About native chrome, focus/restoration and main-window
+  interaction on target platforms.
+- [ ] Human reviews the full JPG banner, sizing and readability in both themes.
+
 ## Launcher and About artwork increment
 
 Issue #52, R093-08/T093-07. Tested implementation:
