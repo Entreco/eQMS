@@ -32,6 +32,7 @@ fun ProjectScreen(
     closeRequested: Boolean = false,
     onCloseHandled: () -> Unit = {},
     onCloseConfirmed: () -> Unit = {},
+    chrome: DesktopChrome? = null,
 ) {
     val scope = rememberCoroutineScope()
     var project by remember { mutableStateOf<String?>(null) }
@@ -43,14 +44,63 @@ fun ProjectScreen(
     var documentDirty by remember { mutableStateOf(false) }
     var documentBusy by remember { mutableStateOf(false) }
     var pendingNavigation by remember { mutableStateOf<(() -> Unit)?>(null) }
-    var dark by remember { mutableStateOf(true) }
+    var dark by remember { mutableStateOf(chrome?.initialAppearance?.getOrNull() ?: true) }
+    var appearanceError by remember {
+        mutableStateOf(chrome?.initialAppearance?.exceptionOrNull()?.let { "Could not load appearance: ${it.message}" })
+    }
+    var savingAppearance by remember { mutableStateOf(false) }
+    var chromeDialog by remember { mutableStateOf<DesktopCommand?>(null) }
+    val interactive = !busy && !documentBusy && creating == null && pendingNavigation == null &&
+        chromeDialog == null && !savingAppearance
+
+    fun changeAppearance(value: Boolean) {
+        if (savingAppearance) return
+        if (chrome == null) {
+            dark = value
+        } else {
+            savingAppearance = true
+            scope.launch {
+                try {
+                    chrome.saveAppearance(value).fold(
+                        onSuccess = { dark = value; appearanceError = null },
+                        onFailure = { appearanceError = "Could not save appearance: ${it.message}" },
+                    )
+                } finally {
+                    savingAppearance = false
+                }
+            }
+        }
+    }
 
     fun navigate(action: () -> Unit) {
         if (documentDirty) pendingNavigation = action else action()
     }
 
-    LaunchedEffect(closeRequested, busy, documentBusy) {
-        if (closeRequested && !busy && !documentBusy) {
+    SideEffect {
+        chrome?.enabled = interactive
+        chrome?.hasProject = project != null
+    }
+
+    LaunchedEffect(chrome?.command) {
+        val command = chrome?.consume()
+        if (command != null && interactive) {
+            when (command) {
+                DesktopCommand.NewProject -> navigate { creating = true }
+                DesktopCommand.CloseProject -> if (project != null) navigate {
+                    project = null
+                    projectGeneration++
+                    documentDirty = false
+                    documentBusy = false
+                    error = false
+                    message = null
+                }
+                else -> chromeDialog = command
+            }
+        }
+    }
+
+    LaunchedEffect(closeRequested, interactive) {
+        if (closeRequested && interactive) {
             navigate(onCloseConfirmed)
             onCloseHandled()
         }
@@ -64,16 +114,16 @@ fun ProjectScreen(
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text("eQMS", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                    Text("DutchDox", fontWeight = FontWeight.Bold, fontSize = 18.sp)
                     Text(
                         project?.substringAfterLast('/')?.substringAfterLast('\\') ?: "Quality workspace",
                         Modifier.weight(1f),
                         color = JewelTheme.globalColors.text.info,
                         maxLines = 1, overflow = TextOverflow.Ellipsis,
                     )
-                    OutlinedButton(enabled = !busy && !documentBusy, onClick = { navigate { creating = true } }) { Text("Create project") }
-                    OutlinedButton(enabled = !busy && !documentBusy, onClick = { navigate { creating = false } }) { Text("Open project") }
-                    OutlinedButton(onClick = { dark = !dark }) { Text(if (dark) "Light theme" else "Dark theme") }
+                    OutlinedButton(enabled = interactive, onClick = { navigate { creating = true } }) { Text("Create project") }
+                    OutlinedButton(enabled = interactive, onClick = { navigate { creating = false } }) { Text("Open project") }
+                    OutlinedButton(enabled = interactive, onClick = { changeAppearance(!dark) }) { Text(if (dark) "Light theme" else "Dark theme") }
                 }
                 Divider(Orientation.Horizontal)
                 Box(Modifier.fillMaxWidth().weight(1f)) {
@@ -85,7 +135,7 @@ fun ProjectScreen(
                                 path, documents, requestNavigation = { navigate(it) },
                                 onStateChanged = { dirty, working -> documentDirty = dirty; documentBusy = working },
                                 modifier = Modifier.fillMaxSize(),
-                                workspaceBusy = busy || creating != null,
+                                workspaceBusy = busy || creating != null || chromeDialog != null || savingAppearance,
                             )
                         }
                     } else {
@@ -115,6 +165,9 @@ fun ProjectScreen(
                     }
                 }
                 Divider(Orientation.Horizontal)
+                appearanceError?.let {
+                    Text(it, Modifier.padding(horizontal = 16.dp), color = JewelTheme.globalColors.text.error)
+                }
                 Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                     Text(
                         if (busy) "Working..." else message ?: if (project == null) "No project open" else "Workspace open",
@@ -125,6 +178,17 @@ fun ProjectScreen(
                         if (documentBusy) "Document operation in progress" else if (documentDirty) "Draft has unsaved edits" else "Local workspace",
                         color = JewelTheme.globalColors.text.info,
                     )
+                }
+                chromeDialog?.let { command ->
+                    chrome?.let {
+                        key(command) {
+                            ChromeDialog(
+                                command, it, dark, savingAppearance, appearanceError,
+                                onAppearance = ::changeAppearance,
+                                onDismiss = { chromeDialog = null },
+                            )
+                        }
+                    }
                 }
             }
             pendingNavigation?.let { action ->

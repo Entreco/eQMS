@@ -117,6 +117,53 @@ to enter it, then **Select directory**. Desktop filesystem and native CLI access
 remain in `apps:desktop`; the browser shell is not wired to these capabilities.
 Desktop still requires a JVM, not Kotlin/Native.
 
+## DutchDox desktop menus and settings
+
+The desktop application is named **DutchDox**; the repository, workspace
+formats, and native `qms` CLI keep their eQMS names. On macOS the native
+application menu supplies OS-standard **About** and **Settings/Preferences**
+alongside standard system items. **File > New project** uses the existing
+creation chooser. **File > Close project** returns to welcome without quitting
+or deleting files. Unsaved changes require confirmation; Cancel/Keep editing
+preserves edits. Quit/window close remains guarded. File/Help commands are
+disabled during conflicting operations or dialogs.
+
+**Edit** and **View** have no custom commands yet. **Help > Check for updates**
+checks published stable GitHub releases only when clicked. No release and
+network/rate-limit failures are reported explicitly. An available release page
+can be opened in the browser; there is no automatic download or installation.
+This Help placement is intentional: no native bridge is added to customize the
+macOS application menu. Development or unrecognized versions cannot be
+automatically classified as up to date.
+
+Settings contains only light/dark appearance. It defaults to dark when unset
+and persists in the current OS user's Java Preferences node
+`com/entreco/dutchdox`; it is not stored in a project. The existing toolbar theme
+control uses the same preference. Storage errors are visible and changing theme
+does not reopen a workspace or reset the editor/search.
+
+The desktop version defaults to `1.0.0-dev`, independently of the Rust CLI.
+Override it with `-PdutchDoxVersion=1.0.0` for a corresponding release build;
+do not label unreleased code as a published release. About and update comparison
+use the full version; native bundle metadata uses its numeric portion.
+
+Native packaging requires a **full JBR 25 SDK**, including `jpackage` and
+`jmods`; an IDE-bundled runtime may run/test the app but lack packaging tools.
+With `JAVA_HOME` pointing to that SDK:
+
+```sh
+./gradlew :apps:desktop:createDistributable
+./gradlew :apps:desktop:runDistributable
+```
+
+On macOS this creates `apps/desktop/build/compose/binaries/main/app/DutchDox.app`.
+It is a local, unsigned development distribution, not an installer or a
+provenance-assured release. It does not bundle `qms`: configure `EQMS_QMS_PATH`
+or install the trusted native executable on PATH, as with direct JVM launches.
+See [design/risk assessment](../architecture/EQMS-093.md) and
+[test specification](../testing/EQMS-093.md). Human native-menu review/testing
+is required before merge.
+
 ## Source layout
 
 `core/` is Rust-only. `core/rust` currently contains the authoritative domain

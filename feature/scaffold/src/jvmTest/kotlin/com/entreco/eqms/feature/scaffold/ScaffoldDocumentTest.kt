@@ -137,4 +137,68 @@ class ScaffoldDocumentTest {
         compose.onNodeWithContentDescription("Markdown body").assertDoesNotExist()
         compose.runOnIdle { assertEquals(2, capabilities.lists) }
     }
+
+    private fun chrome() = DesktopChrome(
+        "1.0.0-dev", Result.success(true), { Result.success(Unit) },
+        { Result.success(ReleaseCheck("No published stable releases are available.")) },
+        { Result.success(Unit) },
+    )
+
+    @Test
+    fun closeProjectMenuGuardsDirtyStateAndDoesNotQuit() {
+        val chrome = chrome()
+        var quit = false
+        compose.setContent { ProjectScreen(Projects(), Documents(), onCloseConfirmed = { quit = true }, chrome = chrome) }
+        compose.runOnIdle {
+            assertFalse(chrome.hasProject)
+            chrome.request(DesktopCommand.CloseProject)
+        }
+        compose.onNodeWithText("Your quality workspace").assertExists()
+        compose.onNodeWithText("Open project").performClick()
+        compose.onNodeWithText("Select directory").performClick()
+        compose.onNodeWithText("Policy (Draft)").performClick()
+        compose.onNodeWithContentDescription("Markdown body").performTextReplacement("keep edits")
+        compose.runOnIdle { chrome.request(DesktopCommand.CloseProject) }
+        compose.onNodeWithText("Unsaved changes").assertExists()
+        compose.runOnIdle {
+            assertFalse(chrome.enabled)
+            chrome.request(DesktopCommand.NewProject)
+        }
+        compose.onNodeWithText("Keep editing").performClick()
+        compose.onNodeWithContentDescription("Markdown body").assertTextContains("keep edits")
+        compose.runOnIdle { chrome.request(DesktopCommand.CloseProject) }
+        compose.onNodeWithText("Discard changes").performClick()
+        compose.onNodeWithText("Your quality workspace").assertExists()
+        compose.onNodeWithContentDescription("Markdown body").assertDoesNotExist()
+        compose.runOnIdle {
+            assertFalse(chrome.hasProject)
+            assertFalse(quit)
+        }
+    }
+
+    @Test
+    fun menuNewReusesCreateDialogAndSettingsPreserveDirtySearch() {
+        val chrome = chrome()
+        val documents = Documents()
+        compose.setContent { ProjectScreen(Projects(), documents, chrome = chrome) }
+        compose.runOnIdle { chrome.request(DesktopCommand.NewProject) }
+        compose.onNodeWithText("New folder").assertExists()
+        compose.onNodeWithText("Select directory").performClick()
+        compose.onNodeWithText("Project created successfully.").assertExists()
+        compose.onNodeWithText("Policy (Draft)").performClick()
+        compose.onNodeWithContentDescription("Markdown body").performTextReplacement("keep edits")
+        compose.onNodeWithContentDescription("Search saved drafts").performTextReplacement("policy")
+        compose.waitUntil(3000) { documents.queries.isNotEmpty() }
+        compose.runOnIdle { chrome.request(DesktopCommand.Settings) }
+        compose.onNodeWithText("Use light appearance").performClick()
+        compose.onNodeWithText("Appearance: Light").assertExists()
+        compose.onNodeWithText("Close").performClick()
+        compose.onNodeWithText("Dark theme").assertExists()
+        compose.onNodeWithContentDescription("Markdown body").assertTextContains("keep edits")
+        compose.onNodeWithContentDescription("Search saved drafts").assertTextContains("policy")
+        compose.runOnIdle {
+            assertEquals(1, documents.lists)
+            assertEquals(1, documents.prepares)
+        }
+    }
 }
