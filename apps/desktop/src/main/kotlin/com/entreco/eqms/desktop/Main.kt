@@ -2,6 +2,7 @@ package com.entreco.eqms.desktop
 
 import androidx.compose.runtime.*
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
@@ -156,7 +157,10 @@ fun main() {
     val preferences = DesktopPreferences()
     val version = desktopVersion()
     val updates = DesktopUpdates(version)
-    val chrome = DesktopChrome(version, preferences.readDark(), preferences::saveDark, updates::check, updates::open)
+    val chrome = DesktopChrome(
+        version, preferences.readDark(), preferences::saveDark, updates::check, updates::open,
+        aboutLogo = { DesktopLogo() },
+    )
     launchDesktop(chrome)
 }
 
@@ -165,9 +169,11 @@ private fun launchDesktop(chrome: DesktopChrome) = application {
     val documents = remember { DesktopDocumentCapabilities() }
     var closeRequested by remember { mutableStateOf(false) }
     val requestClose = remember { { closeRequested = true } }
+    LaunchedEffect(Unit) { installTaskbarIcon() }
     Window(
         onCloseRequest = requestClose,
         title = "DutchDoxx",
+        icon = painterResource("branding/icon.png"),
         state = rememberWindowState(width = 1100.dp, height = 800.dp),
     ) {
         SideEffect { window.minimumSize = java.awt.Dimension(960, 720) }

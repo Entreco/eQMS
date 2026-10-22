@@ -42,7 +42,7 @@ The supplied SVG is canonical desktop artwork in
 PNG, multi-resolution ICO and ICNS assets from it, preserving aspect ratio and
 adding an equal 10% outer margin. Check generated assets into the repository;
 normal builds must not require conversion tools. A documented Python generation
-script uses CairoSVG/Pillow; macOS ICNS creation uses `iconutil`.
+script uses CairoSVG/Pillow for all three formats.
 Set platform-specific Compose native-distribution icons for macOS, Windows
 and Linux, and a Compose window icon for unpackaged launches. Inject About
 artwork from the desktop into the scaffold as a composable slot, rather than

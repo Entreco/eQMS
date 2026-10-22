@@ -119,10 +119,27 @@ Desktop still requires a JVM, not Kotlin/Native.
 
 ## DutchDoxx desktop menus and settings
 
-Desktop branding artwork belongs in `apps/desktop/src/main/resources/branding/`.
-Use `logo.svg` (preferred) or a transparent `logo.png` as source artwork.
-Adding the file alone does not wire window, About, or launcher icons; native
-packaging will also require platform icon assets derived from it.
+Desktop branding artwork lives in `apps/desktop/src/main/resources/branding/`.
+`logo.svg` is the canonical supplied artwork. Generated `icon.png` (1024 square),
+`icon.ico` (16-256 pixels) and `icon.icns` (up to 1024 pixels) provide Linux,
+Windows and macOS launcher icons respectively. The PNG also supplies the
+desktop window/taskbar icon where supported and the accessible logo in About.
+Transparent padding keeps the original aspect ratio and colors.
+
+Normal builds use the committed icons and need no conversion tools. To update
+artwork, replace `logo.svg`, then regenerate and check the outputs using Python
+with CairoSVG 2.8.2, Pillow 11.3.0, and native Cairo installed:
+
+```sh
+python3 scripts/generate_desktop_icons.py
+python3 scripts/generate_desktop_icons.py --check
+```
+
+Use an isolated Python environment for these optional tools. On Apple Silicon
+Homebrew installations, Cairo may require
+`DYLD_FALLBACK_LIBRARY_PATH=/opt/homebrew/lib` for the conversion commands.
+Package each installer on its target OS; configuring icons does not validate
+Windows/Linux installation or replace manual launcher/About visual review.
 
 The desktop application is named **DutchDoxx**; the repository, workspace
 formats, and native `qms` CLI keep their eQMS names. On macOS the native

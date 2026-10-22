@@ -21,7 +21,12 @@ compose.desktop {
             packageName = "DutchDoxx"
             packageVersion = desktopVersion.substringBefore('-').substringBefore('+')
             modules("java.net.http", "java.prefs")
-            macOS { bundleID = "com.entreco.dutchdoxx" }
+            macOS {
+                bundleID = "com.entreco.dutchdoxx"
+                iconFile.set(project.file("src/main/resources/branding/icon.icns"))
+            }
+            windows { iconFile.set(project.file("src/main/resources/branding/icon.ico")) }
+            linux { iconFile.set(project.file("src/main/resources/branding/icon.png")) }
         }
     }
 }

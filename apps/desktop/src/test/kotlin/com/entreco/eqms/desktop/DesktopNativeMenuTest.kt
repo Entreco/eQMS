@@ -1,6 +1,7 @@
 package com.entreco.eqms.desktop
 
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import com.entreco.eqms.feature.scaffold.DesktopChrome
@@ -20,12 +21,17 @@ class DesktopNativeMenuTest {
         )
         var failure: Throwable? = null
         application(exitProcessOnExit = false) {
-            Window(onCloseRequest = ::exitApplication, title = "DutchDoxx") {
+            Window(onCloseRequest = ::exitApplication, title = "DutchDoxx", icon = painterResource("branding/icon.png")) {
                 DesktopMenus(chrome, ::exitApplication)
                 LaunchedEffect(Unit) {
                     try {
                         delay(300)
                         assertEquals("DutchDoxx", window.title)
+                        assertTrue(window.iconImages.isNotEmpty())
+                        val icon = window.iconImages.first()
+                        assertTrue(icon.getWidth(null) > 0)
+                        assertEquals(icon.getWidth(null), icon.getHeight(null))
+                        installTaskbarIcon()
                         val menus = checkNotNull(window.menuBar)
                         val expected = if (isMacOS) listOf("File", "Edit", "View", "Help")
                             else listOf("Application", "File", "Edit", "View", "Help")

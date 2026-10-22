@@ -23,6 +23,7 @@ class DesktopChrome(
     val saveAppearance: suspend (Boolean) -> Result<Unit>,
     val checkUpdates: suspend () -> Result<ReleaseCheck>,
     val openRelease: suspend (String) -> Result<Unit>,
+    val aboutLogo: @Composable () -> Unit = {},
 ) {
     var enabled by mutableStateOf(true)
         internal set
@@ -76,6 +77,7 @@ internal fun ChromeDialog(
             Column(Modifier.width(440.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 when (command) {
                     DesktopCommand.About -> {
+                        chrome.aboutLogo()
                         Text("DutchDoxx ${chrome.version}")
                         Text("An eQMS quality workspace. Drafts are not approvals.")
                     }
