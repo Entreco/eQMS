@@ -16,6 +16,7 @@ Issue: #52. Defined before implementation.
 | T093-04 | R093-05, R093-06 | Injected release transport: newer/equal/older, v/build-metadata versions, dev/unparseable tags, no releases, rate limit/HTTP/offline/timeout, malformed/oversized metadata, unsafe URL and browser failures. Actual asynchronous dialog duplicate/cancel behavior. |
 | T093-05 | R093-01, R093-05 | About shows generated version, development builds remain incomparable. Package metadata derives from same numeric version. |
 | T093-06 | R093-07 | Affected scaffold/document/search/desktop tests and feature/web Wasm compilation. No Rust implementation changes; native menus are not proven by Compose-only tests. |
+| T093-07 | R093-08 | Regenerate/compare icon assets, inspect PNG/ICO/ICNS dimensions and transparency, decode the packaged resource, assert the real About logo and version render, verify window icon and macOS app bundle icon. Configure Windows/Linux packaging assets but record host-specific execution as pending if unavailable. |
 
 Start with `:feature:scaffold:jvmTest :apps:desktop:test`, then affected
 `:feature:document:jvmTest :feature:search:jvmTest` and feature/web Wasm

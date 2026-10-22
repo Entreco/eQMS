@@ -18,3 +18,4 @@ avoiding a native application-menu bridge.
 | R093-05 | About reports truthful desktop version. On-demand stable GitHub release checking reports checking, newer/current/older, no release, incomparable and error states accurately; no startup/background check or installation. |
 | R093-06 | Bound network requests, allow cancellation, prevent duplicates, reject malformed metadata and unsafe release URLs, report browser errors, and send no workspace/user data or credentials. |
 | R093-07 | Preserve create/open/save/history/search behavior, Rust domain boundaries, and affected Wasm compilation. Record native-check limitations; manual review/testing remain pending. |
+| R093-08 | Use the supplied logo for macOS ICNS, Windows ICO and Linux PNG launcher assets, desktop window icon and About artwork. Preserve aspect ratio/transparency, provide an accessible About description, and make asset generation reproducible without adding normal-build conversion dependencies. |

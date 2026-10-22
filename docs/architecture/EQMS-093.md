@@ -35,6 +35,25 @@ menu for About/Settings and the existing guarded window close.
 
 ## State and behavior
 
+### Application artwork
+
+The supplied SVG is canonical desktop artwork in
+`apps/desktop/src/main/resources/branding/logo.svg`. Generate square transparent
+PNG, multi-resolution ICO and ICNS assets from it, preserving aspect ratio and
+adding an equal 10% outer margin. Check generated assets into the repository;
+normal builds must not require conversion tools. A documented Python generation
+script uses CairoSVG/Pillow; macOS ICNS creation uses `iconutil`.
+Set platform-specific Compose native-distribution icons for macOS, Windows
+and Linux, and a Compose window icon for unpackaged launches. Inject About
+artwork from the desktop into the scaffold as a composable slot, rather than
+making the scaffold load desktop resources or platform APIs. Provide an
+accessible logo description and preserve the truthful version/draft notice.
+
+Risk scope remains proportional: incorrect/missing assets can break packaging
+or misidentify the app. Validate image dimensions/transparency, regenerated
+asset equivalence, resource decoding and About rendering; inspect macOS bundle
+contents. Windows/Linux installation and visual review require their hosts.
+
 The scaffold owns command execution and exposes callbacks/state to the desktop
 menu composition. No duplicate project state. New project reuses initialization
 and the chooser; Close project clears session project/document/search state
