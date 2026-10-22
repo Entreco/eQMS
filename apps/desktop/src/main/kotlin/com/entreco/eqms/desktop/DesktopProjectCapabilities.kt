@@ -1,8 +1,8 @@
 package com.entreco.eqms.desktop
 
-import com.entreco.eqms.ui.DirectoryListing
-import com.entreco.eqms.ui.ProjectCapabilities
-import com.entreco.eqms.ui.ProjectDirectory
+import com.entreco.eqms.feature.scaffold.DirectoryListing
+import com.entreco.eqms.feature.scaffold.ProjectCapabilities
+import com.entreco.eqms.feature.scaffold.ProjectDirectory
 import java.io.IOException
 import java.io.UncheckedIOException
 import java.nio.file.Files

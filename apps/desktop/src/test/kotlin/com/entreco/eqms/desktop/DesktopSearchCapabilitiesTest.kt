@@ -1,7 +1,7 @@
 package com.entreco.eqms.desktop
 
 import java.io.IOException
-import com.entreco.eqms.ui.SearchIndexOutOfDateException
+import com.entreco.eqms.feature.search.SearchIndexOutOfDateException
 import kotlin.test.*
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking

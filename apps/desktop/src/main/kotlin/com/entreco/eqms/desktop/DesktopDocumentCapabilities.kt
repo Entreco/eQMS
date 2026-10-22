@@ -1,12 +1,12 @@
 package com.entreco.eqms.desktop
 
-import com.entreco.eqms.ui.DocumentCapabilities
-import com.entreco.eqms.ui.DocumentSnapshot
-import com.entreco.eqms.ui.SearchHit
-import com.entreco.eqms.ui.SearchPage
-import com.entreco.eqms.ui.SearchPreparation
-import com.entreco.eqms.ui.SearchResults
-import com.entreco.eqms.ui.SearchIndexOutOfDateException
+import com.entreco.eqms.feature.document.DocumentCapabilities
+import com.entreco.eqms.feature.document.DocumentSnapshot
+import com.entreco.eqms.feature.search.SearchHit
+import com.entreco.eqms.feature.search.SearchPage
+import com.entreco.eqms.feature.search.SearchPreparation
+import com.entreco.eqms.feature.search.SearchResults
+import com.entreco.eqms.feature.search.SearchIndexOutOfDateException
 import java.io.IOException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers

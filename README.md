@@ -9,7 +9,8 @@ operations, and structured errors. Build it with
 `cargo build --workspace --release --locked`, then run `./target/release/qms --help`.
 `qms init`, `qms verify`, `qms recover`, and
 `qms index rebuild` manage a Git-backed workspace and its rebuildable Rust-owned
-SQLite index. The Kotlin CLI/JVM SQLite bootstrap remains a prototype;
+SQLite index. The Kotlin CLI remains a placeholder; its obsolete JVM SQLite
+bootstrap and Kotlin search/ledger stub modules have been removed.
 the Compose Desktop app provides the first create/open project flow, and web
 remains a scaffold. See [PLANNING.md](PLANNING.md) for the roadmap,
 [EQMS-005 workspace contract](docs/architecture/EQMS-005.md), and
@@ -24,6 +25,11 @@ reference validation remain follow-up work. See the
 [EQMS-023 draft contract](docs/architecture/EQMS-023.md).
 
 ## Core direction
+
+`core/` contains Rust domain code (`core/rust`); Kotlin UI is separated into
+`feature:scaffold`, `feature:document`, `feature:search` and shared `feature:ui`.
+Filesystem/native process adapters remain in `apps:desktop`; Rust does not
+depend on UI frameworks. See [source layout](docs/operations/BuildAndRun.md#source-layout).
 
 - **Canonical artifacts** use a minimal Markdown-based format for documents, procedures, policies, and records.
 - **History and auditability** combine Git-backed documents and readable diffs with a hash-chained audit journal. Local hashes alone do not prevent complete history replacement or prove signer identity.

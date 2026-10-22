@@ -1,9 +1,10 @@
 package com.entreco.eqms.desktop
 
-import androidx.compose.material.MaterialTheme
+import org.jetbrains.jewel.intui.standalone.theme.IntUiTheme
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
-import com.entreco.eqms.ui.*
+import com.entreco.eqms.feature.document.*
+import com.entreco.eqms.feature.search.*
 import java.io.File
 import java.security.MessageDigest
 import java.util.Collections
@@ -53,7 +54,7 @@ class DesktopSearchBenchmarkTest {
             }
         }
         compose.setContent {
-            MaterialTheme {
+            IntUiTheme(isDark = true) {
                 DocumentScreen(
                     project!!, capabilities, { it() }, { _, _ -> },
                     onSearchResultsLaidOut = { timings += it },
@@ -63,7 +64,7 @@ class DesktopSearchBenchmarkTest {
         val queries = listOf("And", "risk", "managment", "trace")
         fun query(text: String): SearchRenderTiming {
             val previousGeneration = synchronized(timings) { timings.maxOfOrNull { it.generation } ?: -1 }
-            compose.onNodeWithText("Search saved drafts").performTextReplacement(text)
+            compose.onNodeWithContentDescription("Search saved drafts").performTextReplacement(text)
             fun matches() = synchronized(timings) { timings.filter { it.query == text && it.generation > previousGeneration } }
             compose.waitUntil(30_000) { failure.get() != null || matches().isNotEmpty() }
             failure.get()?.let { throw AssertionError("Real native search failed", it) }

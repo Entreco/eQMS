@@ -16,7 +16,12 @@ related: [EQMS-090]
 | T090-06 | R090-02, R090-03, R090-05 | Manual integration test against built native `qms`: create a workspace, open/verify it, reject an invalid directory, and confirm non-empty destination errors without being overwritten. |
 | T090-07 | R090-07 | Automated tests: create normal and spaced child names; reject blank, absolute, separator-containing, dot and dot-dot names; refuse existing paths without altering their content; surface filesystem failures. Verify directory listing and creation through the desktop capability adapter. Manually confirm New folder is visible for Create only. |
 | T090-08 | R090-02, R090-05, R090-07 | Manual GUI test in hotRun: create a named folder, confirm it is selected, initialize it, and reopen it. Verify prompt cancellation, visible filesystem/name errors, and that chooser cancellation preserves the created empty folder without invoking init. |
-| T090-09 | R090-01, R090-02, R090-03, R090-05, R090-06, R090-07, R090-08 | Compile `core:ui` for JVM and Wasm; verify common sources have no Java/Swing imports. Automated Compose tests cover create/select, open without New folder, failed navigation, visible folder errors, cancellation without workspace operations, and busy-state duplicate prevention. Run desktop adapter and folder regressions. Manually confirm native filesystem integration and dialog layout. |
+| T090-09 | R090-01, R090-02, R090-03, R090-05, R090-06, R090-07, R090-08 | Compile feature modules for JVM and Wasm; verify common sources have no Java/Swing imports. Automated Compose tests cover create/select, open without New folder, failed navigation, visible folder errors, cancellation without workspace operations, and busy-state duplicate prevention. Run desktop adapter and folder regressions. Manually confirm native filesystem integration and dialog layout. |
+
+EQMS-092 supersedes T090-09's common-screen placement check: compile shared
+contracts/state for JVM and Wasm, while Jewel presentation is JVM-only in
+`feature:scaffold` with shared `feature:ui` primitives. Native adapters remain in `apps:desktop`. The behavior regressions
+and stable T090 IDs remain applicable; see [Jewel test mappings](EQMS-092.md).
 
 Automated adapter tests are expected to use an injected process executor and
 must not depend on a developer's Git identity or a globally installed `qms`.
