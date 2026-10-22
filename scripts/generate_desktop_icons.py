@@ -1,12 +1,10 @@
 #!/usr/bin/env python3
-"""Generate committed desktop icons from the canonical SVG; use --check in CI."""
+"""Generate desktop icons from branding/logo.png; use --check in CI."""
 
 import argparse
-import io
 from pathlib import Path
 import tempfile
 
-import cairosvg
 from PIL import Image
 
 
@@ -15,11 +13,12 @@ ICON_FILES = ("icon.png", "icon.ico", "icon.icns")
 
 
 def generate(destination):
-    raster = cairosvg.svg2png(url=str(BRANDING / "logo.svg"), output_width=820)
-    with Image.open(io.BytesIO(raster)) as source:
+    with Image.open(BRANDING / "logo.png") as source:
         logo = source.convert("RGBA")
-    image = Image.new("RGBA", (1024, 1024))
-    image.alpha_composite(logo, ((1024 - logo.width) // 2, (1024 - logo.height) // 2))
+    side = max(logo.size)
+    square = Image.new("RGBA", (side, side))
+    square.alpha_composite(logo, ((side - logo.width) // 2, (side - logo.height) // 2))
+    image = square.resize((1024, 1024), Image.Resampling.LANCZOS)
     image.save(destination / "icon.png")
     image.save(
         destination / "icon.ico",
@@ -43,7 +42,7 @@ def main():
             ]
             if stale:
                 parser.exit(1, "Regenerate stale desktop icons: " + ", ".join(stale) + "\n")
-        print("Desktop icons match the canonical SVG.")
+        print("Desktop icons match branding/logo.png.")
     else:
         generate(BRANDING)
         print("Generated " + ", ".join(ICON_FILES))

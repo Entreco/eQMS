@@ -120,11 +120,16 @@ Desktop still requires a JVM, not Kotlin/Native.
 ## DutchDoxx desktop menus and settings
 
 Desktop branding artwork lives in `apps/desktop/src/main/resources/branding/`.
-`logo.svg` is the canonical supplied artwork. Generated `icon.png` (1024 square),
+`logo.png` is the supplied launcher tile, with a dark background and rounded
+corners; `logo.svg` is retained as original artwork, not the launcher source.
+Generated `icon.png` (1024 square),
 `icon.ico` (16-256 pixels) and `icon.icns` (up to 1024 pixels) provide Linux,
 Windows and macOS launcher icons respectively. The PNG also supplies the
 desktop window/taskbar icon where supported.
-Transparent padding keeps the original aspect ratio and colors.
+Generation preserves the tile background, rounded-corner transparency and aspect
+ratio, with no added outer padding. The supplied PNG is 164 x 165; it is
+centered on a 165-square canvas before resizing. Larger assets are upscaled,
+not additional source detail.
 
 About now uses the separate full-width `branding/about.jpg` artwork, not the
 launcher PNG. Replace that JPG to update only the About banner; preserve its
@@ -134,17 +139,15 @@ About again restores/focuses it. Closing About does not close the application.
 It follows the selected theme and retains the build version and draft notice.
 
 Normal builds use the committed icons and need no conversion tools. To update
-artwork, replace `logo.svg`, then regenerate and check the outputs using Python
-with CairoSVG 2.8.2, Pillow 11.3.0, and native Cairo installed:
+launcher artwork, replace `logo.png`, then regenerate and check the outputs
+using Python with Pillow 11.3.0:
 
 ```sh
 python3 scripts/generate_desktop_icons.py
 python3 scripts/generate_desktop_icons.py --check
 ```
 
-Use an isolated Python environment for these optional tools. On Apple Silicon
-Homebrew installations, Cairo may require
-`DYLD_FALLBACK_LIBRARY_PATH=/opt/homebrew/lib` for the conversion commands.
+Use an isolated Python environment for this optional tool; Cairo is not needed.
 Package each installer on its target OS; configuring icons does not validate
 Windows/Linux installation or replace manual launcher/About visual review.
 

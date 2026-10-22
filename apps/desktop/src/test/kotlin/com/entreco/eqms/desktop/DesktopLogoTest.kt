@@ -61,17 +61,22 @@ class DesktopLogoTest {
     }
 
     @Test
-    fun packagedPngIsSquareTransparentAndContainsAllLogoLayers() {
+    fun packagedLauncherRetainsDarkTileAndRoundedCorners() {
         val image = checkNotNull(javaClass.getResourceAsStream("/branding/icon.png")).use {
             checkNotNull(ImageIO.read(it))
         }
         assertEquals(1024, image.width)
         assertEquals(1024, image.height)
         assertEquals(0, image.getRGB(0, 0) ushr 24)
-        for (rgb in listOf(0xEE611C, 0x12457B, 0xB9B8B9)) {
-            assertTrue((0 until image.width).any { x ->
-                (0 until image.height).any { y -> image.getRGB(x, y) == (0xff000000.toInt() or rgb) }
-            }, "Missing SVG layer color: $rgb")
+        val source = checkNotNull(javaClass.getResourceAsStream("/branding/logo.png")).use {
+            checkNotNull(ImageIO.read(it))
+        }
+        assertEquals(164, source.width)
+        assertEquals(165, source.height)
+        for ((x, y) in listOf(512 to 30, 512 to 950, 30 to 512, 970 to 512)) {
+            val pixel = image.getRGB(x, y)
+            assertEquals(255, pixel ushr 24, "Tile background must stay opaque")
+            assertTrue((pixel shr 16 and 255) < 50 && (pixel shr 8 and 255) < 50 && (pixel and 255) < 70)
         }
     }
 }
