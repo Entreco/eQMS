@@ -6,6 +6,141 @@ related: [EQMS-093]
 
 # Observed automated evidence
 
+## Unified macOS chrome and corrected launcher corners
+
+Issue #52; R093-01/03/04/07/08/10, T093-06/07/09.
+Tested implementation revision:
+`277b483aaf9f89476a995856072b044fa433b113`.
+Scope, risk, requirements and tests preceded implementation in `515a5c2`.
+This evidence is committed separately. Records remain drafts, not approvals.
+
+Environment: macOS 26.6.2 arm64, JBR 25.0.3 b508.16, existing Gradle wrapper
+and pinned Jewel 0.41.0-262.10968.63; Python 3 with Pillow 11.3.0.
+The full SDK was restored from the official JetBrains archive linked below
+and verified against its published SHA-512:
+`107246457e5e0af04f7511b1a2d11fc307a9f5ff51804102553d14dacfd544c8d6e602946447d23219b91571f0d23c92283659bebbf1354c5c17d62851de5999`.
+No SDK or personal paths are committed.
+
+Commands from the repository root, all exit 0 at the tested revision:
+
+```sh
+python3 scripts/generate_desktop_icons.py --check
+EQMS_CHROME_PREVIEW_DIR="$EVIDENCE_DIR" ./gradlew \
+  :apps:desktop:test :feature:scaffold:jvmTest \
+  :feature:document:jvmTest :feature:search:jvmTest \
+  :feature:scaffold:compileKotlinWasmJs \
+  :feature:document:compileKotlinWasmJs \
+  :feature:search:compileKotlinWasmJs \
+  :feature:ui:compileKotlinWasmJs :apps:web:compileKotlinWasmJs \
+  --console=plain --quiet
+JAVA_HOME="$JBR_SDK" ./gradlew :apps:desktop:createDistributable \
+  --no-daemon --console=plain --quiet
+cmp apps/desktop/src/main/resources/branding/icon.icns \
+  apps/desktop/build/compose/binaries/main/app/DutchDoxx.app/Contents/Resources/DutchDoxx.icns
+```
+
+`EVIDENCE_DIR` is an isolated writable capture directory, not a project workspace;
+omit the environment variable to run without screenshot output.
+`JBR_SDK` identifies the full supported SDK home.
+
+| Suite | Passed | Failed/errors | Skipped |
+|---|---:|---:|---:|
+| apps:desktop | 38 | 0 | 2 |
+| feature:scaffold | 18 | 0 | 0 |
+| feature:document | 9 | 0 | 0 |
+| feature:search | 8 | 0 | 0 |
+| Total | 73 | 0 | 2 |
+
+The skipped desktop tests are the existing opt-in benchmark and real-native
+workspace preview, not chrome/icon coverage. The new real-window and native
+mouse tests both executed. Affected Wasm compilation passed. Rust was not
+changed; Cargo tests were excluded because no Rust/domain behavior changed.
+
+Observed results:
+
+- The updated 164 x 165 RGBA source was preserved without trimming, redrawing
+  corners or additional rounding. Generated PNG pixels exactly match centered,
+  aspect-preserving Lanczos conversion; seven ICO sizes and all eight ICNS
+  entries decoded with transparent corners. Reproducible generation and bundled
+  ICNS byte comparison passed. About's JPG is unchanged.
+- `DesktopWindowTest` uses the production window host and scaffold: one header,
+  initial light preference, dark/light changes, matching title-bar style colors,
+  same window instance and retained open workspace, native menu installation,
+  960 x 720 minimum size, label clearance and the last action fitting at minimum
+  width, and routed window-close callback. Synthetic semantics invoke workflow
+  actions; they are not a claim of OS-level pointer testing.
+- `DesktopWindowNativeTest` launches a regular Compose application outside the
+  synthetic Compose test dispatcher. A real Robot mouse click on the title-bar
+  theme action changes appearance. A multi-event drag in unused title-bar space
+  changes native window location. Programmatic minimize/restore also completes.
+  The test disposes its window; it uses no user workspace or preferences.
+- The scaffold dirty editor/search regression now uses the same DesktopChrome
+  appearance owner as outer window styling. Theme changes preserve unsaved
+  text/query/preparation state and dirty-close protection. Existing Settings
+  persistence/error, menu/busy/close, and independent About lifecycle tests pass.
+- Robot captures `unified-light.png` and `unified-dark.png` were generated and
+  agent-inspected using synthetic content: native traffic lights, a single
+  unified bar, no second pale strip in dark mode, and visible non-overlapping
+  controls at minimum width. Captures are session artifacts, reproducible by
+  the command above, not approved human visual evidence.
+- The unsigned macOS app bundle was created with the full SDK; Info.plist names
+  `DutchDoxx.icns`, identical to the regenerated asset. Its executable launched
+  with bundled JBR and loaded Jewel/JNA. Process inspection and a successful
+  `jcmd <app-pid> Thread.print` showed an idle AWT event thread waiting for events,
+  not a blocked UI stack. The agent stopped only the process it launched.
+
+Reproduce the additional source/frame checks with Pillow:
+
+```sh
+python3 - <<'PY'
+from pathlib import Path
+from PIL import Image
+p = Path("apps/desktop/src/main/resources/branding")
+source = Image.open(p / "logo.png").convert("RGBA")
+side = max(source.size)
+expected = Image.new("RGBA", (side, side))
+expected.alpha_composite(source, ((side-source.width)//2, (side-source.height)//2))
+expected = expected.resize((1024, 1024), Image.Resampling.LANCZOS)
+assert expected.tobytes() == Image.open(p / "icon.png").convert("RGBA").tobytes()
+ico = Image.open(p / "icon.ico")
+assert ico.ico.sizes() == {(n, n) for n in (16, 24, 32, 48, 64, 128, 256)}
+for size in ico.ico.sizes():
+    assert ico.ico.getimage(size).convert("RGBA").getpixel((0, 0))[3] == 0
+icns = Image.open(p / "icon.icns")
+assert len(icns.icns.itersizes()) == 8
+for size in icns.icns.itersizes():
+    assert icns.icns.getimage(size).convert("RGBA").getpixel((0, 0))[3] == 0
+print("Source-derived PNG and all ICO/ICNS frames passed.")
+PY
+```
+
+Failures encountered and resolved before the final revision: initial integration
+compile errors were corrected against the pinned theme overload/layout API.
+A full-width title-bar child overlapped traffic lights and clipped actions:
+pinned Jewel measures children before adding native insets. Separate bounded
+leading title/trailing actions plus a leading gutter corrected the actual
+geometry. Compose test pointer injection into a separate native window failed
+its EDT check; synthetic workflow actions now use semantics, and real mouse
+coverage runs in a normal application. A single-move Robot drag did not move the
+window; a multi-event native gesture did. Initial packaging failed because the
+IDE runtime lacks jpackage; restoring the checksum-verified full SDK resolved it.
+Existing restricted-native-access warnings remain warnings, not test failures.
+
+Windows/Linux host launch/installation, fullscreen/zoom and traffic-light-button
+interaction, inactive appearance, keyboard/accessibility, hotRun-specific visual
+inspection and human review/testing were not executed in this increment.
+Non-macOS retains its existing standard-window branch but has no target-host
+execution claim. Earlier artwork review checkboxes do not approve the newly
+supplied PNG or unified chrome.
+
+- [ ] Human reviews unified macOS chrome in both themes and inactive state.
+- [ ] Human tests controls, dragging, resize, minimize/zoom/fullscreen, menus,
+  keyboard/accessibility and unsaved close cancellation in run/hotRun/bundle.
+- [ ] Human reviews the corrected launcher corners on supported target hosts.
+- [ ] Human completes implementation/risk review and manual testing before merge.
+
+Keep #52 open/In progress and PR #53 draft pending these gates.
+
 ## Supplied launcher padding refresh
 
 Tested revision `a3d55968f15eaa79a1c51310b6f1df6024acaedb` regenerates all three
