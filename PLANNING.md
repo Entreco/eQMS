@@ -124,7 +124,7 @@ unless explicitly stated otherwise.
 - Creates versioned config, document/module directories, a genesis journal event, and an initial Git commit.
 - Explicitly handles Git author identity; does not invent an accountable user or imply verified identity.
 - Paths containing spaces work; existing non-empty directories and initialized workspaces are rejected with clear non-zero errors without overwriting data.
-- I/O failures report their cause and clean up only resources created by this attempt, or leave an explicitly recoverable state.
+- Pre-commit I/O failures report their cause and remove only resources created by this attempt; if commit execution starts or cleanup fails, preserve state and give explicit verification/recovery guidance.
 - Human-readable and JSON output identify the workspace and created resources.
 - Integration tests cover creation, reopen/genesis verification, repeated init, existing data, and I/O failure.
 
