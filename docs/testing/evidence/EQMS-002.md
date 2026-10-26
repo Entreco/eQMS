@@ -8,9 +8,9 @@ related: [EQMS-002, EQMS-005]
 
 ## Tested revision and environment
 
-- Tested revision: `0b7427510168d981ced8a5612fe2e9b34129e920`
-- Test date: 2026-10-20
-- Platform: macOS 26.6.2
+- Tested revision: `e1cbbf82d4bbc2db37a37d0d937bf51d199a3c6c`
+- Test date: 2026-10-26
+- Platform: macOS 26.6.2, arm64
 - Rust: `rustc 1.99.1 (58cf8f9c3 2026-10-13)`
 - Cargo: `cargo 1.99.1 (5f94df478 2026-08-27)`
 - Git: `git version 2.54.0 (Apple Git-157)`
@@ -20,7 +20,7 @@ related: [EQMS-002, EQMS-005]
 | Command | Result |
 |---|---|
 | `cargo fmt --all -- --check` | Passed |
-| `GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 cargo test --workspace --locked` | Passed: 25 library unit tests, 9 CLI integration tests, 0 doc tests |
+| `GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 cargo test --workspace --locked` | Passed: 46 core unit tests, 8 CLI unit tests, 10 CLI integration tests, 1 search integration test, 0 doc tests |
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | Passed |
 | `cargo build --workspace --release --locked` | Passed |
 | `git diff --check` | Passed |
@@ -28,7 +28,8 @@ related: [EQMS-002, EQMS-005]
 The test run covered transactional/repeatable migrations, migration rollback,
 future-schema rejection, nested and literal-backslash filenames on Unix,
 symlink exclusion, failed-rebuild preservation, and unchanged Git/journal
-history during index rebuild.
+history during index rebuild. The reported test suites contained 65
+unit/integration tests in total.
 
 ## Limitations and manual review — pending
 
