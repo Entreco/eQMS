@@ -115,6 +115,7 @@ unless explicitly stated otherwise.
 ## Milestone 1 — CLI bootstrap and governance setup
 
 ### EQMS-010: Implement `qms init` command
+**Status:** Implemented on issue branch; draft review and manual testing pending
 **Type:** Feature  
 **Priority:** P0  
 **Dependencies:** EQMS-004, EQMS-005, minimal EQMS-101 output contract  
