@@ -15,7 +15,7 @@ Use Compose Window MenuBar for File (New project, Close project), empty Edit
 and View, and Help (Check for updates). Set macOS application identity before
 AWT initializes, including Gradle run/hotRun JVM arguments and bundle name.
 Use public `java.awt.Desktop` About/Preferences/Quit handlers for the native
-DutchDoxx application menu; retain OS-provided labels/system items and title bar.
+DutchDoxx application menu; retain OS-provided labels/system items.
 JBR 25 exposes no public API for inserting arbitrary application-menu items.
 The user approved moving Check for updates to Help rather than adding a native
 bridge, dependency, reflection, or internal JDK access.
@@ -32,6 +32,29 @@ in apps:desktop. Jewel dialogs, typed menu commands, enabled state, and the
 single project/editor/navigation state stay in feature:scaffold/jvmMain.
 Rust and Wasm contracts remain unchanged. Non-macOS uses a regular Application
 menu for About/Settings and the existing guarded window close.
+
+### Unified macOS main-window chrome
+
+The approved refinement supersedes the original native-title-bar-only scope
+for the main macOS window. Use version-aligned `jewel-decorated-window`,
+`DecoratedWindow` and `TitleBar` under JBR, retaining native traffic lights,
+dragging and fullscreen handling. Do not paint replacement OS controls.
+Move the existing app/project label and Create/Open/theme actions into this
+bar, rather than displaying a second header. Mark action regions as client
+regions so clicking them does not drag the window. Reserve native control
+insets using Jewel's layout. Non-macOS retains the standard Compose Window;
+About retains its separate native-decorated window on all platforms.
+
+Keep observable appearance in the existing DesktopChrome controller when
+present, shared with Settings, toolbar and outer window styling; persistence
+failures must remain visible and must not change the saved appearance.
+The scaffold retains workspace/navigation state and exposes a presentation
+slot for header/body layout. Desktop owns native window and title-bar APIs.
+Changing appearance must not recreate the window or workspace. Keep menu
+handlers, close/dirty/busy guards, minimum size and icon wiring.
+The matching decorated-window dependency is an explicitly approved addition.
+Unsupported JBR decoration must fail explicitly, not silently fall back while
+claiming unified chrome.
 
 ## State and behavior
 
@@ -104,6 +127,8 @@ Risk Management and Security Risk Management both apply proportionately.
 | Preferences fail or reset workspace state | Visible errors, shared appearance state, off-thread persistence | Local user configuration is not a controlled project record |
 | Untrusted release metadata/URLs or misleading availability | Bounded HTTPS request, explicit parser/version states, URL allowlist, no execution | Release availability does not authenticate software provenance |
 | Platform integration regresses other shells | Public APIs, macOS checks, JVM/Wasm regressions | Actual native menus require OS-level inspection, not Compose screenshots |
+| Unified title bar intercepts actions, hides OS controls or bypasses dirty close | Jewel/JBR native controls/insets, client action regions, unchanged close callback, real-window tests | Human dragging/fullscreen/accessibility review remains required; force termination cannot be guarded |
+| Appearance changes reconstruct workspace or leave chrome out of sync | One observable appearance owner, stable composition, state-preservation regressions | OS-controlled About decoration remains distinct |
 
 Requirements: [EQMS-093](../requirements/EQMS-093.md).
 Tests: [EQMS-093](../testing/EQMS-093.md).
