@@ -80,9 +80,11 @@ unless explicitly stated otherwise.
 **Priority:** P0  
 **Description:** Define Rust core entities (artifact, version, trace link, ledger event, release, signature) and versioned external contracts independent of UI and storage adapters.  
 **Acceptance criteria:**
-- Shared model types exist and are versioned.
-- IDs and timestamps follow one normalized format.
-- Model supports plugin-defined artifact types.
+- Rust core exposes artifact, artifact-version, trace-link, ledger-event, release, and signature-record types, without CLI, UI, or storage dependencies.
+- The external model contract emits schema version 1 and rejects unsupported versions.
+- IDs serialize as lowercase hyphenated UUID strings; timestamps serialize as RFC 3339 UTC (`Z`) and equivalent instants normalize consistently.
+- Plugin-defined artifact types use namespaced identifiers and opaque JSON extension data; the core does not load plugin code or interpret plugin schemas.
+- Ledger events and signature records are data contracts only, not event storage/hash chains, cryptographic signing/verification, identity proof, approval, or compliance functionality.
 
 ### EQMS-004: Establish Rust core and native CLI workspace
 **Status:** Implemented on feature branch; manual review/testing pending
