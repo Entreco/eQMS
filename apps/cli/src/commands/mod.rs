@@ -1,3 +1,4 @@
+pub(crate) mod audit;
 pub(crate) mod document;
 mod markdown;
 pub(crate) mod search;

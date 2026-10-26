@@ -1418,22 +1418,27 @@ fn read_head_blobs(
 }
 
 pub(crate) fn parse_and_verify_journal(bytes: &[u8]) -> Result<Vec<JournalRecord>, WorkspaceError> {
-    if !bytes.ends_with(b"\n") {
-        return Err(error("journal ends with an incomplete record"));
-    }
     let mut records = Vec::new();
-    for (index, line) in bytes.split(|byte| *byte == b'\n').enumerate() {
-        if line.is_empty() {
-            if index == bytes.split(|byte| *byte == b'\n').count() - 1 {
-                break;
+    let mut lines = bytes.split(|byte| *byte == b'\n').peekable();
+    let mut index = 0;
+    while let Some(line) = lines.next() {
+        if lines.peek().is_none() {
+            if !line.is_empty() || bytes.is_empty() {
+                return Err(error(format!(
+                    "journal ends with an incomplete record at line {index}"
+                )));
             }
+            break;
+        }
+        if line.is_empty() {
             return Err(error(format!(
                 "journal contains an empty record at line {index}"
             )));
         }
         let record: JournalRecord = serde_json::from_slice(line)
             .map_err(|e| error(format!("invalid journal record at line {index}: {e}")))?;
-        validate_content_hashes(&record.content_hashes)?;
+        validate_content_hashes(&record.content_hashes)
+            .map_err(|cause| error(format!("journal line {index}: {cause}")))?;
         let canonical_line = serde_json::to_vec(&record)
             .map_err(|e| error(format!("cannot encode journal record: {e}")))?;
         if canonical_line != line {
@@ -1456,11 +1461,12 @@ pub(crate) fn parse_and_verify_journal(bytes: &[u8]) -> Result<Vec<JournalRecord
                 .hash
         {
             return Err(error(format!(
-                "journal integrity check failed at sequence {}",
-                record.sequence
+                "journal integrity check failed at line {index}, expected sequence {expected_sequence} (recorded {})",
+                record.sequence,
             )));
         }
         records.push(record);
+        index += 1;
     }
     if records.first().is_none_or(|record| {
         record.sequence != 0

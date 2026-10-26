@@ -258,14 +258,17 @@ unless explicitly stated otherwise.
 - Verification detects changed, reordered, or missing events against a trusted baseline; documentation explains the limits of detecting full-history replacement.
 
 ### EQMS-031: Implement ledger verification command
+**Status:** Implemented on issue branch; manual review/testing pending
 **Type:** Feature  
 **Priority:** P0  
 **Dependencies:** EQMS-030  
-**Description:** Add `qms audit verify-ledger` command to verify chain integrity.  
+**Description:** Add `qms audit verify-ledger <path> [--checkpoint <full-commit>]` to verify complete recorded baseline and isolated draft histories. General future event producers in EQMS-030 remain separate.
 **Acceptance criteria:**
-- Full ledger verification available from CLI.
-- Command returns non-zero on integrity failure.
-- Failure output identifies first broken segment.
+- Verify chronological baseline journal prefixes, historical content bindings and every captured draft history; do not combine draft journals.
+- Optional full literal trusted checkpoint must belong to baseline ancestry; without it report local consistency only.
+- Fail nonzero with first encountered baseline commit/draft/record context; reject unsupported merges, shallow/replacement/graft histories explicitly.
+- Human and versioned JSON output are available without recovery, index creation, network operations or history rewrites.
+- Record [design/risk](docs/architecture/EQMS-031.md), requirements, mapped tests and revision-bound evidence; manual review/testing remains required.
 
 ---
 

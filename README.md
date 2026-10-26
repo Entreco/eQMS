@@ -31,6 +31,13 @@ preserve existing draft hashes, and do not verify history or approval. Import
 of arbitrary project Markdown remains EQMS-016 follow-up work. See the
 [EQMS-020 format contract](docs/architecture/EQMS-020.md).
 
+`qms audit verify-ledger <path> [--checkpoint <full-commit>]` checks recorded
+baseline history and all discovered isolated draft chains, including historical
+content bindings. Without an independently supplied checkpoint it reports local
+consistency only; neither mode proves identity/approval or detects deleted draft
+refs. See [EQMS-031](docs/architecture/EQMS-031.md) for supported history and
+trust limitations.
+
 ## Core direction
 
 `core/` contains Rust domain code (`core/rust`); Kotlin UI is separated into

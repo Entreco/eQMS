@@ -153,11 +153,25 @@ impl Documents {
             &str,
         ) -> Result<T, WorkspaceError>,
     ) -> Result<T, WorkspaceError> {
+        Self::with_sources(path, |documents, workspace, sources, baseline| {
+            documents.verify_baseline()?;
+            operation(documents, workspace, sources, baseline)
+        })
+    }
+
+    pub(crate) fn with_sources<T>(
+        path: &Path,
+        operation: impl FnOnce(
+            &Self,
+            &Workspace,
+            &BTreeMap<String, String>,
+            &str,
+        ) -> Result<T, WorkspaceError>,
+    ) -> Result<T, WorkspaceError> {
         let documents = Self {
             workspace: Workspace::open(path)?,
         };
         let _lock = documents.workspace.acquire_lock()?;
-        documents.verify_baseline()?;
         let refs = git_text(
             documents.root(),
             &["for-each-ref", "--format=%(refname) %(objectname)", PREFIX],
@@ -430,7 +444,8 @@ impl Documents {
             return Err(error("invalid saved revision"));
         }
         let journal = blob(self.root(), head, JOURNAL)?;
-        let records = verify_journal(&journal)?;
+        let records = verify_journal(&journal)
+            .map_err(|cause| error(format!("draft revision {head}: {cause}")))?;
         let last = records
             .last()
             .ok_or_else(|| error("missing document event"))?
@@ -449,12 +464,14 @@ impl Documents {
             }
             let event = &records[event_index];
             // Each parent must equal the head's verified prefix, so it needs no reparse.
-            let (document, parent, created) = self.verify_revision(
-                id,
-                &revision,
-                event,
-                &journal[..boundaries[event_index - 1]],
-            )?;
+            let (document, parent, created) = self
+                .verify_revision(
+                    id,
+                    &revision,
+                    event,
+                    &journal[..boundaries[event_index - 1]],
+                )
+                .map_err(|cause| error(format!("draft revision {revision}: {cause}")))?;
             history.push(document);
             if created {
                 return Ok(VerifiedHistory {
