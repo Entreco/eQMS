@@ -6,6 +6,119 @@ related: [EQMS-093]
 
 # Observed automated evidence
 
+## Typed Compose Multiplatform desktop resources
+
+Issue #52, R093-11/T093-10 (also R093-08/09).
+Final tested revision: `a57ab3b117168e08fd7778e0650409943ca76888`;
+implementation `8268928`, native-window rendered-state test follow-up `a57ab3b`.
+Design/requirements/tests preceded implementation in `b24bd52`. This evidence
+is committed separately; human approval is not implied.
+
+Environment is the same macOS 26.6.2 arm64 / JBR 25.0.3 b508.16 / Python
+Pillow 11.3.0 environment described below, using the pinned Compose plugin and
+resources library 1.12.0. The desktop module remains Kotlin JVM. The full SDK
+was restored from the official archive and SHA-512 verified as documented
+below after the IDE runtime again failed packaging due to missing jpackage.
+
+All three deprecated desktop production/test painter calls now use generated
+`Res.drawable.about` or `Res.drawable.icon` with
+`org.jetbrains.compose.resources.painterResource`.
+Canonical branding resources, native package icon paths, taskbar ImageIO
+loading and icon generation are unchanged. Only the two runtime images are
+staged automatically through a provider-wired Sync task.
+
+Observed successful commands from the repository root:
+
+```sh
+./gradlew :apps:desktop:test :feature:scaffold:jvmTest \
+  :apps:desktop:hotRunArgfile :feature:scaffold:compileKotlinWasmJs \
+  :apps:web:compileKotlinWasmJs --console=plain --quiet
+cmp apps/desktop/src/main/resources/branding/about.jpg \
+  apps/desktop/build/generated/desktopComposeResources/drawable/about.jpg
+cmp apps/desktop/src/main/resources/branding/icon.png \
+  apps/desktop/build/generated/desktopComposeResources/drawable/icon.png
+python3 scripts/generate_desktop_icons.py --check
+JAVA_HOME="$JBR_SDK" ./gradlew :apps:desktop:createDistributable \
+  --no-daemon --console=plain --quiet
+cmp apps/desktop/src/main/resources/branding/icon.icns \
+  apps/desktop/build/compose/binaries/main/app/DutchDoxx.app/Contents/Resources/DutchDoxx.icns
+```
+
+Desktop: 39 passed, 0 failures/errors, 2 existing opt-in benchmark/preview
+skips. Scaffold: 18 passed, 0 failures/errors/skips. Total: 57 passed, 2 skipped.
+`DesktopLogoTest.generatedDrawablesMatchCanonicalBytesAndDecodeWithOriginalDimensions`
+compares drawable bytes through the supported generated-resource API against
+canonical classpath bytes, decodes both typed drawables, checks dimensions and
+launcher corner alpha. Existing tests cover About proportions/accessibility/
+both-theme rendering, native menu/window icons and About lifecycle.
+Production-host and native Robot interaction regressions also passed.
+
+Scaffold and web Wasm compilation and hotRun argument/resource preparation
+passed. A static search over desktop Kotlin sources found no deprecated
+`androidx.compose.ui.res.painterResource` import or string-path painter call.
+Document/search/Rust suites were not rerun: this increment changes only desktop
+resource loading and its build wiring, not feature/domain behavior.
+
+At the final revision, remove only
+`apps/desktop/build/generated/desktopComposeResources`, then run:
+
+```sh
+./gradlew :apps:desktop:processResources --console=plain --quiet
+```
+
+This was executed after inspecting that exact task-owned directory. It
+automatically regenerated both drawables with no manual staging task invocation;
+both cmp commands above passed again. The initial full desktop suite also
+started with this directory absent.
+
+Packaging verified both generated drawable entries inside the bundled desktop
+application JAR byte-for-byte against canonical branding:
+
+```sh
+python3 - <<'PY'
+from pathlib import Path
+from zipfile import ZipFile
+root = Path("apps/desktop/build/compose/binaries/main/app/DutchDoxx.app/Contents/app")
+expected = {n: Path("apps/desktop/src/main/resources/branding", n).read_bytes()
+            for n in ("about.jpg", "icon.png")}
+found = set()
+for jar in root.glob("*.jar"):
+    with ZipFile(jar) as z:
+        for name in z.namelist():
+            if "composeResources/com.entreco.eqms.desktop.generated.resources/drawable/" in name:
+                asset = name.rsplit("/", 1)[-1]
+                if asset in expected:
+                    assert z.read(name) == expected[asset]
+                    found.add(asset)
+assert found == set(expected), found
+print("Bundled drawables match canonical branding.")
+PY
+```
+
+The macOS executable launched with bundled JBR and the generated window icon;
+startup reported no resource-loading errors. Process inspection and successful
+`jcmd <app-pid> Thread.print` showed an idle AWT event thread waiting for events.
+The agent stopped only its launched process. About rendering was exercised by
+desktop tests; bundled About bytes were verified, but opening About in the
+packaged app was not separately automated.
+
+Resolved failure: the first full run at `8268928` exposed a pre-existing native
+host test race: appearance state changed before the new label was recomposed.
+The test now also awaits the rendered label using its existing helper. This
+does not suppress errors or change application behavior. Final results above
+include that corrected test. Restricted-native-access messages remain warnings.
+
+Limitations: Windows/Linux host execution, full clean-checkout rebuild, live
+hotRun session and human visual/accessibility/manual testing were not executed.
+Missing-staging regeneration, hotRun preparation and macOS packaged execution
+are separate observed checks, not claims of those excluded scenarios.
+
+- [ ] Human reviews About/window artwork and icons in run/hotRun/bundle.
+- [ ] Human verifies supported Windows/Linux host behavior.
+- [ ] Human reviews resource wiring, risk/requirements/tests and manual results.
+
+Keep #52 open/In progress and #53 draft pending manual review/testing and merge.
+
 ## Unified macOS chrome and corrected launcher corners
 
 Issue #52; R093-01/03/04/07/08/10, T093-06/07/09.
