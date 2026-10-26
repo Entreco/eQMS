@@ -24,6 +24,13 @@ or change the controlled baseline. Review, signatures, publication, and
 reference validation remain follow-up work. See the
 [EQMS-023 draft contract](docs/architecture/EQMS-023.md).
 
+Standalone `qms document validate <file|->` checks exact canonical v1 Markdown;
+`qms document format <file|->` emits canonical content without rewriting files.
+Both support `--json` and need no workspace. They share the authoring codec,
+preserve existing draft hashes, and do not verify history or approval. Import
+of arbitrary project Markdown remains EQMS-016 follow-up work. See the
+[EQMS-020 format contract](docs/architecture/EQMS-020.md).
+
 ## Core direction
 
 `core/` contains Rust domain code (`core/rust`); Kotlin UI is separated into

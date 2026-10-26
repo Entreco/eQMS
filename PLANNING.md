@@ -197,14 +197,18 @@ unless explicitly stated otherwise.
 ## Milestone 2 — Document and signature core
 
 ### EQMS-020: Implement controlled Markdown artifact format
+**Status:** Implemented on issue branch; draft review and manual testing pending
 **Type:** Feature  
 **Priority:** P0  
 **Dependencies:** EQMS-003  
-**Description:** Define front matter schema and canonical formatting rules for controlled docs.  
+**Description:** Expose the existing EQMS-023 v1 Draft format through a shared Rust codec and standalone native CLI validation/formatting. Preserve existing IDs, bytes, hashes and saved history; generalized artifact metadata/migrations and project import remain follow-ups.
 **Acceptance criteria:**
-- Parser validates required metadata.
-- Canonical formatter normalizes output.
-- Stable content hash is reproducible.
+- Parser validates required v1 JSON metadata, rejects unknown/duplicate/missing fields and unsupported schemas/statuses, and enforces UTF-8/ID/title rules.
+- Canonical formatter fixes field order, trims titles and normalizes LF while preserving other body whitespace and final newline presence.
+- Strict validation requires exact canonical bytes; SHA-256 hashes are reproducible and compatible with existing drafts.
+- `qms document validate <file|->` and `format <file|->` run without workspace/identity, support versioned JSON and explicit nonzero errors, and never write files/history.
+- Human formatter stdout is exact canonical content, without an added newline. Existing authoring/search/UI contracts remain compatible.
+- Linked [design/risk](docs/architecture/EQMS-020.md), [requirements](docs/requirements/EQMS-020.md), tests and revision-bound evidence precede draft PR review. Import belongs to EQMS-016; generalized ledger verification remains EQMS-031.
 
 ### EQMS-023: Create and save document drafts with durable history
 **Type:** Feature  

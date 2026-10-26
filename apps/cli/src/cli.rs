@@ -59,7 +59,13 @@ pub(crate) fn response(args: Vec<OsString>, input: &mut dyn Read) -> Response {
                     .subcommand_name()
                     .map(|operation| format!("document.{operation}"))
                     .unwrap_or_else(|| "document".to_owned());
-                Response::from_result(document::run(args, json, input), json, &command)
+                let response =
+                    Response::from_result(document::run(args, json, input), json, &command);
+                if command == "document.format" && !json {
+                    response.exact_output()
+                } else {
+                    response
+                }
             }
             Some((operation @ ("init" | "index" | "verify" | "recover"), args)) => {
                 let command = if operation == "index" {
@@ -132,6 +138,8 @@ mod tests {
             vec!["qms", "--help"],
             vec!["qms", "--version"],
             vec!["qms", "document", "--help"],
+            vec!["qms", "document", "format", "--help"],
+            vec!["qms", "document", "validate", "--help"],
             vec!["qms", "index", "--help"],
             vec!["qms", "search", "--help"],
         ] {
