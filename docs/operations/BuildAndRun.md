@@ -326,6 +326,36 @@ cargo test --workspace --locked
 ./gradlew :feature:scaffold:compileKotlinWasmJs :feature:document:compileKotlinWasmJs :feature:search:compileKotlinWasmJs :feature:ui:compileKotlinWasmJs
 ```
 
+## Verify recorded ledger history
+
+```sh
+./target/release/qms audit verify-ledger ./quality-workspace --json
+./target/release/qms audit verify-ledger ./quality-workspace --checkpoint <full-trusted-baseline-commit>
+```
+
+The checkpoint argument is a complete lowercase commit ID obtained from an
+independently trusted source, not a branch or Git expression. The command checks
+chronological baseline journal prefixes/content bindings and all discovered
+saved draft histories separately. A draft's creation baseline must belong to
+verified baseline ancestry. No checkpoint means local consistency only.
+Neither mode proves identity, trusted time, approval, compliance or completeness
+of draft refs: deleted drafts require an independent inventory.
+
+Only complete local linear baseline histories are supported; partial/promisor
+repositories, merges, shallow clones, replacement refs, grafts and
+history-override environment variables are rejected explicitly. Shared Git
+readers disable lazy fetching, so missing local objects fail without downloading.
+A read-only ref/object connectivity check rejects detectable broken/dangling
+refs rather than silently excluding them; corrupt unrelated refs also fail
+this conservative check. Baseline reads batch tree/blob data and cache verified
+content hashes by object ID while still checking each commit's paths/modes.
+Verification uses the existing workspace lock and does not repair
+files/history or create an index. Existing `qms verify` remains the current
+baseline check; `qms recover` remains a separate explicit recovery action.
+Verification errors exit 1 with segment context; usage errors exit 2.
+JSON uses command `audit.verify-ledger` in the schema-version-2 envelope.
+See [EQMS-031](../architecture/EQMS-031.md) for report fields and limitations.
+
 ## Validate and format controlled Markdown
 
 These standalone operations accept the existing v1 Draft format, not arbitrary

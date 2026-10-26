@@ -1342,6 +1342,14 @@ fn read_head_blobs(
     root: &Path,
     paths: &[&str],
 ) -> Result<BTreeMap<String, Vec<u8>>, WorkspaceError> {
+    read_git_blobs(root, Some("HEAD"), paths)
+}
+
+pub(crate) fn read_git_blobs(
+    root: &Path,
+    revision: Option<&str>,
+    paths: &[&str],
+) -> Result<BTreeMap<String, Vec<u8>>, WorkspaceError> {
     if paths.is_empty() {
         return Ok(BTreeMap::new());
     }
@@ -1350,9 +1358,15 @@ fn read_head_blobs(
         if path.contains('\0') {
             return Err(error("Git content path contains NUL"));
         }
-        requests.extend_from_slice(format!("HEAD:{path}\0").as_bytes());
+        let selector = match revision {
+            Some(revision) => format!("{revision}:{path}"),
+            None => (*path).to_owned(),
+        };
+        requests.extend_from_slice(selector.as_bytes());
+        requests.push(0);
     }
     let mut child = Command::new("git")
+        .env("GIT_NO_LAZY_FETCH", "1")
         .arg("--literal-pathspecs")
         .arg("-C")
         .arg(root)
@@ -1395,7 +1409,7 @@ fn read_head_blobs(
         let parts: Vec<_> = header.split_whitespace().collect();
         if parts.len() != 3 || parts[1] != "blob" {
             return Err(error(format!(
-                "Git HEAD does not contain a readable blob for {path}"
+                "Git does not contain a readable blob for {path}"
             )));
         }
         let size: usize = parts[2]
@@ -1418,22 +1432,27 @@ fn read_head_blobs(
 }
 
 pub(crate) fn parse_and_verify_journal(bytes: &[u8]) -> Result<Vec<JournalRecord>, WorkspaceError> {
-    if !bytes.ends_with(b"\n") {
-        return Err(error("journal ends with an incomplete record"));
-    }
     let mut records = Vec::new();
-    for (index, line) in bytes.split(|byte| *byte == b'\n').enumerate() {
-        if line.is_empty() {
-            if index == bytes.split(|byte| *byte == b'\n').count() - 1 {
-                break;
+    let mut lines = bytes.split(|byte| *byte == b'\n').peekable();
+    let mut index = 0;
+    while let Some(line) = lines.next() {
+        if lines.peek().is_none() {
+            if !line.is_empty() || bytes.is_empty() {
+                return Err(error(format!(
+                    "journal ends with an incomplete record at line {index}"
+                )));
             }
+            break;
+        }
+        if line.is_empty() {
             return Err(error(format!(
                 "journal contains an empty record at line {index}"
             )));
         }
         let record: JournalRecord = serde_json::from_slice(line)
             .map_err(|e| error(format!("invalid journal record at line {index}: {e}")))?;
-        validate_content_hashes(&record.content_hashes)?;
+        validate_content_hashes(&record.content_hashes)
+            .map_err(|cause| error(format!("journal line {index}: {cause}")))?;
         let canonical_line = serde_json::to_vec(&record)
             .map_err(|e| error(format!("cannot encode journal record: {e}")))?;
         if canonical_line != line {
@@ -1456,11 +1475,12 @@ pub(crate) fn parse_and_verify_journal(bytes: &[u8]) -> Result<Vec<JournalRecord
                 .hash
         {
             return Err(error(format!(
-                "journal integrity check failed at sequence {}",
-                record.sequence
+                "journal integrity check failed at line {index}, expected sequence {expected_sequence} (recorded {})",
+                record.sequence,
             )));
         }
         records.push(record);
+        index += 1;
     }
     if records.first().is_none_or(|record| {
         record.sequence != 0
@@ -1526,6 +1546,7 @@ pub(crate) fn git_text(path: &Path, args: &[&str]) -> Result<String, WorkspaceEr
 
 pub(crate) fn git(path: &Path, args: &[&str]) -> Result<Output, WorkspaceError> {
     let output = Command::new("git")
+        .env("GIT_NO_LAZY_FETCH", "1")
         .arg("--literal-pathspecs")
         .arg("-C")
         .arg(path)

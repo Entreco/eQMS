@@ -148,6 +148,11 @@ operational failures exit nonzero. Help remains human-readable.
 
 ## Document draft extension
 
+[EQMS-031](EQMS-031.md) adds complete recorded baseline-history and saved-draft
+verification through `qms audit verify-ledger`, with optional independent
+checkpoint ancestry checks. It complements, rather than changes, the existing
+current-state `qms verify` and recovery contracts.
+
 [EQMS-023](EQMS-023.md) adds private `eqms-drafts/<document-id>` branches.
 Authoring constructs committed blobs/trees directly under the existing
 repository lock and advances only the document ref atomically; it never checks
