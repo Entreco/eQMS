@@ -13,6 +13,7 @@ This folder is reserved for architecture notes, module decisions, and other proj
 - [Canonical artifact model design and risk assessment](architecture/EQMS-003.md)
 - [Canonical artifact model requirements](requirements/EQMS-003.md)
 - [Canonical artifact model tests](testing/EQMS-003.md)
+- [Canonical artifact model automated evidence](testing/evidence/EQMS-003.md)
 - [Project search design and risk assessment](architecture/EQMS-050.md)
 - [Project search requirements](requirements/EQMS-050.md)
 - [Project search test specification](testing/EQMS-050.md)
