@@ -35,6 +35,12 @@ the absence of a final newline, is retained. Unknown metadata fields, unsupporte
 schemas, noncanonical encodings, or non-Draft states are rejected. Exact
 canonical bytes determine SHA-256 content hashes.
 
+The shared codec and standalone validation/formatting contract now live in
+[EQMS-020](EQMS-020.md). Saved history uses strict canonical validation, not
+the formatter's relaxed whitespace parsing; expected document IDs remain
+checked. The extraction changes no existing bytes, hashes or saved revisions.
+It does not add general artifact metadata or import arbitrary project Markdown.
+
 ## Isolation and transaction
 
 One `refs/heads/eqms-drafts/<id>` per document; no user-facing Git controls.

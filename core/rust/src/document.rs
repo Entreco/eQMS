@@ -1,3 +1,4 @@
+use crate::markdown::{self, Markdown, hash};
 use crate::workspace::{
     JournalRecord, Workspace, WorkspaceError, ensure_git_identity, error, git, git_text,
     parse_and_verify_journal, timestamp, with_hash,
@@ -32,15 +33,6 @@ struct VerifiedHistory {
     last: JournalRecord,
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
-struct Metadata {
-    schema_version: u32,
-    id: String,
-    title: String,
-    status: String,
-}
-
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Document {
     pub id: String,
@@ -62,51 +54,21 @@ fn valid_hex(value: &str, lengths: &[usize]) -> bool {
 }
 
 fn validate_id(id: &str) -> Result<(), WorkspaceError> {
-    if !id.strip_prefix("DOC-").is_some_and(|v| valid_hex(v, &[32])) {
-        return Err(error("invalid document ID"));
-    }
-    Ok(())
+    markdown::validate_id(id).map_err(|cause| error(cause.to_string()))
 }
 
 fn canonical(id: &str, title: &str, body: &str) -> Result<Vec<u8>, WorkspaceError> {
-    validate_id(id)?;
-    let title = title.trim();
-    if title.is_empty() || title.chars().any(char::is_control) {
-        return Err(error("document title must be a nonblank single line"));
-    }
-    let metadata = Metadata {
-        schema_version: 1,
-        id: id.to_owned(),
-        title: title.to_owned(),
-        status: "Draft".to_owned(),
-    };
-    let line = serde_json::to_string(&metadata).map_err(|e| error(e.to_string()))?;
-    Ok(format!(
-        "---\n{line}\n---\n{}",
-        body.replace("\r\n", "\n").replace('\r', "\n")
-    )
-    .into_bytes())
+    Markdown::new(id, title, body)
+        .and_then(|document| document.canonical_bytes())
+        .map_err(|cause| error(cause.to_string()))
 }
 
 fn decode(bytes: &[u8], id: &str) -> Result<(String, String), WorkspaceError> {
-    let text = std::str::from_utf8(bytes).map_err(|e| error(e.to_string()))?;
-    let (metadata, body) = text
-        .strip_prefix("---\n")
-        .and_then(|v| v.split_once("\n---\n"))
-        .ok_or_else(|| error("invalid canonical document header"))?;
-    let metadata: Metadata = serde_json::from_str(metadata).map_err(|e| error(e.to_string()))?;
-    if metadata.schema_version != 1
-        || metadata.id != id
-        || metadata.status != "Draft"
-        || canonical(id, &metadata.title, body)? != bytes
-    {
-        return Err(error("unsupported or noncanonical document metadata"));
+    let document = Markdown::validate(bytes).map_err(|cause| error(cause.to_string()))?;
+    if document.id() != id {
+        return Err(error("document ID differs from expected document"));
     }
-    Ok((metadata.title, body.to_owned()))
-}
-
-fn hash(bytes: &[u8]) -> String {
-    format!("sha256:{:x}", Sha256::digest(bytes))
+    Ok((document.title().to_owned(), document.body().to_owned()))
 }
 
 fn blob(root: &Path, revision: &str, path: &str) -> Result<Vec<u8>, WorkspaceError> {
@@ -624,6 +586,43 @@ mod tests {
         fn drop(&mut self) {
             fs::remove_dir_all(&self.0).unwrap();
         }
+    }
+
+    #[test]
+    fn pre_codec_extraction_history_retains_exact_content_hash_and_revision() {
+        let path = std::env::temp_dir().join(format!(
+            "eqms-legacy-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ));
+        fs::create_dir(&path).unwrap();
+        let fixture = Fixture(path);
+        git(&fixture.0, &["init", "--quiet"]).unwrap();
+        let export: String =
+            serde_json::from_str(include_str!("../tests/fixtures/eqms020-legacy.json")).unwrap();
+        input_git(&fixture.0, &["fast-import", "--quiet"], export.as_bytes()).unwrap();
+        git(&fixture.0, &["symbolic-ref", "HEAD", "refs/heads/main"]).unwrap();
+        git(&fixture.0, &["read-tree", "HEAD"]).unwrap();
+        git(&fixture.0, &["checkout-index", "-a"]).unwrap();
+        let id = "DOC-3683c4441260979ff0733dd027d68911";
+        let documents = fixture.docs();
+        let legacy = documents.show(id, None).unwrap();
+        assert_eq!(legacy.id, id);
+        assert_eq!(legacy.title, "Legacy policy");
+        assert_eq!(legacy.body, "Legacy body  \nNo final newline");
+        assert_eq!(legacy.revision, "2c83fc82db4e2bbeb178361134478aa5d84a2cc6");
+        assert_eq!(
+            legacy.content_hash,
+            "sha256:224514eb12998689344189b973cb15debd199e90ea748e0a70033fc4ff3a6308"
+        );
+        assert_eq!(documents.history(id).unwrap(), vec![legacy.clone()]);
+        let bytes = blob(&fixture.0, &legacy.revision, &format!("documents/{id}.md")).unwrap();
+        assert_eq!(canonical(id, &legacy.title, &legacy.body).unwrap(), bytes);
+        assert!(decode(&bytes, "DOC-00000000000000000000000000000000").is_err());
+        let noncanonical = String::from_utf8(bytes)
+            .unwrap()
+            .replace("\"schema_version\":1", "\"schema_version\": 1");
+        assert!(decode(noncanonical.as_bytes(), id).is_err());
     }
 
     #[test]

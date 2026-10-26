@@ -326,6 +326,38 @@ cargo test --workspace --locked
 ./gradlew :feature:scaffold:compileKotlinWasmJs :feature:document:compileKotlinWasmJs :feature:search:compileKotlinWasmJs :feature:ui:compileKotlinWasmJs
 ```
 
+## Validate and format controlled Markdown
+
+These standalone operations accept the existing v1 Draft format, not arbitrary
+Markdown/YAML documents. No workspace or configured Git identity is required:
+
+```sh
+./target/release/qms document validate 'policy.md' --json
+./target/release/qms document format 'policy.md' > 'policy.canonical.md'
+./target/release/qms document validate 'policy.canonical.md'
+cat 'policy.canonical.md' | ./target/release/qms document format - --json
+```
+
+Never redirect formatter output onto the input file: the shell can truncate it
+before the command reads it. The CLI only reads files; it does not save a
+revision, change refs/journals, or create a workspace.
+
+Validation is strict: metadata and complete bytes must already be canonical.
+Formatting accepts supported v1 JSON whitespace/key order and line-ending
+differences; it emits fixed-order compact JSON, trims the title and normalizes
+line endings to LF. Other body whitespace and final newline presence are
+preserved. Human formatting writes exact content without an extra newline.
+JSON responses use the existing schema-version-2 envelope; `data` includes ID,
+document schema version, `canonical: true` and `content_hash`. Formatting adds
+the exact canonical text as `content`.
+
+Malformed UTF-8/metadata, unsupported fields/versions/statuses, noncanonical
+validation and I/O failures exit 1 (JSON `OPERATION_FAILED` on stderr);
+usage errors exit 2. A format hash describes canonical bytes, not verified
+audit history, identity or approval. Documents remain Draft. Import of this
+project's existing Markdown belongs to EQMS-016; generalized ledger verification
+belongs to EQMS-031. See [the v1 format contract](../architecture/EQMS-020.md).
+
 ## Search saved documents
 
 The desktop search box searches only the open project. Results are grouped into

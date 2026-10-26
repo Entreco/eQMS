@@ -24,6 +24,7 @@ pub(crate) struct Response {
     pub(crate) code: u8,
     pub(crate) text: String,
     pub(crate) error: bool,
+    pub(crate) trailing_newline: bool,
 }
 
 impl Response {
@@ -32,7 +33,15 @@ impl Response {
             code: 0,
             text,
             error: false,
+            trailing_newline: true,
         }
+    }
+
+    pub(crate) fn exact_output(mut self) -> Self {
+        if !self.error {
+            self.trailing_newline = false;
+        }
+        self
     }
 
     fn failure(
@@ -64,6 +73,7 @@ impl Response {
             code,
             text,
             error: true,
+            trailing_newline: true,
         }
     }
 
@@ -128,6 +138,20 @@ pub(crate) fn document(data: serde_json::Value, json: bool) -> Result<String, St
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn exact_output_only_suppresses_newlines_for_success() {
+        assert!(Response::success("normal".to_owned()).trailing_newline);
+        assert!(
+            !Response::success("exact".to_owned())
+                .exact_output()
+                .trailing_newline
+        );
+        let error = Response::from_result(Err("invalid Markdown".into()), false, "document.format")
+            .exact_output();
+        assert!(error.error);
+        assert!(error.trailing_newline);
+    }
 
     #[test]
     fn errors_preserve_exit_codes_stream_selection_and_envelopes() {

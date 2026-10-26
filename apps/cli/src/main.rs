@@ -10,7 +10,14 @@ fn main() -> ExitCode {
     let result = if response.error {
         writeln!(io::stderr().lock(), "{}", response.text)
     } else {
-        writeln!(io::stdout().lock(), "{}", response.text)
+        let mut output = io::stdout().lock();
+        if response.trailing_newline {
+            writeln!(output, "{}", response.text)
+        } else {
+            output
+                .write_all(response.text.as_bytes())
+                .and_then(|()| output.flush())
+        }
     };
     if let Err(error) = result {
         let _ = writeln!(io::stderr().lock(), "qms: output failed: {error}");

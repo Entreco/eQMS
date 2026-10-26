@@ -6,6 +6,20 @@ pub(crate) fn command() -> Command {
     Command::new("document")
         .about("Create, save and inspect document drafts")
         .subcommand_required(true)
+        .subcommand(
+            operation("validate")
+                .about("Check exact canonical v1 Markdown (no workspace)")
+                .mut_arg("path", |arg| {
+                    arg.help("v1 Markdown file, or - for UTF-8 stdin")
+                }),
+        )
+        .subcommand(
+            operation("format")
+                .about("Write canonical v1 Markdown to stdout (no file writes)")
+                .mut_arg("path", |arg| {
+                    arg.help("v1 Markdown file, or - for UTF-8 stdin")
+                }),
+        )
         .subcommand(operation("create").arg(title_argument()))
         .subcommand(operation("list"))
         .subcommand(
@@ -45,6 +59,9 @@ pub(crate) fn run(
     input: &mut dyn Read,
 ) -> Result<String, String> {
     let (operation, args) = matches.subcommand().expect("required document operation");
+    if matches!(operation, "validate" | "format") {
+        return super::markdown::run(operation, args, json, input);
+    }
     let value = |name: &str| {
         args.get_one::<String>(name)
             .expect("required argument")
