@@ -24,6 +24,15 @@ not implemented. Reject history-override environment variables
 `GIT_SHALLOW_FILE`, `GIT_GRAFT_FILE` and `GIT_REPLACE_REF_BASE` as well.
 Reject checked-out internal draft branches.
 
+Before object traversal, reject configured partial/promisor repositories.
+All shared Git reads also disable lazy fetching (`GIT_NO_LAZY_FETCH=1`);
+missing local objects fail rather than fetching from a promisor remote.
+Run read-only `git fsck --connectivity-only --no-dangling` before source capture
+to validate the ref inventory, including dangling/broken symbolic refs that
+`for-each-ref` may omit. A detectable broken ref is an error, not an
+undetectable deleted-ref limitation. Connectivity errors in other local refs
+also fail this conservative check. No object repair or remote fetch occurs.
+
 The optional checkpoint is a literal full lowercase SHA-1/SHA-256 commit ID,
 not a ref/expression; it must occur in verified baseline ancestry. A caller must
 obtain/preserve it independently. It pins ancestry only: it is not a trusted
@@ -49,6 +58,13 @@ an independent reference/inventory. No externally supplied trust is invented.
 5. Apply existing current workspace config/manifest/journal verification after
    the chronological checks. Dirty config/manifest/journal state remains an
    explicit failure, not automatically repaired.
+
+Read each commit's relevant tree in one NUL-delimited `ls-tree` call and check
+path/mode membership every time. Batch previously unseen content blobs with
+`cat-file --batch`, and cache their SHA-256 hashes by immutable object ID across
+commits. Reuse the decoded journal when its blob ID is unchanged. Growing
+bindings still require per-commit comparisons, but do not cause per-binding Git
+subprocesses or repeated hashing of unchanged content.
 
 Multiple events in one commit must each bind to that commit's content; the
 command does not invent intermediate snapshots. First encountered errors carry

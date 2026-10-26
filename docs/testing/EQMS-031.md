@@ -16,6 +16,8 @@ Requirements: [EQMS-031](../requirements/EQMS-031.md).
 | T031-04 | R031-02, R031-05 | Corrupt draft history and drafts from unrelated baselines fail with document/head/revision context; existing draft tamper tests remain passing. |
 | T031-05 | R031-03, R031-04 | Valid genesis/intermediate/HEAD checkpoints work; malformed, unrelated, unknown or draft-only checkpoints fail; unsupported merges/shallow/replacement/grafts fail explicitly. |
 | T031-06 | R031-05, R031-06 | CLI human/JSON success/error/usage/help contracts; stdin is not read; current workspace verify/recover/authoring/search regressions remain passing. |
+| T031-07 | R031-04, R031-07 | A partial/promisor clone with a missing historical object fails without contacting its remote or downloading objects; broken/dangling/cyclic symbolic and malformed direct refs fail explicitly. |
+| T031-08 | R031-01, R031-08 | A growing-path ledger uses one tree read per baseline commit and batched reads only for distinct blobs; repeat/unmodified blobs are not rehashed. Changed content, missing files and modes still fail. |
 
 Run focused audit/CLI tests, then Rust CI: formatting, Clippy with denied
 warnings, locked workspace tests and release build; run affected desktop/feature

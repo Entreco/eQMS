@@ -1342,6 +1342,14 @@ fn read_head_blobs(
     root: &Path,
     paths: &[&str],
 ) -> Result<BTreeMap<String, Vec<u8>>, WorkspaceError> {
+    read_git_blobs(root, Some("HEAD"), paths)
+}
+
+pub(crate) fn read_git_blobs(
+    root: &Path,
+    revision: Option<&str>,
+    paths: &[&str],
+) -> Result<BTreeMap<String, Vec<u8>>, WorkspaceError> {
     if paths.is_empty() {
         return Ok(BTreeMap::new());
     }
@@ -1350,9 +1358,15 @@ fn read_head_blobs(
         if path.contains('\0') {
             return Err(error("Git content path contains NUL"));
         }
-        requests.extend_from_slice(format!("HEAD:{path}\0").as_bytes());
+        let selector = match revision {
+            Some(revision) => format!("{revision}:{path}"),
+            None => (*path).to_owned(),
+        };
+        requests.extend_from_slice(selector.as_bytes());
+        requests.push(0);
     }
     let mut child = Command::new("git")
+        .env("GIT_NO_LAZY_FETCH", "1")
         .arg("--literal-pathspecs")
         .arg("-C")
         .arg(root)
@@ -1395,7 +1409,7 @@ fn read_head_blobs(
         let parts: Vec<_> = header.split_whitespace().collect();
         if parts.len() != 3 || parts[1] != "blob" {
             return Err(error(format!(
-                "Git HEAD does not contain a readable blob for {path}"
+                "Git does not contain a readable blob for {path}"
             )));
         }
         let size: usize = parts[2]
@@ -1532,6 +1546,7 @@ pub(crate) fn git_text(path: &Path, args: &[&str]) -> Result<String, WorkspaceEr
 
 pub(crate) fn git(path: &Path, args: &[&str]) -> Result<Output, WorkspaceError> {
     let output = Command::new("git")
+        .env("GIT_NO_LAZY_FETCH", "1")
         .arg("--literal-pathspecs")
         .arg("-C")
         .arg(path)

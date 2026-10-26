@@ -153,14 +153,19 @@ impl Documents {
             &str,
         ) -> Result<T, WorkspaceError>,
     ) -> Result<T, WorkspaceError> {
-        Self::with_sources(path, |documents, workspace, sources, baseline| {
-            documents.verify_baseline()?;
-            operation(documents, workspace, sources, baseline)
-        })
+        Self::with_sources(
+            path,
+            |_| Ok(()),
+            |documents, workspace, sources, baseline| {
+                documents.verify_baseline()?;
+                operation(documents, workspace, sources, baseline)
+            },
+        )
     }
 
     pub(crate) fn with_sources<T>(
         path: &Path,
+        validate_inventory: impl FnOnce(&Workspace) -> Result<(), WorkspaceError>,
         operation: impl FnOnce(
             &Self,
             &Workspace,
@@ -172,6 +177,7 @@ impl Documents {
             workspace: Workspace::open(path)?,
         };
         let _lock = documents.workspace.acquire_lock()?;
+        validate_inventory(&documents.workspace)?;
         let refs = git_text(
             documents.root(),
             &["for-each-ref", "--format=%(refname) %(objectname)", PREFIX],

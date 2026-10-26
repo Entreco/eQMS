@@ -1,6 +1,8 @@
 use crate::document::Documents;
 use crate::markdown::hash;
-use crate::workspace::{WorkspaceError, error, git, git_text, parse_and_verify_journal};
+use crate::workspace::{
+    WorkspaceError, error, git, git_text, parse_and_verify_journal, read_git_blobs,
+};
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
@@ -31,12 +33,116 @@ fn full_commit(value: &str) -> bool {
             .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
-fn regular_blob(root: &Path, commit: &str, path: &str) -> Result<Vec<u8>, WorkspaceError> {
-    let entry = git(root, &["ls-tree", "-z", commit, "--", path])?.stdout;
-    if !entry.starts_with(b"100644 blob ") {
-        return Err(error(format!("expected regular Git blob for {path}")));
+struct TreeEntry {
+    regular: bool,
+    object: String,
+}
+
+fn read_tree(root: &Path, commit: &str) -> Result<BTreeMap<Vec<u8>, TreeEntry>, WorkspaceError> {
+    let output = git(
+        root,
+        &[
+            "ls-tree",
+            "-r",
+            "-z",
+            commit,
+            "--",
+            JOURNAL,
+            "documents",
+            "modules",
+        ],
+    )?;
+    let mut tree = BTreeMap::new();
+    for entry in output
+        .stdout
+        .split(|byte| *byte == 0)
+        .filter(|entry| !entry.is_empty())
+    {
+        let tab = entry
+            .iter()
+            .position(|byte| *byte == b'\t')
+            .ok_or_else(|| error("invalid Git tree entry"))?;
+        let header =
+            std::str::from_utf8(&entry[..tab]).map_err(|cause| error(cause.to_string()))?;
+        let fields: Vec<_> = header.split_whitespace().collect();
+        if fields.len() != 3 || !full_commit(fields[2]) {
+            return Err(error("invalid Git tree object entry"));
+        }
+        tree.insert(
+            entry[tab + 1..].to_vec(),
+            TreeEntry {
+                regular: fields[0] == "100644" && fields[1] == "blob",
+                object: fields[2].to_owned(),
+            },
+        );
     }
-    Ok(git(root, &["show", &format!("{commit}:{path}")])?.stdout)
+    Ok(tree)
+}
+
+fn regular_object<'a>(
+    tree: &'a BTreeMap<Vec<u8>, TreeEntry>,
+    path: &str,
+) -> Result<&'a str, WorkspaceError> {
+    tree.get(path.as_bytes())
+        .filter(|entry| entry.regular)
+        .map(|entry| entry.object.as_str())
+        .ok_or_else(|| error(format!("expected regular Git blob for {path}")))
+}
+
+fn reject_promisor(root: &Path) -> Result<(), WorkspaceError> {
+    let config = git_text(root, &["config", "--null", "--list"])?;
+    for setting in config.split('\0') {
+        let key = setting
+            .split('\n')
+            .next()
+            .unwrap_or_default()
+            .to_ascii_lowercase();
+        if key == "extensions.partialclone"
+            || (key.starts_with("remote.") && key.ends_with(".promisor"))
+        {
+            return Err(error(
+                "ledger verification does not support partial/promisor repositories",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn cache_hashes(
+    root: &Path,
+    tree: &BTreeMap<Vec<u8>, TreeEntry>,
+    bindings: &BTreeMap<String, String>,
+    hashes: &mut BTreeMap<String, String>,
+) -> Result<(), WorkspaceError> {
+    let mut missing = BTreeSet::new();
+    for path in bindings.keys() {
+        let object = regular_object(tree, path)?;
+        if !hashes.contains_key(object) {
+            missing.insert(object);
+        }
+    }
+    let missing: Vec<_> = missing.into_iter().collect();
+    for (object, bytes) in read_git_blobs(root, None, &missing)? {
+        hashes.insert(object, hash(&bytes));
+    }
+    Ok(())
+}
+
+fn verify_bindings(
+    root: &Path,
+    tree: &BTreeMap<Vec<u8>, TreeEntry>,
+    bindings: &BTreeMap<String, String>,
+    hashes: &mut BTreeMap<String, String>,
+) -> Result<(), WorkspaceError> {
+    cache_hashes(root, tree, bindings, hashes)?;
+    for (path, expected) in bindings {
+        if hashes[regular_object(tree, path)?] != *expected {
+            return Err(error(format!(
+                "latest recorded content hash mismatch for {path}"
+            )));
+        }
+    }
+    Ok(())
 }
 
 fn supported_graph(root: &Path) -> Result<(), WorkspaceError> {
@@ -86,112 +192,131 @@ pub fn verify_ledger(
             )));
         }
     }
-    Documents::with_sources(path.as_ref(), |documents, workspace, sources, baseline| {
-        let root = workspace.path();
-        supported_graph(root)?;
-        let history = git_text(root, &["rev-list", "--reverse", "--parents", baseline])?;
-        let mut ancestors = BTreeSet::new();
-        let mut previous_commit: Option<&str> = None;
-        let mut previous_journal = Vec::new();
-        let mut bindings = BTreeMap::new();
-        let mut baseline_records = 0;
-        for line in history.lines() {
-            let commits: Vec<_> = line.split_whitespace().collect();
-            let commit = commits[0];
-            if commits.get(1).copied() != previous_commit || commits.len() > 2 {
-                return Err(error(format!(
-                    "baseline commit {commit}: unsupported non-linear/merge history"
-                )));
-            }
-            let mut verify = || -> Result<(Vec<u8>, usize), WorkspaceError> {
-                let bytes = regular_blob(root, commit, JOURNAL)?;
-                let records = parse_and_verify_journal(&bytes)?;
-                if !bytes.starts_with(&previous_journal) {
-                    let matching_bytes = bytes
-                        .iter()
-                        .zip(&previous_journal)
-                        .take_while(|(left, right)| left == right)
-                        .count();
-                    let line = bytes[..matching_bytes]
-                        .iter()
-                        .filter(|byte| **byte == b'\n')
-                        .count();
+    // Ref enumeration itself can inspect objects; reject remote-backed stores first.
+    reject_promisor(path.as_ref())?;
+    Documents::with_sources(
+        path.as_ref(),
+        |workspace| {
+            let root = workspace.path();
+            reject_promisor(root)?;
+            supported_graph(root)?;
+            git(root, &["fsck", "--connectivity-only", "--no-dangling"])
+                .map_err(|cause| error(format!("invalid local ref/object inventory: {cause}")))?;
+            Ok(())
+        },
+        |documents, workspace, sources, baseline| {
+            let root = workspace.path();
+            let history = git_text(root, &["rev-list", "--reverse", "--parents", baseline])?;
+            let mut ancestors = BTreeSet::new();
+            let mut previous_commit: Option<&str> = None;
+            let mut previous_journal = Vec::new();
+            let mut previous_journal_object = String::new();
+            let mut content_hashes = BTreeMap::<String, String>::new();
+            let mut bindings = BTreeMap::new();
+            let mut baseline_records = 0;
+            for line in history.lines() {
+                let commits: Vec<_> = line.split_whitespace().collect();
+                let commit = commits[0];
+                if commits.get(1).copied() != previous_commit || commits.len() > 2 {
                     return Err(error(format!(
-                        "journal does not extend prior committed prefix at line {line} (after baseline commit {})",
-                        previous_commit.unwrap_or("none")
+                        "baseline commit {commit}: unsupported non-linear/merge history"
                     )));
                 }
-                for record in records.iter().skip(baseline_records) {
-                    for (path, expected) in &record.content_hashes {
-                        let actual = regular_blob(root, commit, path).map_err(|cause| {
-                            error(format!("sequence {}: {cause}", record.sequence))
-                        })?;
-                        if hash(&actual) != *expected {
-                            return Err(error(format!(
-                                "sequence {}: content hash mismatch for {path}",
-                                record.sequence
-                            )));
-                        }
+                let mut verify = || -> Result<(Vec<u8>, usize), WorkspaceError> {
+                    let tree = read_tree(root, commit)?;
+                    let journal_object = regular_object(&tree, JOURNAL)?;
+                    if journal_object == previous_journal_object {
+                        verify_bindings(root, &tree, &bindings, &mut content_hashes)?;
+                        return Ok((previous_journal.clone(), baseline_records));
                     }
-                    bindings.extend(record.content_hashes.clone());
-                }
-                for (path, expected) in &bindings {
-                    let actual = regular_blob(root, commit, path)?;
-                    if hash(&actual) != *expected {
+                    let bytes = git(root, &["cat-file", "blob", journal_object])?.stdout;
+                    let records = parse_and_verify_journal(&bytes)?;
+                    if !bytes.starts_with(&previous_journal) {
+                        let matching_bytes = bytes
+                            .iter()
+                            .zip(&previous_journal)
+                            .take_while(|(left, right)| left == right)
+                            .count();
+                        let line = bytes[..matching_bytes]
+                            .iter()
+                            .filter(|byte| **byte == b'\n')
+                            .count();
                         return Err(error(format!(
-                            "latest recorded content hash mismatch for {path}"
+                            "journal does not extend prior committed prefix at line {line} (after baseline commit {})",
+                            previous_commit.unwrap_or("none")
                         )));
                     }
-                }
-                Ok((bytes, records.len()))
-            };
-            let (bytes, count) =
-                verify().map_err(|cause| error(format!("baseline commit {commit}: {cause}")))?;
-            previous_journal = bytes;
-            baseline_records = count;
-            ancestors.insert(commit.to_owned());
-            previous_commit = Some(commit);
-        }
-        if checkpoint.is_some_and(|value| !ancestors.contains(value)) {
-            return Err(error("trusted checkpoint is not in baseline ancestry"));
-        }
-        workspace
-            .verify_unlocked()
-            .map_err(|cause| error(format!("current workspace at baseline {baseline}: {cause}")))?;
-        let mut drafts = Vec::new();
-        for (id, head) in sources {
-            let revisions = documents
-                .history_at(id, head)
-                .map_err(|cause| error(format!("draft {id} at {head}: {cause}")))?;
-            let creation = revisions
-                .last()
-                .ok_or_else(|| error("missing draft creation"))?;
-            let base = git_text(root, &["rev-parse", &format!("{}^", creation.revision)])?;
-            if !ancestors.contains(base.trim()) {
-                return Err(error(format!(
-                    "draft {id} at {head}: creation baseline {} is not in verified baseline ancestry",
-                    base.trim()
-                )));
+                    let mut needed = bindings.clone();
+                    for record in records.iter().skip(baseline_records) {
+                        needed.extend(record.content_hashes.clone());
+                    }
+                    cache_hashes(root, &tree, &needed, &mut content_hashes)?;
+                    for record in records.iter().skip(baseline_records) {
+                        for (path, expected) in &record.content_hashes {
+                            let object = regular_object(&tree, path).map_err(|cause| {
+                                error(format!("sequence {}: {cause}", record.sequence))
+                            })?;
+                            if content_hashes[object] != *expected {
+                                return Err(error(format!(
+                                    "sequence {}: content hash mismatch for {path}",
+                                    record.sequence
+                                )));
+                            }
+                        }
+                        bindings.extend(record.content_hashes.clone());
+                    }
+                    verify_bindings(root, &tree, &bindings, &mut content_hashes)?;
+                    previous_journal_object = journal_object.to_owned();
+                    Ok((bytes, records.len()))
+                };
+                let (bytes, count) = verify()
+                    .map_err(|cause| error(format!("baseline commit {commit}: {cause}")))?;
+                previous_journal = bytes;
+                baseline_records = count;
+                ancestors.insert(commit.to_owned());
+                previous_commit = Some(commit);
             }
-            drafts.push(DraftVerification {
-                id: id.clone(),
-                revision: head.clone(),
-                saved_revisions: revisions.len(),
-            });
-        }
-        Ok(LedgerVerification {
-            baseline_revision: baseline.to_owned(),
-            baseline_commits: ancestors.len(),
-            baseline_records,
-            drafts,
-            checkpoint: checkpoint.map(str::to_owned),
-            trust: if checkpoint.is_some() {
-                "checkpoint_ancestry"
-            } else {
-                "local_consistency"
-            },
-        })
-    })
+            if checkpoint.is_some_and(|value| !ancestors.contains(value)) {
+                return Err(error("trusted checkpoint is not in baseline ancestry"));
+            }
+            workspace.verify_unlocked().map_err(|cause| {
+                error(format!("current workspace at baseline {baseline}: {cause}"))
+            })?;
+            let mut drafts = Vec::new();
+            for (id, head) in sources {
+                let revisions = documents
+                    .history_at(id, head)
+                    .map_err(|cause| error(format!("draft {id} at {head}: {cause}")))?;
+                let creation = revisions
+                    .last()
+                    .ok_or_else(|| error("missing draft creation"))?;
+                let base = git_text(root, &["rev-parse", &format!("{}^", creation.revision)])?;
+                if !ancestors.contains(base.trim()) {
+                    return Err(error(format!(
+                        "draft {id} at {head}: creation baseline {} is not in verified baseline ancestry",
+                        base.trim()
+                    )));
+                }
+                drafts.push(DraftVerification {
+                    id: id.clone(),
+                    revision: head.clone(),
+                    saved_revisions: revisions.len(),
+                });
+            }
+            Ok(LedgerVerification {
+                baseline_revision: baseline.to_owned(),
+                baseline_commits: ancestors.len(),
+                baseline_records,
+                drafts,
+                checkpoint: checkpoint.map(str::to_owned),
+                trust: if checkpoint.is_some() {
+                    "checkpoint_ancestry"
+                } else {
+                    "local_consistency"
+                },
+            })
+        },
+    )
 }
 
 #[cfg(test)]
@@ -431,6 +556,54 @@ mod tests {
             failure.contains(&other.id) && failure.contains("creation baseline"),
             "{failure}"
         );
+    }
+
+    #[test]
+    fn rejects_detectable_broken_refs_instead_of_omitting_drafts() {
+        for kind in ["dangling", "cycle", "malformed", "missing-object"] {
+            let f = Fixture::new();
+            let reference = "refs/heads/eqms-drafts/DOC-00000000000000000000000000000000";
+            match kind {
+                "dangling" => {
+                    git(&f.0, &["symbolic-ref", reference, "refs/heads/deleted"]).unwrap();
+                }
+                "cycle" => {
+                    git(&f.0, &["symbolic-ref", reference, "refs/heads/cycle"]).unwrap();
+                    git(&f.0, &["symbolic-ref", "refs/heads/cycle", reference]).unwrap();
+                }
+                _ => {
+                    let path = f.0.join(".git").join(reference);
+                    fs::create_dir_all(path.parent().unwrap()).unwrap();
+                    fs::write(
+                        &path,
+                        if kind == "malformed" {
+                            "broken\n".to_owned()
+                        } else {
+                            format!("{}\n", "f".repeat(40))
+                        },
+                    )
+                    .unwrap();
+                }
+            }
+            let failure = f.audit(None).unwrap_err().to_string();
+            assert!(
+                failure.contains("ref/object inventory"),
+                "{kind}: {failure}"
+            );
+            assert!(failure.contains(reference), "{kind}: {failure}");
+        }
+    }
+
+    #[test]
+    fn validates_packed_draft_refs_with_local_objects() {
+        let f = Fixture::new();
+        let draft = Documents::open(&f.0)
+            .unwrap()
+            .create("Packed", "body")
+            .unwrap();
+        git(&f.0, &["pack-refs", "--all"]).unwrap();
+        let report = f.audit(None).unwrap();
+        assert_eq!(report.drafts[0].id, draft.id);
     }
 
     #[test]
