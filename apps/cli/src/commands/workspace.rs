@@ -35,15 +35,18 @@ pub(crate) fn run(operation: &str, matches: &ArgMatches, json: bool) -> Result<S
     match operation {
         "init" => eqms_core::workspace::Workspace::initialize(path)
             .map(|workspace| {
+                let resources = eqms_core::workspace::INITIALIZED_RESOURCES;
                 if json {
                     serde_json::json!({
-                        "path": workspace.path().display().to_string()
+                        "path": workspace.path().display().to_string(),
+                        "created_resources": resources
                     })
                     .to_string()
                 } else {
                     format!(
-                        "Initialized eQMS workspace at {}",
-                        workspace.path().display()
+                        "Initialized eQMS workspace at {}\nCreated resources: {}",
+                        workspace.path().display(),
+                        resources.join(", ")
                     )
                 }
             })

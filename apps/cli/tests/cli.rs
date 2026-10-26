@@ -3,6 +3,18 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 static NEXT: AtomicUsize = AtomicUsize::new(0);
 
+fn qms_with_test_identity() -> Command {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_qms"));
+    command
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("GIT_CONFIG_COUNT", "2")
+        .env("GIT_CONFIG_KEY_0", "user.name")
+        .env("GIT_CONFIG_VALUE_0", "CLI Test")
+        .env("GIT_CONFIG_KEY_1", "user.email")
+        .env("GIT_CONFIG_VALUE_1", "cli-test@example.invalid");
+    command
+}
+
 #[test]
 fn document_commands_persist_drafts_and_report_conflicts() {
     use std::io::Write;
@@ -257,7 +269,28 @@ fn initializes_and_rebuilds_a_workspace_index() {
         init_json["data"]["path"],
         workspace.canonicalize().unwrap().display().to_string()
     );
+    assert_eq!(
+        init_json["data"]["created_resources"],
+        serde_json::json!([
+            ".git/",
+            ".gitignore",
+            ".eqms/",
+            ".eqms/config.json",
+            ".eqms/journal.jsonl",
+            "documents/",
+            "modules/",
+            "modules/manifest.json"
+        ])
+    );
     assert!(workspace.join(".eqms/journal.jsonl").is_file());
+    assert!(!workspace.join(".eqms/index.sqlite3").exists());
+
+    let initial_verify = Command::new(env!("CARGO_BIN_EXE_qms"))
+        .arg("verify")
+        .arg(&workspace)
+        .output()
+        .unwrap();
+    assert_eq!(initial_verify.status.code(), Some(0));
 
     let branch = Command::new("git")
         .arg("-C")
@@ -331,6 +364,201 @@ fn initializes_and_rebuilds_a_workspace_index() {
     assert_cli_envelope(&error_json, "error");
     assert_eq!(error_json["command"], "index.rebuild");
     assert_eq!(error_json["error"]["code"], "OPERATION_FAILED");
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn init_reports_resources_and_preserves_existing_data_on_failure() {
+    let root = std::env::temp_dir().join(format!(
+        "eqms-cli-init-results-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    std::fs::create_dir(&root).unwrap();
+
+    let workspace = root.join("workspace with spaces");
+    let init = qms_with_test_identity()
+        .args(["--json", "init"])
+        .arg(&workspace)
+        .output()
+        .unwrap();
+    assert_eq!(
+        init.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&init.stderr)
+    );
+    let init_json: serde_json::Value = serde_json::from_slice(&init.stdout).unwrap();
+    assert_cli_envelope(&init_json, "ok");
+    assert_eq!(init_json["command"], "init");
+    assert_eq!(
+        init_json["data"]["created_resources"],
+        serde_json::json!(eqms_core::workspace::INITIALIZED_RESOURCES)
+    );
+
+    let head_before = Command::new("git")
+        .arg("-C")
+        .arg(&workspace)
+        .args(["rev-parse", "HEAD"])
+        .output()
+        .unwrap();
+    assert!(head_before.status.success());
+    let repeat = qms_with_test_identity()
+        .args(["--json", "init"])
+        .arg(&workspace)
+        .output()
+        .unwrap();
+    assert_eq!(repeat.status.code(), Some(1));
+    let repeat_error: serde_json::Value = serde_json::from_slice(&repeat.stderr).unwrap();
+    assert_cli_envelope(&repeat_error, "error");
+    assert!(
+        repeat_error["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("not empty")
+    );
+    let head_after = Command::new("git")
+        .arg("-C")
+        .arg(&workspace)
+        .args(["rev-parse", "HEAD"])
+        .output()
+        .unwrap();
+    assert!(head_after.status.success());
+    assert_eq!(head_before.stdout, head_after.stdout);
+
+    let nonempty = root.join("nonempty");
+    std::fs::create_dir(&nonempty).unwrap();
+    let marker = nonempty.join("keep.txt");
+    std::fs::write(&marker, b"keep").unwrap();
+    let existing = qms_with_test_identity()
+        .args(["--json", "init"])
+        .arg(&nonempty)
+        .output()
+        .unwrap();
+    assert_eq!(existing.status.code(), Some(1));
+    let existing_error: serde_json::Value = serde_json::from_slice(&existing.stderr).unwrap();
+    assert_cli_envelope(&existing_error, "error");
+    assert_eq!(std::fs::read(&marker).unwrap(), b"keep");
+    assert!(!nonempty.join(".git").exists());
+
+    let blocker = root.join("existing-file");
+    std::fs::write(&blocker, b"do not overwrite").unwrap();
+    let failed_path = blocker.join("workspace");
+    let failed = qms_with_test_identity()
+        .args(["--json", "init"])
+        .arg(&failed_path)
+        .output()
+        .unwrap();
+    assert_eq!(failed.status.code(), Some(1));
+    let failed_error: serde_json::Value = serde_json::from_slice(&failed.stderr).unwrap();
+    assert_cli_envelope(&failed_error, "error");
+    assert!(
+        failed_error["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("workspace path component is not a directory")
+    );
+    assert_eq!(std::fs::read(&blocker).unwrap(), b"do not overwrite");
+    assert!(!failed_path.exists());
+
+    let human_workspace = root.join("human workspace");
+    let human = qms_with_test_identity()
+        .arg("init")
+        .arg(&human_workspace)
+        .output()
+        .unwrap();
+    assert!(human.status.success());
+    let human_output = String::from_utf8(human.stdout).unwrap();
+    assert!(
+        human_output.contains(
+            &human_workspace
+                .canonicalize()
+                .unwrap()
+                .display()
+                .to_string()
+        )
+    );
+    assert!(human_output.contains("Created resources:"));
+    assert!(human_output.contains(".eqms/config.json"));
+
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn init_preserves_and_recovers_workspace_after_commit_failure() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let root = std::env::temp_dir().join(format!(
+        "eqms-cli-init-commit-failure-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    let workspace = root.join("workspace");
+    let hooks = workspace.join(".git/hooks");
+    std::fs::create_dir_all(&hooks).unwrap();
+    let init_git = Command::new("git")
+        .arg("-C")
+        .arg(&workspace)
+        .args(["init", "--quiet"])
+        .output()
+        .unwrap();
+    assert!(init_git.status.success());
+
+    let hook = hooks.join("pre-commit");
+    std::fs::write(&hook, "#!/bin/sh\nexit 1\n").unwrap();
+    let mut permissions = std::fs::metadata(&hook).unwrap().permissions();
+    permissions.set_mode(0o755);
+    std::fs::set_permissions(&hook, permissions).unwrap();
+
+    let init = qms_with_test_identity()
+        .args(["--json", "init"])
+        .arg(&workspace)
+        .output()
+        .unwrap();
+    assert_eq!(init.status.code(), Some(1));
+    let init_error: serde_json::Value = serde_json::from_slice(&init.stderr).unwrap();
+    assert_cli_envelope(&init_error, "error");
+    assert!(
+        init_error["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("commit outcome may be uncertain")
+    );
+    assert!(workspace.join(".eqms/config.json").is_file());
+    assert!(workspace.join(".eqms/journal.jsonl").is_file());
+    assert!(workspace.join(".git").is_dir());
+    assert!(
+        !Command::new("git")
+            .arg("-C")
+            .arg(&workspace)
+            .args(["rev-parse", "--verify", "HEAD"])
+            .output()
+            .unwrap()
+            .status
+            .success()
+    );
+
+    std::fs::remove_file(hook).unwrap();
+    let recover = qms_with_test_identity()
+        .args(["--json", "recover"])
+        .arg(&workspace)
+        .output()
+        .unwrap();
+    assert_eq!(
+        recover.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&recover.stderr)
+    );
+    let recovered: serde_json::Value = serde_json::from_slice(&recover.stdout).unwrap();
+    assert_cli_envelope(&recovered, "ok");
+    let verify = qms_with_test_identity()
+        .args(["--json", "verify"])
+        .arg(&workspace)
+        .output()
+        .unwrap();
+    assert_eq!(verify.status.code(), Some(0));
     std::fs::remove_dir_all(root).unwrap();
 }
 

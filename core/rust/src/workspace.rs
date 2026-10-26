@@ -19,6 +19,18 @@ const JOURNAL_PATH: &str = ".eqms/journal.jsonl";
 const MODULE_MANIFEST_PATH: &str = "modules/manifest.json";
 const WORKSPACE_SCHEMA_VERSION: u32 = 1;
 
+/// Stable relative paths for the logical workspace resources created by initialization.
+pub const INITIALIZED_RESOURCES: &[&str] = &[
+    ".git/",
+    ".gitignore",
+    ".eqms/",
+    ".eqms/config.json",
+    ".eqms/journal.jsonl",
+    "documents/",
+    "modules/",
+    "modules/manifest.json",
+];
+
 #[derive(Clone, Copy)]
 enum WorkspaceFileMode {
     Read,
@@ -153,19 +165,20 @@ fn open_workspace_file(root: &Path, relative: &Path, mode: WorkspaceFileMode) ->
 }
 
 #[cfg(unix)]
-fn ensure_workspace_directory(root: &Path, relative: &Path) -> io::Result<()> {
+fn ensure_workspace_directory(root: &Path, relative: &Path) -> io::Result<bool> {
     use rustix::fs::{mkdirat, open, openat};
 
     let components = checked_components(relative)?;
     let directory_flags = OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC;
     let root_fd = open(root, directory_flags, Mode::empty()).map_err(rustix_io_error)?;
     let mut directory = File::from(root_fd);
+    let mut created = false;
     for component in components {
         let next = match openat(&directory, component, directory_flags, Mode::empty()) {
             Ok(fd) => fd,
             Err(error) if rustix_io_error(error).kind() == io::ErrorKind::NotFound => {
                 match mkdirat(&directory, component, Mode::from_raw_mode(0o755)) {
-                    Ok(()) => {}
+                    Ok(()) => created = true,
                     Err(error) if rustix_io_error(error).kind() == io::ErrorKind::AlreadyExists => {
                     }
                     Err(error) => return Err(rustix_io_error(error)),
@@ -177,13 +190,14 @@ fn ensure_workspace_directory(root: &Path, relative: &Path) -> io::Result<()> {
         };
         directory = File::from(next);
     }
-    Ok(())
+    Ok(created)
 }
 
 #[cfg(not(unix))]
-fn ensure_workspace_directory(root: &Path, relative: &Path) -> io::Result<()> {
+fn ensure_workspace_directory(root: &Path, relative: &Path) -> io::Result<bool> {
     let components = checked_components(relative)?;
     let mut path = root.to_path_buf();
+    let mut created = false;
     for component in components {
         path.push(component);
         match fs::symlink_metadata(&path) {
@@ -196,11 +210,65 @@ fn ensure_workspace_directory(root: &Path, relative: &Path) -> io::Result<()> {
             }
             Err(error) if error.kind() == io::ErrorKind::NotFound => {
                 fs::create_dir(&path)?;
+                created = true;
             }
             Err(error) => return Err(error),
         }
     }
-    Ok(())
+    Ok(created)
+}
+
+#[cfg(unix)]
+fn remove_workspace_entry(root: &Path, relative: &str, directory: bool) -> io::Result<()> {
+    use rustix::fs::{AtFlags, open, openat, unlinkat};
+
+    let components = checked_components(Path::new(relative))?;
+    let directory_flags = OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC;
+    let root_fd = open(root, directory_flags, Mode::empty()).map_err(rustix_io_error)?;
+    let mut parent = File::from(root_fd);
+    for component in &components[..components.len() - 1] {
+        parent = File::from(
+            openat(&parent, *component, directory_flags, Mode::empty()).map_err(rustix_io_error)?,
+        );
+    }
+    let flags = if directory {
+        AtFlags::REMOVEDIR
+    } else {
+        AtFlags::empty()
+    };
+    unlinkat(&parent, components[components.len() - 1], flags).map_err(rustix_io_error)
+}
+
+#[cfg(not(unix))]
+fn remove_workspace_entry(root: &Path, relative: &str, directory: bool) -> io::Result<()> {
+    let components = checked_components(Path::new(relative))?;
+    let mut path = root.to_path_buf();
+    for component in &components[..components.len() - 1] {
+        path.push(component);
+        let metadata = fs::symlink_metadata(&path)?;
+        if !metadata.is_dir() || metadata.file_type().is_symlink() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "workspace cleanup parent is not a regular directory",
+            ));
+        }
+    }
+    path.push(components[components.len() - 1]);
+    let metadata = fs::symlink_metadata(&path)?;
+    if metadata.file_type().is_symlink()
+        || directory && !metadata.is_dir()
+        || !directory && !metadata.is_file()
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "workspace cleanup target is not the expected regular entry",
+        ));
+    }
+    if directory {
+        fs::remove_dir(path)
+    } else {
+        fs::remove_file(path)
+    }
 }
 
 fn read_workspace_file(root: &Path, relative: &str) -> io::Result<Vec<u8>> {
@@ -210,15 +278,95 @@ fn read_workspace_file(root: &Path, relative: &str) -> io::Result<Vec<u8>> {
     Ok(bytes)
 }
 
-fn write_workspace_file(
-    root: &Path,
-    relative: &str,
-    bytes: &[u8],
-    mode: WorkspaceFileMode,
-) -> io::Result<()> {
-    let mut file = open_workspace_file(root, Path::new(relative), mode)?;
-    file.write_all(bytes)?;
-    file.sync_all()
+fn create_directory_tree(path: &Path) -> Result<Vec<PathBuf>, WorkspaceError> {
+    let mut current = PathBuf::new();
+    let mut created = Vec::new();
+    for component in path.components() {
+        current.push(component.as_os_str());
+        match fs::symlink_metadata(&current) {
+            Ok(metadata) if metadata.is_dir() => {}
+            Ok(metadata)
+                if metadata.file_type().is_symlink()
+                    && fs::metadata(&current).is_ok_and(|target| target.is_dir()) => {}
+            Ok(_) => {
+                return Err(cleanup_parent_directories(
+                    created,
+                    error(format!(
+                        "workspace path component is not a directory: {}",
+                        current.display()
+                    )),
+                ));
+            }
+            Err(io_error) if io_error.kind() == io::ErrorKind::NotFound => {
+                match fs::create_dir(&current) {
+                    Ok(()) => created.push(current.clone()),
+                    Err(io_error) if io_error.kind() == io::ErrorKind::AlreadyExists => {
+                        let metadata = fs::metadata(&current).map_err(|metadata_error| {
+                            cleanup_parent_directories(
+                                created.clone(),
+                                error(format!(
+                                    "cannot inspect workspace path {}: {metadata_error}",
+                                    current.display()
+                                )),
+                            )
+                        })?;
+                        if !metadata.is_dir() {
+                            return Err(cleanup_parent_directories(
+                                created,
+                                error(format!(
+                                    "workspace path component is not a directory: {}",
+                                    current.display()
+                                )),
+                            ));
+                        }
+                    }
+                    Err(io_error) => {
+                        return Err(cleanup_parent_directories(
+                            created,
+                            error(format!(
+                                "cannot create workspace directory {}: {io_error}",
+                                current.display()
+                            )),
+                        ));
+                    }
+                }
+            }
+            Err(io_error) => {
+                return Err(cleanup_parent_directories(
+                    created,
+                    error(format!(
+                        "cannot inspect workspace path {}: {io_error}",
+                        current.display()
+                    )),
+                ));
+            }
+        }
+    }
+    Ok(created)
+}
+
+fn cleanup_parent_directories(created: Vec<PathBuf>, cause: WorkspaceError) -> WorkspaceError {
+    if created.is_empty() {
+        return cause;
+    }
+    let mut failures = Vec::new();
+    for path in created.iter().rev() {
+        match fs::remove_dir(path) {
+            Ok(()) => {}
+            Err(io_error) if io_error.kind() == io::ErrorKind::NotFound => {}
+            Err(io_error) => failures.push(format!("{}: {io_error}", path.display())),
+        }
+    }
+    if failures.is_empty() {
+        error(format!(
+            "{cause}; empty directories created by this attempt were removed"
+        ))
+    } else {
+        error(format!(
+            "{cause}; rollback could not remove created directories: {}",
+            failures.join(", ")
+        ))
+    }
 }
 
 fn truncate_workspace_file(root: &Path, relative: &str, length: u64) -> io::Result<()> {
@@ -246,6 +394,103 @@ impl From<io::Error> for WorkspaceError {
 
 pub(crate) fn error(message: impl Into<String>) -> WorkspaceError {
     WorkspaceError(message.into())
+}
+
+struct InitializationGuard<'a> {
+    root: &'a Path,
+    created_files: Vec<String>,
+    created_directories: Vec<String>,
+}
+
+impl<'a> InitializationGuard<'a> {
+    fn new(root: &'a Path) -> Self {
+        Self {
+            root,
+            created_files: Vec::new(),
+            created_directories: Vec::new(),
+        }
+    }
+
+    fn create_directory(&mut self, relative: &str) -> Result<(), WorkspaceError> {
+        let created =
+            ensure_workspace_directory(self.root, Path::new(relative)).map_err(|io_error| {
+                error(format!(
+                    "cannot create workspace directory {relative}: {io_error}"
+                ))
+            })?;
+        if created {
+            self.created_directories.push(relative.to_owned());
+        }
+        Ok(())
+    }
+
+    fn write_file(&mut self, relative: &str, bytes: &[u8]) -> Result<(), WorkspaceError> {
+        let mut file =
+            open_workspace_file(self.root, Path::new(relative), WorkspaceFileMode::Create)
+                .map_err(|io_error| {
+                    error(format!(
+                        "cannot create workspace file {relative}: {io_error}"
+                    ))
+                })?;
+        self.created_files.push(relative.to_owned());
+        file.write_all(bytes)
+            .and_then(|()| file.sync_all())
+            .map_err(|io_error| {
+                error(format!(
+                    "cannot write workspace file {relative}: {io_error}"
+                ))
+            })
+    }
+
+    fn write_json(&mut self, relative: &str, value: &impl Serialize) -> Result<(), WorkspaceError> {
+        let mut bytes = serde_json::to_vec_pretty(value)
+            .map_err(|serde_error| error(serde_error.to_string()))?;
+        bytes.push(b'\n');
+        self.write_file(relative, &bytes)
+    }
+
+    fn write_journal(&mut self, records: &[JournalRecord]) -> Result<(), WorkspaceError> {
+        let mut bytes = Vec::new();
+        for record in records {
+            serde_json::to_writer(&mut bytes, record).map_err(|serde_error| {
+                error(format!("cannot encode journal record: {serde_error}"))
+            })?;
+            bytes.push(b'\n');
+        }
+        self.write_file(JOURNAL_PATH, &bytes)
+    }
+
+    fn abort(self, cause: WorkspaceError) -> WorkspaceError {
+        let mut failures = Vec::new();
+        for (relative, directory) in self
+            .created_files
+            .iter()
+            .rev()
+            .map(|path| (path.as_str(), false))
+            .chain(
+                self.created_directories
+                    .iter()
+                    .rev()
+                    .map(|path| (path.as_str(), true)),
+            )
+        {
+            match remove_workspace_entry(self.root, relative, directory) {
+                Ok(()) => {}
+                Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+                Err(error) => failures.push(format!("{relative}: {error}")),
+            }
+        }
+        if failures.is_empty() {
+            error(format!(
+                "{cause}; attempt-created workspace files and directories were removed; the unborn Git repository was preserved. Correct the cause and retry `qms init <path>`"
+            ))
+        } else {
+            error(format!(
+                "{cause}; rollback could not remove {}; the workspace may require manual repair",
+                failures.join(", ")
+            ))
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -299,19 +544,22 @@ pub struct Workspace {
 impl Workspace {
     pub fn initialize(path: impl AsRef<Path>) -> Result<Self, WorkspaceError> {
         let requested_path = path.as_ref();
-        fs::create_dir_all(requested_path).map_err(|e| {
-            error(format!(
-                "cannot create workspace directory {}: {e}",
-                requested_path.display()
-            ))
-        })?;
+        let created_parent_directories = create_directory_tree(requested_path)?;
         let path = requested_path.canonicalize().map_err(|e| {
-            error(format!(
-                "cannot resolve workspace directory {}: {e}",
-                requested_path.display()
-            ))
+            cleanup_parent_directories(
+                created_parent_directories.clone(),
+                error(format!(
+                    "cannot resolve workspace directory {}: {e}",
+                    requested_path.display()
+                )),
+            )
         })?;
-        ensure_initializable(&path)?;
+        if let Err(initialization_error) = ensure_initializable(&path) {
+            return Err(cleanup_parent_directories(
+                created_parent_directories,
+                initialization_error,
+            ));
+        }
         let git_directory = path.join(".git");
         match fs::create_dir(&git_directory) {
             Ok(()) => {}
@@ -324,80 +572,104 @@ impl Workspace {
             Err(io_error) => return Err(io_error.into()),
         }
         let workspace = Self { path };
-        let _lock = workspace.acquire_lock()?;
+        let _lock = workspace.acquire_lock().map_err(|lock_error| {
+            error(format!(
+                "cannot acquire initialization lock: {lock_error}; the unborn Git repository was preserved"
+            ))
+        })?;
         ensure_initializable(&workspace.path)?;
-        git(&workspace.path, &["init"])?;
-        ensure_git_identity(&workspace.path)?;
-        ensure_workspace_directory(&workspace.path, Path::new(".eqms"))?;
-        ensure_workspace_directory(&workspace.path, Path::new("documents"))?;
-        ensure_workspace_directory(&workspace.path, Path::new("modules"))?;
-        write_workspace_file(
-            &workspace.path,
-            ".gitignore",
-            b".eqms/index.sqlite3\n.eqms/index.sqlite3-shm\n.eqms/index.sqlite3-wal\n",
-            WorkspaceFileMode::Create,
-        )?;
-        write_workspace_file(
-            &workspace.path,
-            "documents/.gitkeep",
-            b"",
-            WorkspaceFileMode::Create,
-        )?;
-        write_workspace_file(
-            &workspace.path,
-            "modules/.gitkeep",
-            b"",
-            WorkspaceFileMode::Create,
-        )?;
-
-        let config = WorkspaceConfig {
-            schema_version: WORKSPACE_SCHEMA_VERSION,
-            document_schema_version: 1,
-            module_manifest_schema_version: 1,
-            journal_schema_version: WORKSPACE_SCHEMA_VERSION,
-        };
-        write_json(&workspace.path, CONFIG_PATH, &config)?;
-        write_json(
-            &workspace.path,
-            MODULE_MANIFEST_PATH,
-            &ModuleManifest {
-                schema_version: 1,
-                modules: Vec::new(),
-            },
-        )?;
-
-        let event = JournalRecord {
-            schema_version: WORKSPACE_SCHEMA_VERSION,
-            sequence: 0,
-            previous_hash: None,
-            timestamp: timestamp()?,
-            event_type: "workspace.genesis".to_owned(),
-            payload: BTreeMap::new(),
-            content_hashes: BTreeMap::new(),
-            hash: String::new(),
-        };
-        let record = with_hash(event)?;
-        write_journal(&workspace.path, &[record])?;
-        let initial_paths = [
-            ".gitignore",
-            CONFIG_PATH,
-            JOURNAL_PATH,
-            "documents/.gitkeep",
-            MODULE_MANIFEST_PATH,
-            "modules/.gitkeep",
-        ];
-        let mut add_args = vec!["add", "--"];
-        add_args.extend(initial_paths);
-        git(&workspace.path, &add_args)?;
-        for relative_path in initial_paths {
-            let bytes = read_workspace_file(&workspace.path, relative_path)?;
-            verify_staged_bytes(&workspace.path, relative_path, &bytes)?;
+        if let Err(init_error) = git(&workspace.path, &["init"]) {
+            return Err(error(format!(
+                "cannot initialize Git repository: {init_error}; the .git directory was preserved, correct the cause and retry `qms init <path>`"
+            )));
         }
-        let mut commit_args = vec!["commit", "--only", "-m", "Initialize eQMS workspace", "--"];
-        commit_args.extend(initial_paths);
-        git(&workspace.path, &commit_args)?;
+        ensure_git_identity(&workspace.path).map_err(|identity_error| {
+            error(format!(
+                "{identity_error}; the unborn .git repository was preserved, configure explicit author and committer identity and retry `qms init <path>`"
+            ))
+        })?;
 
-        workspace.verify_unlocked()?;
+        let mut guard = InitializationGuard::new(&workspace.path);
+        let mut commit_started = false;
+        let initialization = (|| {
+            guard.create_directory(".eqms")?;
+            guard.create_directory("documents")?;
+            guard.create_directory("modules")?;
+            guard.write_file(
+                ".gitignore",
+                b".eqms/index.sqlite3\n.eqms/index.sqlite3-shm\n.eqms/index.sqlite3-wal\n",
+            )?;
+            guard.write_file("documents/.gitkeep", b"")?;
+            guard.write_file("modules/.gitkeep", b"")?;
+
+            let config = WorkspaceConfig {
+                schema_version: WORKSPACE_SCHEMA_VERSION,
+                document_schema_version: 1,
+                module_manifest_schema_version: 1,
+                journal_schema_version: WORKSPACE_SCHEMA_VERSION,
+            };
+            guard.write_json(CONFIG_PATH, &config)?;
+            guard.write_json(
+                MODULE_MANIFEST_PATH,
+                &ModuleManifest {
+                    schema_version: 1,
+                    modules: Vec::new(),
+                },
+            )?;
+
+            let event = JournalRecord {
+                schema_version: WORKSPACE_SCHEMA_VERSION,
+                sequence: 0,
+                previous_hash: None,
+                timestamp: timestamp()?,
+                event_type: "workspace.genesis".to_owned(),
+                payload: BTreeMap::new(),
+                content_hashes: BTreeMap::new(),
+                hash: String::new(),
+            };
+            let record = with_hash(event)?;
+            guard.write_journal(&[record])?;
+            let initial_paths = [
+                ".gitignore",
+                CONFIG_PATH,
+                JOURNAL_PATH,
+                "documents/.gitkeep",
+                MODULE_MANIFEST_PATH,
+                "modules/.gitkeep",
+            ];
+            let mut add_args = vec!["add", "--"];
+            add_args.extend(initial_paths);
+            git(&workspace.path, &add_args)?;
+            for relative_path in initial_paths {
+                let bytes = read_workspace_file(&workspace.path, relative_path)?;
+                verify_staged_bytes(&workspace.path, relative_path, &bytes)?;
+            }
+            let mut commit_args = vec!["commit", "--only", "-m", "Initialize eQMS workspace", "--"];
+            commit_args.extend(initial_paths);
+            commit_started = true;
+            if let Err(commit_error) = git(&workspace.path, &commit_args) {
+                return Err(error(format!(
+                    "cannot create the initial workspace commit: {commit_error}"
+                )));
+            }
+            Ok(())
+        })();
+
+        if let Err(init_error) = initialization {
+            if commit_started {
+                return Err(error(format!(
+                    "{init_error}; workspace files were preserved because the commit outcome may be uncertain; run `qms verify <path>` and, if no commit exists, correct the cause and run `qms recover <path>`"
+                )));
+            }
+            return Err(guard.abort(init_error));
+        }
+        drop(guard);
+
+        workspace.verify_unlocked().map_err(|verify_error| {
+            error(format!(
+                "the initial commit was created, but workspace verification failed: {verify_error}; files were preserved, inspect with `qms verify <path>`"
+            ))
+        })?;
         Ok(workspace)
     }
 
@@ -758,29 +1030,6 @@ impl Workspace {
     fn lock(&self) -> Result<File, WorkspaceError> {
         self.acquire_lock()
     }
-}
-
-fn write_json(root: &Path, relative: &str, value: &impl Serialize) -> Result<(), WorkspaceError> {
-    let bytes = serde_json::to_vec_pretty(value)
-        .map_err(|e| error(format!("cannot encode config: {e}")))?;
-    write_workspace_file(
-        root,
-        relative,
-        &[bytes.as_slice(), b"\n"].concat(),
-        WorkspaceFileMode::Create,
-    )?;
-    Ok(())
-}
-
-fn write_journal(root: &Path, records: &[JournalRecord]) -> Result<(), WorkspaceError> {
-    let mut bytes = Vec::new();
-    for record in records {
-        serde_json::to_writer(&mut bytes, record)
-            .map_err(|e| error(format!("cannot encode journal record: {e}")))?;
-        bytes.push(b'\n');
-    }
-    write_workspace_file(root, JOURNAL_PATH, &bytes, WorkspaceFileMode::Create)?;
-    Ok(())
 }
 
 pub(crate) fn timestamp() -> Result<String, WorkspaceError> {
@@ -1332,6 +1581,28 @@ mod tests {
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].event_type, "workspace.genesis");
         assert!(workspace.index_path().ends_with(".eqms/index.sqlite3"));
+        fs::remove_dir_all(path).unwrap();
+    }
+
+    #[test]
+    fn initialization_rollback_removes_only_attempt_resources_and_allows_retry() {
+        let path = temp_dir();
+        configure_git(&path);
+        let git_config = fs::read(path.join(".git/config")).unwrap();
+        let mut guard = InitializationGuard::new(&path);
+        guard.create_directory(".eqms").unwrap();
+        guard.create_directory("documents").unwrap();
+        guard.write_file(".eqms/partial.json", b"partial").unwrap();
+
+        let failure = guard.abort(error("injected initialization failure"));
+        assert!(failure.to_string().contains("attempt-created"));
+        assert!(!path.join(".eqms").exists());
+        assert!(!path.join("documents").exists());
+        assert_eq!(fs::read(path.join(".git/config")).unwrap(), git_config);
+        assert!(!has_head(&path));
+
+        let workspace = Workspace::initialize(&path).unwrap();
+        assert_eq!(workspace.verify().unwrap().len(), 1);
         fs::remove_dir_all(path).unwrap();
     }
 
