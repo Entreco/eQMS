@@ -49,7 +49,11 @@ Keep observable appearance in the existing DesktopChrome controller when
 present, shared with Settings, toolbar and outer window styling; persistence
 failures must remain visible and must not change the saved appearance.
 The scaffold retains workspace/navigation state and exposes a presentation
-slot for header/body layout. Desktop owns native window and title-bar APIs.
+slot for title/actions/body layout. Desktop owns native window and title-bar APIs.
+Use separate leading title and trailing action children, not a full-width
+TitleBar child: pinned Jewel measures children before adding native insets.
+Keep an additional leading gutter and a bounded, ellipsized project label so
+native controls stay clear and actions fit at the minimum window width.
 Changing appearance must not recreate the window or workspace. Keep menu
 handlers, close/dirty/busy guards, minimum size and icon wiring.
 The matching decorated-window dependency is an explicitly approved addition.

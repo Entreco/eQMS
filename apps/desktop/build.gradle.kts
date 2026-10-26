@@ -54,6 +54,7 @@ dependencies {
     implementation(project(":feature:scaffold"))
     implementation(compose.desktop.currentOs) { exclude(group = "org.jetbrains.compose.material") }
     implementation(libs.jewel.standalone)
+    implementation(libs.jewel.decorated.window)
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.kotlinx.serialization.json)
 

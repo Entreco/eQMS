@@ -25,6 +25,8 @@ class DesktopChrome(
     val openRelease: suspend (String) -> Result<Unit>,
     val aboutLogo: @Composable () -> Unit = {},
 ) {
+    var dark by mutableStateOf(initialAppearance.getOrNull() ?: true)
+        internal set
     var enabled by mutableStateOf(true)
         internal set
     var hasProject by mutableStateOf(false)

@@ -81,7 +81,8 @@ class ScaffoldDocumentTest {
     @Test
     fun themeChangesPreserveDirtyEditorSearchAndNavigationGuard() {
         val capabilities = Documents()
-        compose.setContent { ProjectScreen(ProjectsRemembered(), capabilities) }
+        val chrome = chrome()
+        compose.setContent { ProjectScreen(ProjectsRemembered(), capabilities, chrome = chrome) }
         compose.onNodeWithText("Your quality workspace").assertExists()
         compose.onNodeWithText("Light theme").assertExists()
         compose.onNodeWithText("Open project").performClick()
@@ -92,6 +93,7 @@ class ScaffoldDocumentTest {
         compose.waitUntil(3000) { capabilities.queries.isNotEmpty() }
         repeat(2) {
             compose.onNodeWithText(if (it == 0) "Light theme" else "Dark theme").performClick()
+            compose.runOnIdle { assertEquals(it != 0, chrome.dark) }
             compose.onNodeWithContentDescription("Markdown body").assertTextContains("keep these edits")
             compose.onNodeWithContentDescription("Search saved drafts").assertTextContains("policy")
             compose.onNodeWithText("Draft has unsaved edits").assertExists()

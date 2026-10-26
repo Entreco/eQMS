@@ -155,6 +155,15 @@ Windows/Linux installation or replace manual launcher/About visual review.
 
 The desktop application is named **DutchDoxx**; the repository, workspace
 formats, and native `qms` CLI keep their eQMS names. On macOS the native
+main window uses Jewel/JBR unified chrome: native traffic lights share the
+title bar with the app/project label and Create/Open/theme controls. The
+bar follows the same saved light/dark appearance as the workspace. Drag
+unused title-bar space to move the window. This requires the supported JBR;
+ordinary JVMs are not a silent fallback for custom decoration. About retains
+its separate native title bar; Windows/Linux retain their standard window
+decoration and in-content toolbar.
+
+On macOS the native
 application menu supplies OS-standard **About** and **Settings/Preferences**
 alongside standard system items. **File > New project** uses the existing
 creation chooser. **File > Close project** returns to welcome without quitting

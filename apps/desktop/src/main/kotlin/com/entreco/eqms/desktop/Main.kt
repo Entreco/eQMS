@@ -1,11 +1,7 @@
 package com.entreco.eqms.desktop
 
 import androidx.compose.runtime.*
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
-import androidx.compose.ui.window.rememberWindowState
 import com.entreco.eqms.feature.scaffold.ProjectScreen
 import com.entreco.eqms.feature.scaffold.DesktopChrome
 import java.io.IOException
@@ -170,19 +166,18 @@ private fun launchDesktop(chrome: DesktopChrome) = application {
     var closeRequested by remember { mutableStateOf(false) }
     val requestClose = remember { { closeRequested = true } }
     LaunchedEffect(Unit) { installTaskbarIcon() }
-    Window(
+    DesktopWindow(
+        chrome = chrome,
         onCloseRequest = requestClose,
-        title = "DutchDoxx",
-        icon = painterResource("branding/icon.png"),
-        state = rememberWindowState(width = 1100.dp, height = 800.dp),
-    ) {
-        SideEffect { window.minimumSize = java.awt.Dimension(960, 720) }
+    ) { layout ->
         DesktopMenus(chrome, requestClose)
         ProjectScreen(
             capabilities, documents, closeRequested,
             onCloseHandled = { closeRequested = false },
             onCloseConfirmed = ::exitApplication,
             chrome = chrome,
+            headerActionsModifier = workspaceActionsModifier(),
+            layout = layout,
         )
     }
 }
