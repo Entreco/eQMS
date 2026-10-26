@@ -64,6 +64,26 @@ claiming unified chrome.
 
 ### Application artwork
 
+#### Typed desktop drawable resources
+
+Use Compose Multiplatform resources in the existing Kotlin JVM desktop module,
+without adding targets or changing module boundaries. Keep canonical branding
+files below `apps/desktop/src/main/resources/branding/`. A provider-wired Gradle
+Sync task stages only about.jpg and icon.png into a generated drawable directory
+registered for source set `main`. Generated internal accessors use the package
+`com.entreco.eqms.desktop.generated.resources`. Use typed `Res.drawable.about`
+and `Res.drawable.icon` with `org.jetbrains.compose.resources.painterResource`
+in production and desktop tests, not deprecated string-path painter loading.
+Do not maintain duplicate drawable sources or check generated build outputs in.
+
+Native installer icon paths, the existing icon generator, AWT taskbar loading
+and build metadata remain unchanged. Preserve About proportions/accessibility,
+window icon identity and all window/theme behavior. Missing/stale staged images
+are an integration hazard: verify automatic regeneration, canonical/staged
+equality, generated resource loading and a packaged app launch. Both risk
+disciplines remain proportionately applicable; this adds no network access,
+new security capability or approval. Target-host/manual review limits remain.
+
 The supplied `apps/desktop/src/main/resources/branding/logo.png` is canonical
 launcher artwork, including its dark tile background and rounded corners.
 Preserve padding present in the source PNG; do not trim it.
