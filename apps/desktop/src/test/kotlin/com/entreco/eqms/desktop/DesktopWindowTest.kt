@@ -100,6 +100,7 @@ class DesktopWindowTest {
             assertTrue(button.right / density < original.width, "Theme action must fit inside the window")
             click("Light theme")
             compose.waitUntil(5000) { !chrome.dark }
+            waitForText("Dark theme")
             compose.onNodeWithText("Dark theme").assertIsDisplayed()
             compose.runOnIdle { assertEquals(lightColor, headerColor); assertSame(original, frame) }
             capture(original, "unified-light.png")
