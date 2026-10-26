@@ -6,6 +6,22 @@ plugins {
     id("org.jetbrains.kotlin.jvm")
 }
 
+val stageComposeDrawables by tasks.registering(Sync::class) {
+    from(layout.projectDirectory.dir("src/main/resources/branding")) {
+        include("about.jpg", "icon.png")
+        into("drawable")
+    }
+    into(layout.buildDirectory.dir("generated/desktopComposeResources"))
+}
+
+compose.resources {
+    packageOfResClass = "com.entreco.eqms.desktop.generated.resources"
+    customDirectory(
+        sourceSetName = "main",
+        directoryProvider = layout.dir(stageComposeDrawables.map { it.destinationDir }),
+    )
+}
+
 val desktopVersion = providers.gradleProperty("dutchDoxxVersion").getOrElse("1.0.0-dev")
 require(Regex("[1-9][0-9]*\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?").matches(desktopVersion)) {
     "dutchDoxxVersion must have a positive major version and semantic version format."
@@ -55,6 +71,7 @@ dependencies {
     implementation(compose.desktop.currentOs) { exclude(group = "org.jetbrains.compose.material") }
     implementation(libs.jewel.standalone)
     implementation(libs.jewel.decorated.window)
+    implementation(compose.components.resources)
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.kotlinx.serialization.json)
 

@@ -120,6 +120,13 @@ Desktop still requires a JVM, not Kotlin/Native.
 ## DutchDoxx desktop menus and settings
 
 Desktop branding artwork lives in `apps/desktop/src/main/resources/branding/`.
+The desktop module uses Compose Multiplatform generated drawables for About
+and window images (`Res.drawable.about` / `Res.drawable.icon`). Gradle's
+`stageComposeDrawables` task automatically stages the canonical JPG/PNG into
+`build/generated/desktopComposeResources/drawable` before resource generation;
+do not edit or commit those generated copies. The module remains Kotlin JVM.
+Native taskbar loading and installer assets still use the canonical branding
+resources, with no deprecated Compose string-path painter loading.
 `logo.png` is the supplied launcher tile, with a dark background and rounded
 corners; `logo.svg` is retained as original artwork, not the launcher source.
 Generated `icon.png` (1024 square),

@@ -3,8 +3,16 @@ package com.entreco.eqms.desktop
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.graphics.toAwtImage
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.semantics.SemanticsActions
 import com.entreco.eqms.feature.scaffold.*
+import com.entreco.eqms.desktop.generated.resources.Res
+import com.entreco.eqms.desktop.generated.resources.about
+import com.entreco.eqms.desktop.generated.resources.icon
+import org.jetbrains.compose.resources.imageResource
+import org.jetbrains.compose.resources.getDrawableResourceBytes
+import org.jetbrains.compose.resources.getSystemResourceEnvironment
+import kotlinx.coroutines.runBlocking
 import javax.imageio.ImageIO
 import kotlin.test.*
 import org.junit.Rule
@@ -12,6 +20,35 @@ import org.junit.Test
 
 class DesktopLogoTest {
     @get:Rule val compose = createComposeRule()
+
+    @Test
+    fun generatedDrawablesMatchCanonicalBytesAndDecodeWithOriginalDimensions() {
+        lateinit var about: ImageBitmap
+        lateinit var icon: ImageBitmap
+        compose.setContent {
+            about = imageResource(Res.drawable.about)
+            icon = imageResource(Res.drawable.icon)
+        }
+        compose.runOnIdle {
+            for ((name, drawable, bitmap) in listOf(
+                Triple("about.jpg", Res.drawable.about, about),
+                Triple("icon.png", Res.drawable.icon, icon),
+            )) {
+                val canonicalBytes = checkNotNull(javaClass.getResourceAsStream("/branding/$name")).use {
+                    it.readBytes()
+                }
+                val generatedBytes = runBlocking {
+                    getDrawableResourceBytes(getSystemResourceEnvironment(), drawable)
+                }
+                assertContentEquals(canonicalBytes, generatedBytes)
+                val canonical = checkNotNull(ImageIO.read(canonicalBytes.inputStream()))
+                val generated = bitmap.toAwtImage()
+                assertEquals(canonical.width, generated.width)
+                assertEquals(canonical.height, generated.height)
+            }
+            assertEquals(0, icon.toAwtImage().getRGB(0, 0) ushr 24)
+        }
+    }
 
     @Test
     fun actualAboutDialogShowsAccessibleLogoAndVersionInBothThemes() {

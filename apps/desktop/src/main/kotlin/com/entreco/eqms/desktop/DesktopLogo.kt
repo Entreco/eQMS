@@ -5,14 +5,16 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.painterResource
+import com.entreco.eqms.desktop.generated.resources.Res
+import com.entreco.eqms.desktop.generated.resources.about
 import com.entreco.eqms.feature.scaffold.DesktopChrome
 import java.awt.Taskbar
 import javax.imageio.ImageIO
+import org.jetbrains.compose.resources.painterResource
 
 @Composable
 internal fun DesktopLogo() {
-    val artwork = painterResource("branding/about.jpg")
+    val artwork = painterResource(Res.drawable.about)
     Image(
         painter = artwork,
         contentDescription = "DutchDoxx logo",

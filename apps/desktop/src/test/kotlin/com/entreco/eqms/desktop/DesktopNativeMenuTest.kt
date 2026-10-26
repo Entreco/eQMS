@@ -1,13 +1,15 @@
 package com.entreco.eqms.desktop
 
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
+import com.entreco.eqms.desktop.generated.resources.Res
+import com.entreco.eqms.desktop.generated.resources.icon
 import com.entreco.eqms.feature.scaffold.DesktopChrome
 import java.awt.Desktop
 import kotlin.test.*
 import kotlinx.coroutines.delay
+import org.jetbrains.compose.resources.painterResource
 import org.junit.Test
 
 class DesktopNativeMenuTest {
@@ -21,7 +23,7 @@ class DesktopNativeMenuTest {
         )
         var failure: Throwable? = null
         application(exitProcessOnExit = false) {
-            Window(onCloseRequest = ::exitApplication, title = "DutchDoxx", icon = painterResource("branding/icon.png")) {
+            Window(onCloseRequest = ::exitApplication, title = "DutchDoxx", icon = painterResource(Res.drawable.icon)) {
                 DesktopMenus(chrome, ::exitApplication)
                 LaunchedEffect(Unit) {
                     try {

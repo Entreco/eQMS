@@ -7,13 +7,15 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.FrameWindowScope
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.rememberWindowState
+import com.entreco.eqms.desktop.generated.resources.Res
+import com.entreco.eqms.desktop.generated.resources.icon
 import com.entreco.eqms.feature.scaffold.DesktopChrome
 import com.entreco.eqms.feature.scaffold.ProjectScreenLayout
+import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.jewel.foundation.theme.JewelTheme
 import org.jetbrains.jewel.intui.standalone.theme.IntUiTheme
 import org.jetbrains.jewel.intui.standalone.theme.darkThemeDefinition
@@ -36,7 +38,7 @@ internal fun DesktopWindow(
     content: @Composable FrameWindowScope.(ProjectScreenLayout?) -> Unit,
 ) {
     val state = rememberWindowState(width = 1100.dp, height = 800.dp)
-    val icon = painterResource("branding/icon.png")
+    val icon = painterResource(Res.drawable.icon)
     if (isMacOS) {
         IntUiTheme(
             theme = if (chrome.dark) JewelTheme.darkThemeDefinition() else JewelTheme.lightThemeDefinition(),
