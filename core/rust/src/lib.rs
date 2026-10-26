@@ -5,6 +5,7 @@ pub const fn version() -> &'static str {
 
 pub mod document;
 pub mod index;
+pub mod model;
 pub mod search;
 pub mod workspace;
 
