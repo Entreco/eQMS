@@ -117,6 +117,103 @@ to enter it, then **Select directory**. Desktop filesystem and native CLI access
 remain in `apps:desktop`; the browser shell is not wired to these capabilities.
 Desktop still requires a JVM, not Kotlin/Native.
 
+## DutchDoxx desktop menus and settings
+
+Desktop branding artwork lives in `apps/desktop/src/main/resources/branding/`.
+The desktop module uses Compose Multiplatform generated drawables for About
+and window images (`Res.drawable.about` / `Res.drawable.icon`). Gradle's
+`stageComposeDrawables` task automatically stages the canonical JPG/PNG into
+`build/generated/desktopComposeResources/drawable` before resource generation;
+do not edit or commit those generated copies. The module remains Kotlin JVM.
+Native taskbar loading and installer assets still use the canonical branding
+resources, with no deprecated Compose string-path painter loading.
+`logo.png` is the supplied launcher tile, with a dark background and rounded
+corners; `logo.svg` is retained as original artwork, not the launcher source.
+Generated `icon.png` (1024 square),
+`icon.ico` (16-256 pixels) and `icon.icns` (up to 1024 pixels) provide Linux,
+Windows and macOS launcher icons respectively. The PNG also supplies the
+desktop window/taskbar icon where supported.
+Generation preserves the tile background, rounded-corner transparency and aspect
+ratio, including the padding supplied within logo.png. It does not trim that
+padding. The conversion adds no further outer padding.
+The supplied PNG is 164 x 165; it is
+centered on a 165-square canvas before resizing. Larger assets are upscaled,
+not additional source detail.
+
+About now uses the separate full-width `branding/about.jpg` artwork, not the
+launcher PNG. Replace that JPG to update only the About banner; preserve its
+intended aspect ratio. About opens in a single independent, non-modal window
+with native title bar and close controls. The workspace stays usable; choosing
+About again restores/focuses it. Closing About does not close the application.
+It follows the selected theme and retains the build version and draft notice.
+
+Normal builds use the committed icons and need no conversion tools. To update
+launcher artwork, replace `logo.png`, then regenerate and check the outputs
+using Python with Pillow 11.3.0:
+
+```sh
+python3 scripts/generate_desktop_icons.py
+python3 scripts/generate_desktop_icons.py --check
+```
+
+Use an isolated Python environment for this optional tool; Cairo is not needed.
+Package each installer on its target OS; configuring icons does not validate
+Windows/Linux installation or replace manual launcher/About visual review.
+
+The desktop application is named **DutchDoxx**; the repository, workspace
+formats, and native `qms` CLI keep their eQMS names. On macOS the native
+main window uses Jewel/JBR unified chrome: native traffic lights share the
+title bar with the app/project label and Create/Open/theme controls. The
+bar follows the same saved light/dark appearance as the workspace. Drag
+unused title-bar space to move the window. This requires the supported JBR;
+ordinary JVMs are not a silent fallback for custom decoration. About retains
+its separate native title bar; Windows/Linux retain their standard window
+decoration and in-content toolbar.
+
+On macOS the native
+application menu supplies OS-standard **About** and **Settings/Preferences**
+alongside standard system items. **File > New project** uses the existing
+creation chooser. **File > Close project** returns to welcome without quitting
+or deleting files. Unsaved changes require confirmation; Cancel/Keep editing
+preserves edits. Quit/window close remains guarded. File/Help commands are
+disabled during conflicting operations or dialogs.
+
+**Edit** and **View** have no custom commands yet. **Help > Check for updates**
+checks published stable GitHub releases only when clicked. No release and
+network/rate-limit failures are reported explicitly. An available release page
+can be opened in the browser; there is no automatic download or installation.
+This Help placement is intentional: no native bridge is added to customize the
+macOS application menu. Development or unrecognized versions cannot be
+automatically classified as up to date.
+
+Settings contains only light/dark appearance. It defaults to dark when unset
+and persists in the current OS user's Java Preferences node
+`com/entreco/dutchdoxx`; it is not stored in a project. The existing toolbar theme
+control uses the same preference. Storage errors are visible and changing theme
+does not reopen a workspace or reset the editor/search.
+
+The desktop version defaults to `1.0.0-dev`, independently of the Rust CLI.
+Override it with `-PdutchDoxxVersion=1.0.0` for a corresponding release build;
+do not label unreleased code as a published release. About and update comparison
+use the full version; native bundle metadata uses its numeric portion.
+
+Native packaging requires a **full JBR 25 SDK**, including `jpackage` and
+`jmods`; an IDE-bundled runtime may run/test the app but lack packaging tools.
+With `JAVA_HOME` pointing to that SDK:
+
+```sh
+./gradlew :apps:desktop:createDistributable
+./gradlew :apps:desktop:runDistributable
+```
+
+On macOS this creates `apps/desktop/build/compose/binaries/main/app/DutchDoxx.app`.
+It is a local, unsigned development distribution, not an installer or a
+provenance-assured release. It does not bundle `qms`: configure `EQMS_QMS_PATH`
+or install the trusted native executable on PATH, as with direct JVM launches.
+See [design/risk assessment](../architecture/EQMS-093.md) and
+[test specification](../testing/EQMS-093.md). Human native-menu review/testing
+is required before merge.
+
 ## Source layout
 
 `core/` is Rust-only. `core/rust` currently contains the authoritative domain

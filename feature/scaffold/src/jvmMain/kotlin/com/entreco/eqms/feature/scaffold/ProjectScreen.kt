@@ -25,6 +25,9 @@ import org.jetbrains.jewel.ui.component.OutlinedButton
 import org.jetbrains.jewel.ui.component.Divider
 import org.jetbrains.jewel.ui.component.Text
 
+typealias ProjectScreenLayout =
+    @Composable (title: @Composable () -> Unit, actions: @Composable () -> Unit, content: @Composable () -> Unit) -> Unit
+
 @Composable
 fun ProjectScreen(
     capabilities: ProjectCapabilities,
@@ -32,7 +35,24 @@ fun ProjectScreen(
     closeRequested: Boolean = false,
     onCloseHandled: () -> Unit = {},
     onCloseConfirmed: () -> Unit = {},
+    chrome: DesktopChrome? = null,
+    headerActionsModifier: Modifier = Modifier,
+    layout: ProjectScreenLayout? = null,
 ) {
+    val screenLayout: ProjectScreenLayout = layout ?: { title, actions, content ->
+        Column(Modifier.fillMaxSize().background(JewelTheme.globalColors.panelBackground)) {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(Modifier.weight(1f)) { title() }
+                actions()
+            }
+            Divider(Orientation.Horizontal)
+            Box(Modifier.weight(1f)) { content() }
+        }
+    }
     val scope = rememberCoroutineScope()
     var project by remember { mutableStateOf<String?>(null) }
     var projectGeneration by remember { mutableIntStateOf(0) }
@@ -43,138 +63,220 @@ fun ProjectScreen(
     var documentDirty by remember { mutableStateOf(false) }
     var documentBusy by remember { mutableStateOf(false) }
     var pendingNavigation by remember { mutableStateOf<(() -> Unit)?>(null) }
-    var dark by remember { mutableStateOf(true) }
+    var localDark by remember { mutableStateOf(true) }
+    val dark = chrome?.dark ?: localDark
+    var appearanceError by remember {
+        mutableStateOf(chrome?.initialAppearance?.exceptionOrNull()?.let { "Could not load appearance: ${it.message}" })
+    }
+    var savingAppearance by remember { mutableStateOf(false) }
+    var chromeDialog by remember { mutableStateOf<DesktopCommand?>(null) }
+    var aboutVisible by remember { mutableStateOf(false) }
+    var aboutRequest by remember { mutableIntStateOf(0) }
+    val interactive = !busy && !documentBusy && creating == null && pendingNavigation == null &&
+        chromeDialog == null && !savingAppearance
+
+    fun changeAppearance(value: Boolean) {
+        if (savingAppearance) return
+        if (chrome == null) {
+            localDark = value
+        } else {
+            savingAppearance = true
+            scope.launch {
+                try {
+                    chrome.saveAppearance(value).fold(
+                        onSuccess = { chrome.dark = value; appearanceError = null },
+                        onFailure = { appearanceError = "Could not save appearance: ${it.message}" },
+                    )
+                } finally {
+                    savingAppearance = false
+                }
+            }
+        }
+    }
 
     fun navigate(action: () -> Unit) {
         if (documentDirty) pendingNavigation = action else action()
     }
 
-    LaunchedEffect(closeRequested, busy, documentBusy) {
-        if (closeRequested && !busy && !documentBusy) {
+    SideEffect {
+        chrome?.enabled = interactive
+        chrome?.hasProject = project != null
+    }
+
+    LaunchedEffect(chrome?.command) {
+        val command = chrome?.consume()
+        if (command != null && interactive) {
+            when (command) {
+                DesktopCommand.About -> {
+                    aboutVisible = true
+                    aboutRequest++
+                }
+                DesktopCommand.NewProject -> navigate { creating = true }
+                DesktopCommand.CloseProject -> if (project != null) navigate {
+                    project = null
+                    projectGeneration++
+                    documentDirty = false
+                    documentBusy = false
+                    error = false
+                    message = null
+                }
+                else -> chromeDialog = command
+            }
+        }
+    }
+
+    LaunchedEffect(closeRequested, interactive) {
+        if (closeRequested && interactive) {
             navigate(onCloseConfirmed)
             onCloseHandled()
         }
     }
 
     IntUiTheme(isDark = dark) {
-        Box(Modifier.fillMaxSize().background(JewelTheme.globalColors.panelBackground)) {
-            Column {
+        if (aboutVisible && chrome != null) {
+            AboutWindow(chrome, dark, aboutRequest, onClose = { aboutVisible = false })
+        }
+        screenLayout(
+            {
                 Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                    Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text("eQMS", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                    Text("DutchDoxx", fontWeight = FontWeight.Bold, fontSize = 18.sp)
                     Text(
                         project?.substringAfterLast('/')?.substringAfterLast('\\') ?: "Quality workspace",
                         Modifier.weight(1f),
                         color = JewelTheme.globalColors.text.info,
                         maxLines = 1, overflow = TextOverflow.Ellipsis,
                     )
-                    OutlinedButton(enabled = !busy && !documentBusy, onClick = { navigate { creating = true } }) { Text("Create project") }
-                    OutlinedButton(enabled = !busy && !documentBusy, onClick = { navigate { creating = false } }) { Text("Open project") }
-                    OutlinedButton(onClick = { dark = !dark }) { Text(if (dark) "Light theme" else "Dark theme") }
                 }
-                Divider(Orientation.Horizontal)
-                Box(Modifier.fillMaxWidth().weight(1f)) {
-                    val path = project
-                    val documents = documentCapabilities
-                    if (path != null && documents != null) {
-                        key(path, projectGeneration) {
-                            DocumentScreen(
-                                path, documents, requestNavigation = { navigate(it) },
-                                onStateChanged = { dirty, working -> documentDirty = dirty; documentBusy = working },
-                                modifier = Modifier.fillMaxSize(),
-                                workspaceBusy = busy || creating != null,
+            },
+            {
+                Row(headerActionsModifier, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    OutlinedButton(enabled = interactive, onClick = { navigate { creating = true } }) { Text("Create project") }
+                    OutlinedButton(enabled = interactive, onClick = { navigate { creating = false } }) { Text("Open project") }
+                    OutlinedButton(enabled = interactive, onClick = { changeAppearance(!dark) }) { Text(if (dark) "Light theme" else "Dark theme") }
+                }
+            },
+            {
+                Box(Modifier.fillMaxSize().background(JewelTheme.globalColors.panelBackground)) {
+                    Column {
+                        Box(Modifier.fillMaxWidth().weight(1f)) {
+                            val path = project
+                            val documents = documentCapabilities
+                            if (path != null && documents != null) {
+                                key(path, projectGeneration) {
+                                    DocumentScreen(
+                                        path, documents, requestNavigation = { navigate(it) },
+                                        onStateChanged = { dirty, working -> documentDirty = dirty; documentBusy = working },
+                                        modifier = Modifier.fillMaxSize(),
+                                        workspaceBusy = busy || creating != null || chromeDialog != null || savingAppearance,
+                                    )
+                                }
+                            } else {
+                                Row(Modifier.fillMaxSize()) {
+                                    Column(
+                                        Modifier.width(240.dp).fillMaxHeight()
+                                            .border(1.dp, JewelTheme.globalColors.borders.normal).padding(16.dp),
+                                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                                    ) {
+                                        Text("Project", fontWeight = FontWeight.SemiBold)
+                                        Text(if (path == null) "No project open" else path, color = JewelTheme.globalColors.text.info)
+                                        Text("Documents appear here after opening a workspace.", color = JewelTheme.globalColors.text.info)
+                                    }
+                                    Column(
+                                        Modifier.weight(1f).fillMaxHeight().padding(48.dp),
+                                        verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
+                                    ) {
+                                        Text("Your quality workspace", fontSize = 26.sp, fontWeight = FontWeight.SemiBold)
+                                        Text("Create a project or open an existing verified workspace.")
+                                        Text(
+                                            "Write Markdown drafts, search saved documents, and inspect working history.",
+                                            color = JewelTheme.globalColors.text.info,
+                                        )
+                                        Text("Drafts are not approvals.", color = JewelTheme.globalColors.text.info)
+                                    }
+                                }
+                            }
+                        }
+                        Divider(Orientation.Horizontal)
+                        appearanceError?.let {
+                            Text(it, Modifier.padding(horizontal = 16.dp), color = JewelTheme.globalColors.text.error)
+                        }
+                        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                            Text(
+                                if (busy) "Working..." else message ?: if (project == null) "No project open" else "Workspace open",
+                                Modifier.weight(1f),
+                                color = if (error) JewelTheme.globalColors.text.error else JewelTheme.globalColors.text.normal,
+                            )
+                            Text(
+                                if (documentBusy) "Document operation in progress" else if (documentDirty) "Draft has unsaved edits" else "Local workspace",
+                                color = JewelTheme.globalColors.text.info,
                             )
                         }
-                    } else {
-                        Row(Modifier.fillMaxSize()) {
-                            Column(
-                                Modifier.width(240.dp).fillMaxHeight()
-                                    .border(1.dp, JewelTheme.globalColors.borders.normal).padding(16.dp),
-                                verticalArrangement = Arrangement.spacedBy(12.dp),
-                            ) {
-                                Text("Project", fontWeight = FontWeight.SemiBold)
-                                Text(if (path == null) "No project open" else path, color = JewelTheme.globalColors.text.info)
-                                Text("Documents appear here after opening a workspace.", color = JewelTheme.globalColors.text.info)
-                            }
-                            Column(
-                                Modifier.weight(1f).fillMaxHeight().padding(48.dp),
-                                verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
-                            ) {
-                                Text("Your quality workspace", fontSize = 26.sp, fontWeight = FontWeight.SemiBold)
-                                Text("Create a project or open an existing verified workspace.")
-                                Text(
-                                    "Write Markdown drafts, search saved documents, and inspect working history.",
-                                    color = JewelTheme.globalColors.text.info,
-                                )
-                                Text("Drafts are not approvals.", color = JewelTheme.globalColors.text.info)
+                        chromeDialog?.let { command ->
+                            chrome?.let {
+                                key(command) {
+                                    ChromeDialog(
+                                        command, it, dark, savingAppearance, appearanceError,
+                                        onAppearance = ::changeAppearance,
+                                        onDismiss = { chromeDialog = null },
+                                    )
+                                }
                             }
                         }
                     }
+                    pendingNavigation?.let { action ->
+                        WorkspaceDialog(
+                            onDismissRequest = { pendingNavigation = null },
+                            title = { Text("Unsaved changes") },
+                            text = { Text("Discard your unsaved document edits?") },
+                            confirmButton = {
+                                DefaultButton(onClick = { pendingNavigation = null; documentDirty = false; action() }) { Text("Discard changes") }
+                            },
+                            dismissButton = {
+                                OutlinedButton(onClick = { pendingNavigation = null }) { Text("Keep editing") }
+                            },
+                        )
+                    }
+                    creating?.let { create ->
+                        DirectoryDialog(
+                            capabilities = capabilities,
+                            create = create,
+                            onCancel = {
+                                creating = null
+                                error = false
+                                message = "Project selection cancelled."
+                            },
+                            onSelect = { path ->
+                                creating = null
+                                busy = true
+                                message = null
+                                scope.launch {
+                                    try {
+                                        capabilities.openProject(path, create).fold(
+                                            onSuccess = {
+                                                project = it
+                                                projectGeneration++
+                                                error = false
+                                                message = if (create) "Project created successfully." else "Project verified and opened."
+                                            },
+                                            onFailure = {
+                                                error = true
+                                                message = it.message ?: "Workspace operation failed."
+                                            },
+                                        )
+                                    } finally {
+                                        busy = false
+                                    }
+                                }
+                            },
+                        )
+                    }
                 }
-                Divider(Orientation.Horizontal)
-                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                    Text(
-                        if (busy) "Working..." else message ?: if (project == null) "No project open" else "Workspace open",
-                        Modifier.weight(1f),
-                        color = if (error) JewelTheme.globalColors.text.error else JewelTheme.globalColors.text.normal,
-                    )
-                    Text(
-                        if (documentBusy) "Document operation in progress" else if (documentDirty) "Draft has unsaved edits" else "Local workspace",
-                        color = JewelTheme.globalColors.text.info,
-                    )
-                }
-            }
-            pendingNavigation?.let { action ->
-                WorkspaceDialog(
-                    onDismissRequest = { pendingNavigation = null },
-                    title = { Text("Unsaved changes") },
-                    text = { Text("Discard your unsaved document edits?") },
-                    confirmButton = {
-                        DefaultButton(onClick = { pendingNavigation = null; documentDirty = false; action() }) { Text("Discard changes") }
-                    },
-                    dismissButton = {
-                        OutlinedButton(onClick = { pendingNavigation = null }) { Text("Keep editing") }
-                    },
-                )
-            }
-            creating?.let { create ->
-                DirectoryDialog(
-                    capabilities = capabilities,
-                    create = create,
-                    onCancel = {
-                        creating = null
-                        error = false
-                        message = "Project selection cancelled."
-                    },
-                    onSelect = { path ->
-                        creating = null
-                        busy = true
-                        message = null
-                        scope.launch {
-                            try {
-                                capabilities.openProject(path, create).fold(
-                                    onSuccess = {
-                                        project = it
-                                        projectGeneration++
-                                        error = false
-                                        message = if (create) "Project created successfully." else "Project verified and opened."
-                                    },
-                                    onFailure = {
-                                        error = true
-                                        message = it.message ?: "Workspace operation failed."
-                                    },
-                                )
-                            } finally {
-                                busy = false
-                            }
-                        }
-                    },
-                )
-            }
-        }
+            },
+        )
     }
 }
 

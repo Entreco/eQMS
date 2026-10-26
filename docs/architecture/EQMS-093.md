@@ -1,0 +1,158 @@
+---
+title: EQMS-093 DutchDoxx desktop menus
+status: draft
+related: [EQMS-092, EQMS-093]
+---
+
+# DutchDoxx desktop menus
+
+Issue: #52. Dependency: EQMS-092 (#50), merged PR #51. Manual approval of
+these new records is not implied.
+
+## Native integration and boundaries
+
+Use Compose Window MenuBar for File (New project, Close project), empty Edit
+and View, and Help (Check for updates). Set macOS application identity before
+AWT initializes, including Gradle run/hotRun JVM arguments and bundle name.
+Use public `java.awt.Desktop` About/Preferences/Quit handlers for the native
+DutchDoxx application menu; retain OS-provided labels/system items.
+JBR 25 exposes no public API for inserting arbitrary application-menu items.
+The user approved moving Check for updates to Help rather than adding a native
+bridge, dependency, reflection, or internal JDK access.
+
+Desktop branding is DutchDoxx; eQMS repository/domain/CLI names are unchanged.
+`dutchDoxxVersion` is the desktop version source, default `1.0.0-dev`, independent
+of the Rust CLI version. Build resources, About, update comparison and native
+package metadata derive from it. Development versions are not comparable to
+published stable releases. The numeric portion supplies the package version;
+the visible About version retains the development suffix.
+
+Native adapters, build identity, preference storage and HTTP/browser access stay
+in apps:desktop. Jewel dialogs, typed menu commands, enabled state, and the
+single project/editor/navigation state stay in feature:scaffold/jvmMain.
+Rust and Wasm contracts remain unchanged. Non-macOS uses a regular Application
+menu for About/Settings and the existing guarded window close.
+
+### Unified macOS main-window chrome
+
+The approved refinement supersedes the original native-title-bar-only scope
+for the main macOS window. Use version-aligned `jewel-decorated-window`,
+`DecoratedWindow` and `TitleBar` under JBR, retaining native traffic lights,
+dragging and fullscreen handling. Do not paint replacement OS controls.
+Move the existing app/project label and Create/Open/theme actions into this
+bar, rather than displaying a second header. Mark action regions as client
+regions so clicking them does not drag the window. Reserve native control
+insets using Jewel's layout. Non-macOS retains the standard Compose Window;
+About retains its separate native-decorated window on all platforms.
+
+Keep observable appearance in the existing DesktopChrome controller when
+present, shared with Settings, toolbar and outer window styling; persistence
+failures must remain visible and must not change the saved appearance.
+The scaffold retains workspace/navigation state and exposes a presentation
+slot for title/actions/body layout. Desktop owns native window and title-bar APIs.
+Use separate leading title and trailing action children, not a full-width
+TitleBar child: pinned Jewel measures children before adding native insets.
+Keep an additional leading gutter and a bounded, ellipsized project label so
+native controls stay clear and actions fit at the minimum window width.
+Changing appearance must not recreate the window or workspace. Keep menu
+handlers, close/dirty/busy guards, minimum size and icon wiring.
+The matching decorated-window dependency is an explicitly approved addition.
+Unsupported JBR decoration must fail explicitly, not silently fall back while
+claiming unified chrome.
+
+## State and behavior
+
+### Application artwork
+
+#### Typed desktop drawable resources
+
+Use Compose Multiplatform resources in the existing Kotlin JVM desktop module,
+without adding targets or changing module boundaries. Keep canonical branding
+files below `apps/desktop/src/main/resources/branding/`. A provider-wired Gradle
+Sync task stages only about.jpg and icon.png into a generated drawable directory
+registered for source set `main`. Generated internal accessors use the package
+`com.entreco.eqms.desktop.generated.resources`. Use typed `Res.drawable.about`
+and `Res.drawable.icon` with `org.jetbrains.compose.resources.painterResource`
+in production and desktop tests, not deprecated string-path painter loading.
+Do not maintain duplicate drawable sources or check generated build outputs in.
+
+Native installer icon paths, the existing icon generator, AWT taskbar loading
+and build metadata remain unchanged. Preserve About proportions/accessibility,
+window icon identity and all window/theme behavior. Missing/stale staged images
+are an integration hazard: verify automatic regeneration, canonical/staged
+equality, generated resource loading and a packaged app launch. Both risk
+disciplines remain proportionately applicable; this adds no network access,
+new security capability or approval. Target-host/manual review limits remain.
+
+The supplied `apps/desktop/src/main/resources/branding/logo.png` is canonical
+launcher artwork, including its dark tile background and rounded corners.
+Preserve padding present in the source PNG; do not trim it.
+Center it on a square canvas without cropping, stretching or additional outer
+padding (the supplied 164 x 165 source needs one extra transparent column),
+then resize to generate PNG, multi-resolution ICO and ICNS assets.
+Retain `logo.svg` as original artwork, but do not use it for launcher generation.
+Check generated assets into the repository;
+normal builds must not require conversion tools. A documented Python generation
+script uses Pillow for all three formats.
+Set platform-specific Compose native-distribution icons for macOS, Windows
+and Linux, and a Compose window icon for unpackaged launches. Inject About
+artwork from the desktop into the scaffold as a composable slot, rather than
+making the scaffold load desktop resources or platform APIs. Provide an
+accessible logo description and preserve the truthful version/draft notice.
+
+Risk scope remains proportional: incorrect/missing assets can break packaging
+or misidentify the app. Validate image dimensions/transparency, regenerated
+asset equivalence, resource decoding and About rendering; inspect macOS bundle
+contents. Windows/Linux installation and visual review require their hosts.
+
+The scaffold owns command execution and exposes callbacks/state to the desktop
+menu composition. No duplicate project state. New project reuses initialization
+and the chooser; Close project clears session project/document/search state
+only through the dirty guard and returns to welcome, without exiting or
+deleting files. Conflicting commands are disabled/rejected during operations
+and dialogs. Quit cancels the OS's immediate quit response and requests guarded
+application exit. A pending quit can be cancelled by Keep editing.
+
+Settings contains light/dark appearance only. The desktop stores it using Java
+Preferences in an application-specific node. Read once before showing the
+screen; write/flush off the UI thread. Missing values default dark; invalid
+values and read/write failures are visible errors, not silent defaults.
+The existing theme button and Settings share this state. Persistence failure
+does not discard project/editor state or claim the change was saved.
+
+About displays the desktop version and an explicit draft/not-approval notice.
+About is a single independent, non-modal Compose Window with native decoration
+and title `About DutchDoxx`, not the in-window WorkspaceDialog. Its native close
+button and Close action dispose only About; application Quit/window-close
+guards remain unchanged. The workspace stays interactive while About is open.
+Repeated About requests focus/restore the existing window instead of creating
+duplicates. Its theme follows the workspace. The desktop artwork slot loads
+the full supplied `branding/about.jpg` with its aspect ratio preserved; launcher
+icons use the tile artwork in logo.png, not the About banner.
+Update checking is user-triggered only, on an IO dispatcher with bounded
+connect/request time and response size, no credentials or workspace data.
+Query GitHub's latest published stable release endpoint for Entreco/eQMS.
+404 means no published release, not up to date. Validate JSON and release tag;
+compare numeric stable semantic versions only (optional leading v, build
+metadata ignored). Development or unknown versions are explicitly incomparable.
+Report HTTP/rate-limit, malformed/oversized metadata and transport errors.
+Cancel the request when its dialog closes; prevent duplicates. Only open
+validated HTTPS GitHub release-tag URLs for this repository, on user request.
+No download, install, background checking, or provenance claim.
+
+## Risk applicability
+
+Risk Management and Security Risk Management both apply proportionately.
+
+| Hazard | Mitigation | Residual limitation |
+|---|---|---|
+| Menu commands lose drafts or bypass modal/busy state | Single controller, dirty guards, disabled actions and mapped regressions | Human usability/accessibility review remains required |
+| Native Quit bypasses save protection | Cancel native immediate quit and route through existing close request | OS force termination cannot be guarded |
+| Preferences fail or reset workspace state | Visible errors, shared appearance state, off-thread persistence | Local user configuration is not a controlled project record |
+| Untrusted release metadata/URLs or misleading availability | Bounded HTTPS request, explicit parser/version states, URL allowlist, no execution | Release availability does not authenticate software provenance |
+| Platform integration regresses other shells | Public APIs, macOS checks, JVM/Wasm regressions | Actual native menus require OS-level inspection, not Compose screenshots |
+| Unified title bar intercepts actions, hides OS controls or bypasses dirty close | Jewel/JBR native controls/insets, client action regions, unchanged close callback, real-window tests | Human dragging/fullscreen/accessibility review remains required; force termination cannot be guarded |
+| Appearance changes reconstruct workspace or leave chrome out of sync | One observable appearance owner, stable composition, state-preservation regressions | OS-controlled About decoration remains distinct |
+
+Requirements: [EQMS-093](../requirements/EQMS-093.md).
+Tests: [EQMS-093](../testing/EQMS-093.md).

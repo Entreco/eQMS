@@ -501,6 +501,19 @@ requirements and tests; targets are not claims of observed results.
 
 ---
 
+### EQMS-093: DutchDoxx native desktop menus
+**Type:** Feature
+**Dependencies:** EQMS-092 (#50), merged PR #51.
+**Description:** Give the desktop DutchDoxx identity and native menus; see #52 and [design/risk assessment](docs/architecture/EQMS-093.md).
+**Acceptance criteria:**
+- Native application About/Settings and standard system items; File New/Close project, empty Edit/View, Help Check for updates. Help placement avoids a native bridge.
+- Persistent light/dark appearance shared with the toolbar; truthful build version and user-triggered stable-release checks with explicit errors, no automatic update installation.
+- Preserve dirty/busy/modal guards, existing Open/save/history/search, native title bar, Rust boundaries and Wasm compilation.
+- Traceable requirements/tests, revision-specific evidence and a verified draft PR; manual review/testing remain required.
+**Risk and Security Risk Management:** Applicable proportionately; protect unsaved edits and guard native event dispatch, report preference/network failures, bound requests and validate release URLs. Availability is not software provenance assurance; no compliance approvals are implied.
+
+---
+
 ## Cross-cutting tickets
 
 ### EQMS-100: Compliance mapping matrix
