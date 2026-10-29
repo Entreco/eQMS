@@ -264,6 +264,16 @@ Busy operations and modal dialogs block background toggles. About is a
 separate non-modal window: its keys do not toggle workspace tools.
 Panel headings remain labelled. Tab through controls and use Enter to activate.
 
+Tool and editor surfaces have rounded corners. Drag either 8dp gutter between
+a tool panel and the editor horizontally; the pointer changes to a resize
+cursor. Both sides preserve a usable editor width, and disabled/busy panels
+cannot be dragged. The minus/plus controls remain available for keyboard users.
+Hover hints open inward beside their icon, aligned with its vertical center.
+Editor tabs use a Markdown icon, a quiet inactive label, a rounded selected
+surface and an integrated close icon. Unsaved tabs retain a separate `*`
+marker; saved historical revisions retain their read-only qualifier.
+The tab strip scrolls horizontally and reveals the selected tab automatically.
+
 Each latest-document tab keeps its own unsaved buffer. Switching tabs or tools
 does not discard edits; selecting an already-open document focuses its tab.
 Exact historical revisions open in separate read-only tabs. Closing dirty tabs

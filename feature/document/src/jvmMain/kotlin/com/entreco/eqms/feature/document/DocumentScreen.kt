@@ -3,6 +3,7 @@ package com.entreco.eqms.feature.document
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.focusGroup
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
@@ -16,6 +17,9 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.pointer.PointerIcon
+import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -24,9 +28,6 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.role
-import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.entreco.eqms.feature.search.SearchPanel
@@ -109,7 +110,7 @@ fun DocumentScreen(
             state.error?.let { Text(it, Modifier.padding(8.dp), color = JewelTheme.globalColors.text.error) }
             BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
                 val panelLimit = (maxWidth.value * 0.27f).coerceAtLeast(140f)
-                Row(Modifier.fillMaxSize()) {
+                Row(Modifier.fillMaxSize().padding(vertical = 6.dp)) {
                     ToolRail(WorkspaceTool.entries.filter { it.isLeft }, left, interactive, isMac, railFocus, toggle)
                     if (left != null) {
                         ToolPanel(left!!.name, leftWidth.coerceIn(140f, panelLimit), interactive,
@@ -152,30 +153,23 @@ fun DocumentScreen(
                             leftWidth = (leftWidth + delta).coerceIn(140f, panelLimit)
                         }
                     }
-                    Column(Modifier.weight(1f).fillMaxHeight()) {
-                        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(4.dp),
+                    Column(Modifier.weight(1f).fillMaxHeight().workspacePanel()
+                        .semantics { contentDescription = "Document editor panel" }) {
+                        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(6.dp),
                             horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                             state.tabs.forEach { open ->
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    OutlinedButton(
+                                key(open.key) {
+                                    WorkspaceEditorTab(
+                                        title = open.title.ifBlank { "Untitled" },
+                                        description = "Document tab ${open.title.ifBlank { "Untitled" }}${if (open.historical) " historical ${open.snapshot?.revision}" else ""}",
+                                        closeDescription = "Close tab ${open.title.ifBlank { "Untitled" }}${if (open.historical) " historical ${open.snapshot?.revision}" else ""}",
+                                        selected = open.key == state.activeKey,
                                         enabled = !workspaceBusy && state.pendingClose == null && confirmation == null,
-                                        onClick = { state.activeKey = open.key },
-                                        modifier = Modifier.semantics {
-                                            contentDescription = "Document tab ${open.title.ifBlank { "Untitled" }}${if (open.historical) " historical ${open.snapshot?.revision}" else ""}"
-                                            role = Role.Tab
-                                            selected = open.key == state.activeKey
-                                        },
-                                    ) {
-                                        Text((if (open.key == state.activeKey) "> " else "") +
-                                            open.title.ifBlank { "Untitled" } + (if (open.dirty) " *" else "") +
-                                            (if (open.historical) " [saved revision]" else ""))
-                                    }
-                                    IconButton(enabled = interactive, onClick = { state.requestClose(open) },
-                                        modifier = Modifier.semantics {
-                                            contentDescription = "Close tab ${open.title.ifBlank { "Untitled" }}${if (open.historical) " historical ${open.snapshot?.revision}" else ""}"
-                                        }) {
-                                        Text("x")
-                                    }
+                                        closeEnabled = interactive,
+                                        onSelect = { state.activeKey = open.key },
+                                        onClose = { state.requestClose(open) },
+                                        dirty = open.dirty, historical = open.historical,
+                                    )
                                 }
                             }
                         }
@@ -296,7 +290,8 @@ private fun ToolPanel(
     title: String, width: Float, enabled: Boolean, onNarrow: () -> Unit, onWiden: () -> Unit,
     onClose: () -> Unit, modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit,
 ) {
-    Column(modifier.focusGroup().width(width.dp).fillMaxHeight().border(1.dp, JewelTheme.globalColors.borders.normal).padding(8.dp),
+    Column(modifier.focusGroup().width(width.dp).fillMaxHeight().workspacePanel()
+        .semantics { contentDescription = "$title panel" }.padding(8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(title, fontWeight = FontWeight.SemiBold)
         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -314,10 +309,17 @@ private fun ToolPanel(
 @Composable
 private fun PanelDivider(label: String, enabled: Boolean, resize: (Float) -> Unit) {
     val density = LocalDensity.current.density
-    Box(Modifier.width(5.dp).fillMaxHeight().background(JewelTheme.globalColors.borders.normal)
+    Box(Modifier.width(8.dp).fillMaxHeight()
+        .pointerHoverIcon(if (enabled) PointerIcon(java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.E_RESIZE_CURSOR)) else PointerIcon.Default)
         .semantics { contentDescription = label }
         .draggable(rememberDraggableState { resize(it / density) }, Orientation.Horizontal, enabled = enabled))
 }
+
+@Composable
+private fun Modifier.workspacePanel(): Modifier =
+    clip(RoundedCornerShape(10.dp))
+        .background(JewelTheme.globalColors.panelBackground)
+        .border(1.dp, JewelTheme.globalColors.borders.normal.copy(alpha = 0.4f), RoundedCornerShape(10.dp))
 
 internal fun actionLabel(target: DocumentStatus): String = when (target) {
     DocumentStatus.InReview -> "Submit for review"

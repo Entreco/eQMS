@@ -133,40 +133,49 @@ class DesktopJewelPreviewTest {
         compose.waitUntil(5_000) {
             compose.onAllNodesWithText("Quality policy (sample) (Draft)").fetchSemanticsNodes().size == 1
         }
+        fun move(type: Int, x: Int, y: Int) {
+            javax.swing.SwingUtilities.invokeAndWait {
+                val point = javax.swing.SwingUtilities.convertPoint(host.contentPane, x, y, canvas)
+                canvas.dispatchEvent(MouseEvent(canvas, type, System.currentTimeMillis(), 0, point.x, point.y, 0, false))
+            }
+        }
+        for (split in listOf("Resize left panel", "Resize right panel")) {
+            val bounds = compose.onNodeWithContentDescription(split).fetchSemanticsNode().boundsInRoot
+            move(MouseEvent.MOUSE_ENTERED, (bounds.center.x / density).toInt(), (bounds.center.y / density).toInt())
+            move(MouseEvent.MOUSE_MOVED, (bounds.center.x / density).toInt(), (bounds.center.y / density).toInt())
+            compose.waitUntil(5_000) { canvas.cursor.type == java.awt.Cursor.E_RESIZE_CURSOR }
+        }
         fun capture(name: String, awaitIdle: Boolean = true) {
             if (awaitIdle) compose.waitForIdle()
             check(ImageIO.write(robot.createScreenCapture(java.awt.Rectangle(host.locationOnScreen, host.size)),
                 "png", File(output, name)))
         }
-        fun captureTooltip(name: String) {
+        fun captureTooltip(name: String, tool: String = "Project", number: Int = 1) {
             compose.mainClock.autoAdvance = false
-            val bounds = compose.onNodeWithContentDescription("Toggle Project panel").fetchSemanticsNode().boundsInRoot
-            fun move(type: Int, x: Int, y: Int) {
-                javax.swing.SwingUtilities.invokeAndWait {
-                    val point = javax.swing.SwingUtilities.convertPoint(host.contentPane, x, y, canvas)
-                    canvas.dispatchEvent(MouseEvent(canvas, type, System.currentTimeMillis(), 0, point.x, point.y, 0, false))
-                }
-            }
+            val bounds = compose.onNodeWithContentDescription("Toggle $tool panel").fetchSemanticsNode().boundsInRoot
+            val shortcut = if (isMacOS) "\u2318$number" else "Alt+$number"
             move(MouseEvent.MOUSE_EXITED, -10, -10)
             move(MouseEvent.MOUSE_ENTERED, (bounds.center.x / density).toInt(), (bounds.center.y / density).toInt())
             move(MouseEvent.MOUSE_MOVED, (bounds.center.x / density).toInt(), (bounds.center.y / density).toInt())
             compose.waitUntil(5_000) {
-                compose.onAllNodesWithText(if (isMacOS) "\u23181" else "Alt+1").fetchSemanticsNodes().isNotEmpty()
+                compose.onAllNodesWithText(shortcut).fetchSemanticsNodes().isNotEmpty()
             }
             robot.delay(150)
             capture(name, awaitIdle = false)
             move(MouseEvent.MOUSE_EXITED, -10, -10)
             compose.waitUntil(5_000) {
-                compose.onAllNodesWithText(if (isMacOS) "\u23181" else "Alt+1").fetchSemanticsNodes().isEmpty()
+                compose.onAllNodesWithText(shortcut).fetchSemanticsNodes().isEmpty()
             }
             compose.mainClock.autoAdvance = true
         }
         capture("jewel-dark.png")
         captureTooltip("jewel-tooltip-dark.png")
+        captureTooltip("jewel-tooltip-right-dark.png", "History", 4)
         compose.onNodeWithText("Light theme").activate()
         compose.onNodeWithContentDescription("Markdown body").assertTextContains("## Working practices", substring = true)
         capture("jewel-light.png")
         captureTooltip("jewel-tooltip-light.png")
+        captureTooltip("jewel-tooltip-right-light.png", "History", 4)
         compose.onNodeWithContentDescription("Toggle History panel").activate()
         compose.waitUntil(30_000) {
             compose.onAllNodes(hasText("Compare") and isEnabled()).fetchSemanticsNodes().size == 1

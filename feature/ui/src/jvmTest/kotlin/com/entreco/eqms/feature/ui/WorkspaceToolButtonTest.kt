@@ -1,7 +1,9 @@
 package com.entreco.eqms.feature.ui
 
 import androidx.compose.runtime.*
-import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.semantics.SemanticsActions
@@ -11,6 +13,8 @@ import androidx.compose.ui.unit.dp
 import org.jetbrains.jewel.intui.standalone.theme.IntUiTheme
 import org.junit.Rule
 import org.junit.Test
+import kotlin.test.assertTrue
+import kotlin.math.abs
 
 class WorkspaceToolButtonTest {
     @get:Rule val compose = createComposeRule()
@@ -51,6 +55,7 @@ class WorkspaceToolButtonTest {
             IntUiTheme(isDark = true) {
                 WorkspaceToolButton(WorkspaceTool.Project, true, true, mac, {})
             }
+
         }
         val button = compose.onNodeWithContentDescription("Toggle Project panel")
         for (platform in listOf(true, false)) {
@@ -63,6 +68,37 @@ class WorkspaceToolButtonTest {
             compose.onNodeWithText("Project").assertExists()
             button.performMouseInput { exit(Offset(-10f, -10f)) }
             compose.waitUntil(5_000) { compose.onAllNodesWithText("Project").fetchSemanticsNodes().isEmpty() }
+        }
+    }
+
+    @Test
+    fun hintsOpenInwardAndStayVerticallyCenteredRegardlessOfPointerHeight() {
+        compose.setContent {
+            IntUiTheme(isDark = true) {
+                Row(Modifier.requiredSize(500.dp, 300.dp).padding(horizontal = 12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically) {
+                    WorkspaceToolButton(WorkspaceTool.Project, true, true, true, {})
+                    WorkspaceToolButton(WorkspaceTool.History, false, true, true, {})
+                }
+            }
+        }
+        for (tool in listOf(WorkspaceTool.Project, WorkspaceTool.History)) {
+            val button = compose.onNodeWithContentDescription("Toggle ${tool.name} panel")
+            for (height in listOf(2f, 33f)) {
+                button.performMouseInput { enter(Offset(center.x, height)); moveTo(Offset(center.x, height)) }
+                compose.mainClock.advanceTimeBy(1_000)
+                compose.waitUntil(5_000) {
+                    compose.onAllNodesWithText(tool.shortcut(true)).fetchSemanticsNodes().isNotEmpty()
+                }
+                val icon = button.fetchSemanticsNode().boundsInRoot
+                val hint = compose.onNodeWithText(tool.name).fetchSemanticsNode().boundsInRoot
+                assertTrue(abs(icon.center.y - hint.center.y) <= 1f, "$tool: icon=$icon hint=$hint")
+                if (tool.isLeft) assertTrue(hint.left >= icon.right + 7f)
+                else assertTrue(hint.right <= icon.left - 7f)
+                button.performMouseInput { exit(Offset(-10f, -10f)) }
+                compose.waitUntil(5_000) { compose.onAllNodes(isPopup()).fetchSemanticsNodes().isEmpty() }
+            }
         }
     }
 }

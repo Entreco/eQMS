@@ -47,6 +47,7 @@ Define before implementation; earlier IDs/evidence are retained.
 | T092-15 | R092-17, R092-18 | Existing feature/desktop regressions, neutral search/history wording, exact diff including lifecycle-only no-change revisions, all feature/web Wasm compilation; rerun opt-in 10k p95 <=150 ms benchmark if result rendering changes. |
 | T092-16 | R092-19 | Real hover/dismissal, name/shortcut formatting, icon-only compact rails, accessible selected/enabled/focus semantics, dark/light previews and minimum-width layout. Manual assistive-technology and visual acceptance remain unchecked. |
 | T092-17 | R092-13, R092-18, R092-20 | Both platform policies, all four toggles, extra/wrong modifiers, plain digit input, key-down/up/repeats and focus reset; editor/title/search focus and dirty-buffer/caret retention; busy, lifecycle/unsaved dialogs and scaffold modal guards; existing UI/native regressions and Wasm compilation. |
+| T092-18 | R092-13, R092-14, R092-19, R092-21 | Assert left/right tooltip geometry at different pointer heights; real split drags change tool/editor widths, obey bounds/disabled state and show native resize cursor. Verify tab selected/disabled/focus, integrated close and dirty guards, and active-tab visibility. Review generated dark/light rounded-panel/tab captures; manual visual acceptance remains unchecked. |
 
 Icon-rail follow-up evidence belongs in
 `evidence/EQMS-092-tool-rail-icons.md`, identifying its tested source revision

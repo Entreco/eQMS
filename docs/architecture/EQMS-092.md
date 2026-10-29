@@ -186,3 +186,30 @@ not save, mutate lifecycle state, destroy buffers or reset widths/search.
 No new filesystem/network capability or trust boundary is introduced.
 Cross-platform native runtime, human usability and assistive-technology review
 remain manual limitations, not inferred approvals.
+
+### UI/UX review refinement on #62
+
+UI/UX excellence is a core product principle. Tool panels and the central
+editor use clipped 10dp rounded surfaces separated by quiet 8dp split gutters.
+Both side boundaries drag horizontally with an east/west resize cursor when
+enabled; resizing either boundary also resizes the central editor. Retain
+bounded widths and keyboard minus/plus controls, with no free-floating docking.
+Hover hints anchor beside the icon, vertically centered on its bounds rather
+than below the moving cursor, and open inward on both rails.
+
+Replace action-button tabs with compact IntelliJ-style editor tabs: Markdown
+glyph, quiet inactive labels, rounded selected surface, integrated close icon,
+dirty marker and historical qualifier. Reuse Jewel icon/button/theme tokens.
+The pinned Jewel TabStrip hardcodes non-focusable tabs and a generic close
+label and does not propagate enabled to tab selection; use a small shared
+tab primitive to retain descriptive close names, keyboard focus and real
+disabled semantics rather than bypass existing guards to adopt that API.
+Selection stays horizontally scrollable and automatically reveals the active
+tab. No decorative chevron or separate close-button column.
+
+Both risk disciplines remain applicable: mitigate accidental closing and
+content starvation with existing dirty-close guards and bounded split widths;
+retain focus, selected/disabled semantics and buffer ownership during cosmetic
+changes. Test actual drags, disabled drags, cursor feedback, tooltip geometry
+on both sides and tab keyboard/close behavior. Manual visual/accessibility and
+physical platform checks are still required.

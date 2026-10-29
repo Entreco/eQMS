@@ -22,6 +22,50 @@ import org.junit.Test
 class DocumentScreenTest {
     @get:Rule val compose = createComposeRule()
 
+    @Test
+    fun bothSplittersDragResizeToolsAndEditorWithinBoundsAndDisableWhileBusy() {
+        val capabilities = Capabilities()
+        var busy by mutableStateOf(false)
+        compose.setContent {
+            IntUiTheme(isDark = true) {
+                Box(Modifier.requiredSize(1100.dp, 800.dp)) {
+                    DocumentScreen("/project", capabilities, { _, _ -> }, workspaceBusy = busy)
+                }
+            }
+        }
+        compose.onNodeWithText("Policy (Draft)").performClick()
+        compose.onNodeWithContentDescription("Markdown body").performTextReplacement("keep during resize")
+        fun width(label: String) = compose.onNodeWithContentDescription(label).fetchSemanticsNode().boundsInRoot.width
+        fun drag(label: String, delta: Float) {
+            compose.onNodeWithContentDescription(label).performMouseInput {
+                moveTo(center); press(); moveTo(center + androidx.compose.ui.geometry.Offset(delta, 0f), 500); release()
+            }
+        }
+        val project = width("Project panel")
+        val editor = width("Document editor panel")
+        drag("Resize left panel", -60f)
+        assertTrue(width("Project panel") < project - 40)
+        assertTrue(width("Document editor panel") > editor + 40)
+        val review = width("Review panel")
+        val widerEditor = width("Document editor panel")
+        drag("Resize right panel", 60f)
+        assertTrue(width("Review panel") < review - 40)
+        assertTrue(width("Document editor panel") > widerEditor + 40)
+        drag("Resize left panel", -500f)
+        compose.onNodeWithContentDescription("Project panel").assertWidthIsEqualTo(140.dp)
+        drag("Resize right panel", -500f)
+        assertTrue(width("Review panel") <= 297.5f)
+        assertTrue(width("Document editor panel") >= 300f)
+        compose.runOnIdle { busy = true }
+        val leftBefore = width("Project panel")
+        val rightBefore = width("Review panel")
+        drag("Resize left panel", 60f)
+        drag("Resize right panel", 60f)
+        assertEquals(leftBefore, width("Project panel"))
+        assertEquals(rightBefore, width("Review panel"))
+        compose.onNodeWithContentDescription("Markdown body").assertTextContains("keep during resize")
+    }
+
     private fun shortcut(number: Key) {
         compose.onRoot().performKeyInput {
             val modifier = if (System.getProperty("os.name").startsWith("Mac")) Key.MetaLeft else Key.AltLeft
@@ -29,6 +73,26 @@ class DocumentScreenTest {
             pressKey(number)
             keyUp(modifier)
         }
+    }
+
+    @Test
+    fun selectedTabIsRevealedAfterOpeningAndReturningAcrossOverflow() {
+        val capabilities = Capabilities()
+        compose.setContent {
+            IntUiTheme(isDark = true) {
+                Box(Modifier.requiredSize(960.dp, 720.dp)) {
+                    DocumentScreen("/project", capabilities, { _, _ -> })
+                }
+            }
+        }
+        compose.onNodeWithText("Policy (Draft)").performClick()
+        repeat(5) { number ->
+            compose.onNodeWithText("New document").performClick()
+            compose.onNodeWithContentDescription("Document title").performTextReplacement("Long document title number $number")
+        }
+        compose.onNodeWithContentDescription("Document tab Long document title number 4").assertIsDisplayed().assertIsSelected()
+        compose.onNodeWithText("Policy (Draft)").performClick()
+        compose.onNodeWithContentDescription("Document tab Policy").assertIsDisplayed().assertIsSelected()
     }
 
     @Test

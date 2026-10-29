@@ -1,12 +1,21 @@
 package com.entreco.eqms.feature.ui
 
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.TooltipPlacement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntRect
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -37,7 +46,28 @@ fun WorkspaceToolButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Tooltip(tooltip = {
+    val gap = with(LocalDensity.current) { 8.dp.roundToPx() }
+    val placement = remember(tool.isLeft, gap) {
+        object : TooltipPlacement {
+            @Composable
+            override fun positionProvider(cursorPosition: Offset): PopupPositionProvider =
+                object : PopupPositionProvider {
+                    override fun calculatePosition(
+                        anchorBounds: IntRect, windowSize: IntSize,
+                        layoutDirection: LayoutDirection, popupContentSize: IntSize,
+                    ): IntOffset {
+                        val x = if (tool.isLeft) anchorBounds.right + gap
+                            else anchorBounds.left - gap - popupContentSize.width
+                        return IntOffset(
+                            x.coerceIn(0, (windowSize.width - popupContentSize.width).coerceAtLeast(0)),
+                            (anchorBounds.center.y - popupContentSize.height / 2)
+                                .coerceIn(0, (windowSize.height - popupContentSize.height).coerceAtLeast(0)),
+                        )
+                    }
+                }
+        }
+    }
+    Tooltip(tooltipPlacement = placement, tooltip = {
         Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             Text(tool.name)
             Text(tool.shortcut(isMac), color = JewelTheme.globalColors.text.info)
