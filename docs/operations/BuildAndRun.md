@@ -273,6 +273,10 @@ Editor tabs use a Markdown icon, a quiet inactive label, a rounded selected
 surface and an integrated close icon. Unsaved tabs retain a separate `*`
 marker; saved historical revisions retain their read-only qualifier.
 The tab strip scrolls horizontally and reveals the selected tab automatically.
+Panel fills are intentionally distinct from the surrounding shell so rounded
+cutouts remain visible in both themes. Hovering any part of an enabled tab,
+including its close control, highlights the whole tab; selected styling remains
+visible when the pointer leaves.
 
 Each latest-document tab keeps its own unsaved buffer. Switching tabs or tools
 does not discard edits; selecting an already-open document focuses its tab.

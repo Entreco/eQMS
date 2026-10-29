@@ -2,6 +2,7 @@ package com.entreco.eqms.feature.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
@@ -15,6 +16,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -48,7 +50,9 @@ fun WorkspaceEditorTab(
     val hovered by interactions.collectIsHoveredAsState()
     val focused by interactions.collectIsFocusedAsState()
     val state = TabState.of(selected = selected, active = true, hovered = hovered)
-    val background by JewelTheme.editorTabStyle.colors.backgroundFor(state)
+    val surface = workspaceSurfaceColor()
+    val background = lerp(surface, JewelTheme.globalColors.text.normal,
+        if (enabled && hovered) 0.12f else if (selected) 0.06f else 0f)
     val foreground by JewelTheme.editorTabStyle.colors.contentFor(state)
     val shape = RoundedCornerShape(5.dp)
     val reveal = remember { BringIntoViewRequester() }
@@ -63,6 +67,7 @@ fun WorkspaceEditorTab(
             .border(if (selected) 1.dp else 0.dp,
                 if (selected) JewelTheme.globalColors.borders.normal else androidx.compose.ui.graphics.Color.Transparent, shape)
             .focusOutline(focused, shape)
+            .hoverable(interactions, enabled)
             .selectable(selected, enabled = enabled, role = Role.Tab,
                 interactionSource = interactions, indication = null, onClick = onSelect)
             .semantics { contentDescription = description }

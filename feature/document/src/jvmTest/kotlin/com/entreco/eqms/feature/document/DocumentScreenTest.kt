@@ -14,6 +14,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.graphics.toPixelMap
+import kotlin.math.abs
 import kotlin.test.*
 import kotlinx.coroutines.CompletableDeferred
 import org.junit.Rule
@@ -21,6 +23,29 @@ import org.junit.Test
 
 class DocumentScreenTest {
     @get:Rule val compose = createComposeRule()
+
+    @Test
+    fun roundedPanelCornersExposeShellAndFillsRemainVisiblyDistinctInBothThemes() {
+        var dark by mutableStateOf(true)
+        val capabilities = Capabilities()
+        compose.setContent {
+            IntUiTheme(isDark = dark) {
+                DocumentScreen("/project", capabilities, { _, _ -> })
+            }
+        }
+        for (theme in listOf(true, false)) {
+            compose.runOnIdle { dark = theme }
+            for (name in listOf("Project panel", "Review panel", "Document editor panel")) {
+                val pixels = compose.onNodeWithContentDescription(name).captureToImage().toPixelMap()
+                val corner = pixels[0, 0]
+                val fill = pixels[pixels.width / 2, pixels.height - 20]
+                assertTrue(abs(fill.red - corner.red) >= 0.025f,
+                    "$name in dark=$theme must expose a contrasting rounded cutout: $corner vs $fill")
+                val opposite = pixels[pixels.width - 1, pixels.height - 1]
+                assertEquals(corner, opposite, "Opposite rounded cutouts must expose the same shell")
+            }
+        }
+    }
 
     @Test
     fun bothSplittersDragResizeToolsAndEditorWithinBoundsAndDisableWhileBusy() {

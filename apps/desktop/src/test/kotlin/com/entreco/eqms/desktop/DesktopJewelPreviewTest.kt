@@ -169,11 +169,20 @@ class DesktopJewelPreviewTest {
             compose.mainClock.autoAdvance = true
         }
         capture("jewel-dark.png")
+        val inactiveTab = compose.onNodeWithContentDescription("Document tab Risk management plan (sample)").fetchSemanticsNode().boundsInRoot
+        move(MouseEvent.MOUSE_MOVED, ((inactiveTab.left + 30) / density).toInt(),
+            ((inactiveTab.top + 4) / density).toInt())
+        capture("jewel-tab-hover-dark.png")
+        move(MouseEvent.MOUSE_EXITED, -10, -10)
         captureTooltip("jewel-tooltip-dark.png")
         captureTooltip("jewel-tooltip-right-dark.png", "History", 4)
         compose.onNodeWithText("Light theme").activate()
         compose.onNodeWithContentDescription("Markdown body").assertTextContains("## Working practices", substring = true)
         capture("jewel-light.png")
+        move(MouseEvent.MOUSE_MOVED, ((inactiveTab.left + 30) / density).toInt(),
+            ((inactiveTab.top + 4) / density).toInt())
+        capture("jewel-tab-hover-light.png")
+        move(MouseEvent.MOUSE_EXITED, -10, -10)
         captureTooltip("jewel-tooltip-light.png")
         captureTooltip("jewel-tooltip-right-light.png", "History", 4)
         compose.onNodeWithContentDescription("Toggle History panel").activate()

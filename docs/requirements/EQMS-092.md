@@ -42,3 +42,8 @@ and historical evidence remain unchanged.
 | R092-19 | Project/Search/Review/History rails shall use compact themed icons only, descriptive hover tooltips with platform shortcuts, accessible names and visible selected/focus/disabled states. Panel headings/content remain labelled. |
 | R092-20 | Command+1..4 on macOS and Alt+1..4 on Windows/Linux shall toggle the corresponding tool identically to clicking, including from text fields. Match exact modifiers, suppress held repeats, obey busy/modal guards and preserve buffers, caret, tabs, search and widths; unrelated keys remain available. |
 | R092-21 | Tool and central editor panels shall have rounded clipped surfaces; both horizontal split boundaries shall support bounded dragging and a resize pointer when enabled. Hover hints shall align vertically with their icon and open inward. Document tabs shall use compact IntelliJ-style selected/inactive presentation, a document icon and integrated accessible close control, preserving dirty/historical indicators, focus, disabled guards and unsaved buffers. |
+
+R092-21 visual acceptance includes a visibly distinct panel fill from the shell,
+exposed rounded corner cutouts and whole-tab hover feedback for selected and
+inactive tabs (including hovering the close child); disabled tabs do not react.
+Verify both light and dark themes, not just the presence of a rounded shape.

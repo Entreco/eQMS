@@ -213,3 +213,12 @@ retain focus, selected/disabled semantics and buffer ownership during cosmetic
 changes. Test actual drags, disabled drags, cursor feedback, tooltip geometry
 on both sides and tab keyboard/close behavior. Manual visual/accessibility and
 physical platform checks are still required.
+
+The subsequent visual review found that clipping alone was insufficient:
+surfaces matched the shell, and editor-tab hover tokens did not visibly change
+the whole tab. Use a distinct neutral panel fill (darker in dark mode, white
+in light mode) against the unchanged shell. Blend a visible theme-foreground
+hover overlay over the entire tab, including while its close child is hovered;
+disabled tabs do not react. Keep selected styling independently visible.
+Pixel-level regressions must verify fill contrast, exposed rounded corners and
+hover changes away from the close icon, for selected/inactive tabs in both themes.

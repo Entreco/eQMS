@@ -51,6 +51,9 @@ Define before implementation; earlier IDs/evidence are retained.
 
 Review-refinement outcomes and new captures are recorded separately in
 `evidence/EQMS-092-workspace-ux-review.md`; earlier evidence is not overwritten.
+T092-18 additionally samples actual rendered pixels for panel/shell separation,
+rounded cutouts and whole-tab hover feedback away from the close glyph, in
+both themes and selected/inactive/disabled states.
 
 Icon-rail follow-up evidence belongs in
 `evidence/EQMS-092-tool-rail-icons.md`, identifying its tested source revision

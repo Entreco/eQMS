@@ -318,7 +318,7 @@ private fun PanelDivider(label: String, enabled: Boolean, resize: (Float) -> Uni
 @Composable
 private fun Modifier.workspacePanel(): Modifier =
     clip(RoundedCornerShape(10.dp))
-        .background(JewelTheme.globalColors.panelBackground)
+        .background(workspaceSurfaceColor())
         .border(1.dp, JewelTheme.globalColors.borders.normal.copy(alpha = 0.4f), RoundedCornerShape(10.dp))
 
 internal fun actionLabel(target: DocumentStatus): String = when (target) {
