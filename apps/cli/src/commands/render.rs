@@ -246,6 +246,34 @@ fn node_html(node: &Node, out: &mut String) -> Result<(), String> {
 mod tests {
     use super::*;
     #[test]
+    fn buffer_json_contract_is_explicit_and_never_claims_saved_provenance() {
+        let matches = super::super::document::command()
+            .try_get_matches_from(["document", "render-buffer"])
+            .unwrap();
+        let args = matches.subcommand_matches("render-buffer").unwrap();
+        let result = run(
+            "render-buffer",
+            args,
+            true,
+            &mut Cursor::new(r##"{"title":"A","body":"# Purpose"}"##),
+        )
+        .unwrap();
+        let value: serde_json::Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(value["source"]["kind"], "unsaved");
+        assert_eq!(value["source"]["content_hash"], "");
+        assert_eq!(
+            value["input_digest"],
+            eqms_core::markdown::hash(b"# Purpose")
+        );
+        for input in [
+            r#"{"title":"A"}"#,
+            r#"{"title":"A","body":"","approved":true}"#,
+            "not JSON",
+        ] {
+            assert!(run("render-buffer", args, true, &mut Cursor::new(input)).is_err());
+        }
+    }
+    #[test]
     fn html_is_deterministic_escaped_and_network_free() {
         let doc = render::parse("A <title>", "# Heading\n\n<script>bad()</script>\n\n[x](javascript:bad)\n\n![secret](https://bad.invalid/x)\n").unwrap();
         let output = html(&doc).unwrap();

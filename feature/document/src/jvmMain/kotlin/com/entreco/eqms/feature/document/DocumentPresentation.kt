@@ -110,9 +110,9 @@ internal fun DocumentPresentation(
                             onClick = { adjust(0.05f) }, enabled = interactive,
                             modifier = Modifier.width(12.dp).fillMaxHeight()
                                 .semantics { contentDescription = "Resize source and preview; arrow keys adjust" }
-                                .pointerHoverIcon(PointerIcon(Cursor.getPredefinedCursor(Cursor.E_RESIZE_CURSOR)))
+                                .pointerHoverIcon(if (interactive) PointerIcon(Cursor.getPredefinedCursor(Cursor.E_RESIZE_CURSOR)) else PointerIcon.Default)
                                 .onPreviewKeyEvent {
-                                    if (it.type == KeyEventType.KeyDown && it.key in listOf(Key.DirectionLeft, Key.DirectionRight)) {
+                                    if (interactive && it.type == KeyEventType.KeyDown && it.key in listOf(Key.DirectionLeft, Key.DirectionRight)) {
                                         adjust(if (it.key == Key.DirectionLeft) -0.05f else 0.05f); true
                                     } else false
                                 }

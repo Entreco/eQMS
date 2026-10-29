@@ -274,6 +274,18 @@ mod tests {
                     .unwrap_err()
                     .contains("10 MiB")
             );
+            image::RgbImage::new(4001, 4000)
+                .save(fixture.0.join("assets/too-many-pixels.png"))
+                .unwrap();
+            assert!(
+                fixture
+                    .run(
+                        &["render-asset", "assets/too-many-pixels.png"],
+                        &mut Cursor::new("")
+                    )
+                    .unwrap_err()
+                    .contains("16 megapixels")
+            );
         }
     }
 

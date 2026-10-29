@@ -204,6 +204,7 @@ class DocumentScreenTest {
         var renderPending: CompletableDeferred<Result<RenderedDocument>>? = null
         var renderFailure: String? = null
         var renderNodes: List<RenderNode>? = null
+        var renderToc: List<RenderHeading> = emptyList()
         var imageReads = 0
         var openedLinks = 0
         override suspend fun readDocumentImage(project: String, asset: String): Result<DocumentImage> {
@@ -217,7 +218,7 @@ class DocumentScreenTest {
         private fun rendered(title: String, body: String, source: RenderSource) =
             RenderedDocument(title, body, source,
                 renderNodes ?: listOf(RenderNode("paragraph", children = listOf(RenderNode("text", body)))),
-                emptyList(), emptyList())
+                renderToc, emptyList())
         override suspend fun renderBuffer(project: String, title: String, body: String): Result<RenderedDocument> {
             renderPending?.let { return it.await() }
             renderFailure?.let { return Result.failure(IllegalArgumentException(it)) }
@@ -366,6 +367,43 @@ class DocumentScreenTest {
         compose.runOnIdle { tab = DocumentTab(2, capabilities.first) }
         compose.waitUntil { compose.onAllNodesWithText("Synthetic illustration: Missing test image").fetchSemanticsNodes().isNotEmpty() }
         compose.runOnIdle { assertEquals(1, capabilities.imageReads) }
+    }
+
+    @Test
+    fun sourcePreviewSplitResizesByPointerAndKeyboardAndHonorsBusyGuard() {
+        val capabilities = Capabilities()
+        val tab = DocumentTab(1, capabilities.first).apply { viewMode = DocumentViewMode.Split }
+        var interactive by mutableStateOf(true)
+        compose.setContent {
+            IntUiTheme(isDark = true) {
+                DocumentPresentation("/project", tab, capabilities, interactive, remember { DocumentBitmapCache() }, {},
+                    Modifier.requiredSize(900.dp, 600.dp))
+            }
+        }
+        val grip = compose.onNodeWithContentDescription("Resize source and preview; arrow keys adjust")
+        grip.performSemanticsAction(SemanticsActions.RequestFocus) { it() }
+        grip.performKeyInput { pressKey(Key.DirectionRight) }
+        compose.runOnIdle { assertEquals(0.55f, tab.splitFraction) }
+        grip.performMouseInput { moveTo(center); press(); moveTo(center + androidx.compose.ui.geometry.Offset(1000f, 0f), 500); release() }
+        compose.runOnIdle { assertEquals(0.75f, tab.splitFraction) }
+        grip.performMouseInput { moveTo(center); press(); moveTo(center - androidx.compose.ui.geometry.Offset(1000f, 0f), 500); release() }
+        compose.runOnIdle { assertEquals(0.25f, tab.splitFraction); interactive = false }
+        grip.performMouseInput { moveTo(center); press(); moveTo(center + androidx.compose.ui.geometry.Offset(500f, 0f), 500); release() }
+        compose.runOnIdle { assertEquals(0.25f, tab.splitFraction) }
+    }
+
+    @Test
+    fun tableOfContentsNavigatesToItsActualHeading() {
+        val capabilities = Capabilities()
+        capabilities.renderNodes = List(25) { RenderNode("paragraph", children = listOf(RenderNode("text", "Paragraph $it"))) } +
+            RenderNode("h2", anchor = "end", children = listOf(RenderNode("text", "End")))
+        capabilities.renderToc = listOf(RenderHeading(2, "End", "end"))
+        compose.setContent { IntUiTheme(isDark = false) { DocumentScreen("/project", capabilities, { _, _ -> }) } }
+        compose.onNodeWithText("Policy (Draft)").performClick()
+        compose.waitUntil { compose.onAllNodesWithText("Table of contents").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("Table of contents").performClick()
+        compose.onNodeWithContentDescription("Go to End").performClick()
+        compose.onNode(hasText("End") and !hasClickAction()).assertIsDisplayed()
     }
 
     @Test
