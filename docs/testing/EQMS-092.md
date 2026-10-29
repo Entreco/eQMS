@@ -54,6 +54,7 @@ Review-refinement outcomes and new captures are recorded separately in
 T092-18 additionally samples actual rendered pixels for panel/shell separation,
 rounded cutouts and whole-tab hover feedback away from the close glyph, in
 both themes and selected/inactive/disabled states.
+Correction evidence: `evidence/EQMS-092-hover-contrast.md`.
 
 Icon-rail follow-up evidence belongs in
 `evidence/EQMS-092-tool-rail-icons.md`, identifying its tested source revision
