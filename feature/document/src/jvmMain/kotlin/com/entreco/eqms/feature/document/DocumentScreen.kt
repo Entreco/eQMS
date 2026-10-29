@@ -2,6 +2,8 @@ package com.entreco.eqms.feature.document
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.focusGroup
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
@@ -15,12 +17,17 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.pointer.PointerIcon
+import androidx.compose.ui.input.pointer.pointerHoverIcon
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.role
-import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.entreco.eqms.feature.search.SearchPanel
@@ -55,13 +62,31 @@ fun DocumentScreen(
             previousKeys.clear()
             previousKeys.addAll(openKeys)
         }
-        var left by remember { mutableStateOf<String?>("Project") }
-        var right by remember { mutableStateOf<String?>("Review") }
+        var left by remember { mutableStateOf<WorkspaceTool?>(WorkspaceTool.Project) }
+        var right by remember { mutableStateOf<WorkspaceTool?>(WorkspaceTool.Review) }
         var leftWidth by remember { mutableFloatStateOf(260f) }
         var rightWidth by remember { mutableFloatStateOf(300f) }
         var confirmation by remember { mutableStateOf<Pair<DocumentTab, DocumentStatus>?>(null) }
         val tab = state.active
         val interactive = !state.busy && !workspaceBusy && state.pendingClose == null && confirmation == null
+        val isMac = remember { System.getProperty("os.name").startsWith("Mac") }
+        val shortcuts = remember(isMac) { ToolShortcutHandler(isMac) }
+        val railFocus = remember { WorkspaceTool.entries.associateWith { FocusRequester() } }
+        var leftFocused by remember { mutableStateOf(false) }
+        var rightFocused by remember { mutableStateOf(false) }
+        val toggle: (WorkspaceTool) -> Unit = { tool ->
+            if (interactive) {
+                if (tool.isLeft) {
+                    if (leftFocused) railFocus.getValue(tool).requestFocus()
+                    left = if (left == tool) null else tool
+                } else {
+                    if (rightFocused) railFocus.getValue(tool).requestFocus()
+                    right = if (right == tool) null else tool
+                }
+            }
+        }
+        val windowFocused = LocalWindowInfo.current.isWindowFocused
+        LaunchedEffect(windowFocused) { if (!windowFocused) shortcuts.reset() }
         val dirty = state.dirty
         val working = state.busy || state.pendingClose != null || confirmation != null
         SideEffect { onStateChanged(dirty, working) }
@@ -75,22 +100,26 @@ fun DocumentScreen(
         }
         LaunchedEffect(state) { state.refresh() }
         LaunchedEffect(right, tab?.key, tab?.snapshot?.revision) {
-            if (right == "History" && tab != null) state.loadHistory(tab)
+            if (right == WorkspaceTool.History && tab != null) state.loadHistory(tab)
         }
 
-        Column(modifier.fillMaxSize()) {
+        Column(modifier.fillMaxSize()
+            .onFocusChanged { if (!it.hasFocus) shortcuts.reset() }
+            .focusGroup()
+            .onPreviewKeyEvent { shortcuts.handle(it, interactive, toggle) }) {
             state.error?.let { Text(it, Modifier.padding(8.dp), color = JewelTheme.globalColors.text.error) }
             BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
                 val panelLimit = (maxWidth.value * 0.27f).coerceAtLeast(140f)
-                Row(Modifier.fillMaxSize()) {
-                    ToolRail(listOf("Project", "Search"), left, interactive) { left = if (left == it) null else it }
+                Row(Modifier.fillMaxSize().padding(vertical = 6.dp)) {
+                    ToolRail(WorkspaceTool.entries.filter { it.isLeft }, left, interactive, isMac, railFocus, toggle)
                     if (left != null) {
-                        ToolPanel(left!!, leftWidth.coerceIn(140f, panelLimit), interactive,
+                        ToolPanel(left!!.name, leftWidth.coerceIn(140f, panelLimit), interactive,
                             onNarrow = { leftWidth = (leftWidth - 24).coerceAtLeast(140f) },
                             onWiden = { leftWidth = (leftWidth + 24).coerceAtMost(panelLimit) },
-                            onClose = { left = null }) {
+                            onClose = { toggle(left!!) },
+                            modifier = Modifier.onFocusChanged { leftFocused = it.hasFocus }) {
                             when (left) {
-                                "Project" -> {
+                                WorkspaceTool.Project -> {
                                     Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                                         DefaultButton(enabled = interactive, onClick = state::newDocument) { Text("New document") }
                                     }
@@ -105,7 +134,7 @@ fun DocumentScreen(
                                         }
                                     }
                                 }
-                                "Search" -> SearchPanel(
+                                WorkspaceTool.Search -> SearchPanel(
                                     state.search, interactive,
                                     onSelect = { hit, historical ->
                                         scope.launch { state.open(hit.id, if (historical) hit.revision else null) }
@@ -117,36 +146,30 @@ fun DocumentScreen(
                                     onResultsLaidOut = onSearchResultsLaidOut,
                                     modifier = Modifier.weight(1f),
                                 ) {}
+                                else -> Unit
                             }
                         }
                         PanelDivider("Resize left panel", interactive) { delta ->
                             leftWidth = (leftWidth + delta).coerceIn(140f, panelLimit)
                         }
                     }
-                    Column(Modifier.weight(1f).fillMaxHeight()) {
-                        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(4.dp),
+                    Column(Modifier.weight(1f).fillMaxHeight().workspacePanel()
+                        .semantics { contentDescription = "Document editor panel" }) {
+                        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(6.dp),
                             horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                             state.tabs.forEach { open ->
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    OutlinedButton(
+                                key(open.key) {
+                                    WorkspaceEditorTab(
+                                        title = open.title.ifBlank { "Untitled" },
+                                        description = "Document tab ${open.title.ifBlank { "Untitled" }}${if (open.historical) " historical ${open.snapshot?.revision}" else ""}",
+                                        closeDescription = "Close tab ${open.title.ifBlank { "Untitled" }}${if (open.historical) " historical ${open.snapshot?.revision}" else ""}",
+                                        selected = open.key == state.activeKey,
                                         enabled = !workspaceBusy && state.pendingClose == null && confirmation == null,
-                                        onClick = { state.activeKey = open.key },
-                                        modifier = Modifier.semantics {
-                                            contentDescription = "Document tab ${open.title.ifBlank { "Untitled" }}${if (open.historical) " historical ${open.snapshot?.revision}" else ""}"
-                                            role = Role.Tab
-                                            selected = open.key == state.activeKey
-                                        },
-                                    ) {
-                                        Text((if (open.key == state.activeKey) "> " else "") +
-                                            open.title.ifBlank { "Untitled" } + (if (open.dirty) " *" else "") +
-                                            (if (open.historical) " [saved revision]" else ""))
-                                    }
-                                    IconButton(enabled = interactive, onClick = { state.requestClose(open) },
-                                        modifier = Modifier.semantics {
-                                            contentDescription = "Close tab ${open.title.ifBlank { "Untitled" }}${if (open.historical) " historical ${open.snapshot?.revision}" else ""}"
-                                        }) {
-                                        Text("x")
-                                    }
+                                        closeEnabled = interactive,
+                                        onSelect = { state.activeKey = open.key },
+                                        onClose = { state.requestClose(open) },
+                                        dirty = open.dirty, historical = open.historical,
+                                    )
                                 }
                             }
                         }
@@ -172,7 +195,7 @@ fun DocumentScreen(
                                     DefaultButton(enabled = interactive && tab.editable && tab.title.isNotBlank(),
                                         onClick = { scope.launch { state.save(tab) } }) { Text("Save") }
                                     OutlinedButton(enabled = interactive && tab.snapshot != null,
-                                        onClick = { right = "History"; scope.launch { state.loadHistory(tab) } }) { Text("Show history") }
+                                        onClick = { right = WorkspaceTool.History; scope.launch { state.loadHistory(tab) } }) { Text("Show history") }
                                     OutlinedButton(enabled = interactive && tab.snapshot != null, onClick = {
                                         val source = tab.snapshot ?: return@OutlinedButton
                                         if (tab.historical) scope.launch { state.open(source.id) }
@@ -189,20 +212,22 @@ fun DocumentScreen(
                         PanelDivider("Resize right panel", interactive) { delta ->
                             rightWidth = (rightWidth - delta).coerceIn(140f, panelLimit)
                         }
-                        ToolPanel(right!!, rightWidth.coerceIn(140f, panelLimit), interactive,
+                        ToolPanel(right!!.name, rightWidth.coerceIn(140f, panelLimit), interactive,
                             onNarrow = { rightWidth = (rightWidth - 24).coerceAtLeast(140f) },
                             onWiden = { rightWidth = (rightWidth + 24).coerceAtMost(panelLimit) },
-                            onClose = { right = null }) {
+                            onClose = { toggle(right!!) },
+                            modifier = Modifier.onFocusChanged { rightFocused = it.hasFocus }) {
                             if (tab == null) Text("Select a document.") else when (right) {
-                                "Review" -> ReviewPanel(tab, interactive) { confirmation = tab to it }
-                                "History" -> DocumentHistoryPanel(tab, interactive,
+                                WorkspaceTool.Review -> ReviewPanel(tab, interactive) { confirmation = tab to it }
+                                WorkspaceTool.History -> DocumentHistoryPanel(tab, interactive,
                                     onRefresh = { scope.launch { state.loadHistory(tab) } },
                                     onCompare = { scope.launch { state.compare(tab) } },
                                     onOpen = { state.openSnapshot(it, historical = true) })
+                                else -> Unit
                             }
                         }
                     }
-                    ToolRail(listOf("Review", "History"), right, interactive) { right = if (right == it) null else it }
+                    ToolRail(WorkspaceTool.entries.filter { !it.isLeft }, right, interactive, isMac, railFocus, toggle)
                 }
             }
         }
@@ -248,16 +273,14 @@ fun DocumentScreen(
 }
 
 @Composable
-private fun ToolRail(tools: List<String>, selected: String?, enabled: Boolean, select: (String) -> Unit) {
-    Column(Modifier.width(88.dp).fillMaxHeight().padding(4.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+private fun ToolRail(
+    tools: List<WorkspaceTool>, selected: WorkspaceTool?, enabled: Boolean, isMac: Boolean,
+    focus: Map<WorkspaceTool, FocusRequester>, select: (WorkspaceTool) -> Unit,
+) {
+    Column(Modifier.width(44.dp).fillMaxHeight().padding(4.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         tools.forEach { tool ->
-            OutlinedButton(enabled = enabled, onClick = { select(tool) },
-                modifier = Modifier.semantics {
-                    contentDescription = "Toggle $tool panel"
-                    this.selected = selected == tool
-                }) {
-                Text(tool, fontWeight = if (selected == tool) FontWeight.Bold else FontWeight.Normal)
-            }
+            WorkspaceToolButton(tool, selected == tool, enabled, isMac, { select(tool) },
+                Modifier.focusRequester(focus.getValue(tool)))
         }
     }
 }
@@ -265,9 +288,10 @@ private fun ToolRail(tools: List<String>, selected: String?, enabled: Boolean, s
 @Composable
 private fun ToolPanel(
     title: String, width: Float, enabled: Boolean, onNarrow: () -> Unit, onWiden: () -> Unit,
-    onClose: () -> Unit, content: @Composable ColumnScope.() -> Unit,
+    onClose: () -> Unit, modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit,
 ) {
-    Column(Modifier.width(width.dp).fillMaxHeight().border(1.dp, JewelTheme.globalColors.borders.normal).padding(8.dp),
+    Column(modifier.focusGroup().width(width.dp).fillMaxHeight().workspacePanel()
+        .semantics { contentDescription = "$title panel" }.padding(8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(title, fontWeight = FontWeight.SemiBold)
         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -285,10 +309,17 @@ private fun ToolPanel(
 @Composable
 private fun PanelDivider(label: String, enabled: Boolean, resize: (Float) -> Unit) {
     val density = LocalDensity.current.density
-    Box(Modifier.width(5.dp).fillMaxHeight().background(JewelTheme.globalColors.borders.normal)
+    Box(Modifier.width(8.dp).fillMaxHeight()
+        .pointerHoverIcon(if (enabled) PointerIcon(java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.E_RESIZE_CURSOR)) else PointerIcon.Default)
         .semantics { contentDescription = label }
         .draggable(rememberDraggableState { resize(it / density) }, Orientation.Horizontal, enabled = enabled))
 }
+
+@Composable
+private fun Modifier.workspacePanel(): Modifier =
+    clip(RoundedCornerShape(10.dp))
+        .background(workspaceSurfaceColor())
+        .border(1.dp, JewelTheme.globalColors.borders.normal.copy(alpha = 0.4f), RoundedCornerShape(10.dp))
 
 internal fun actionLabel(target: DocumentStatus): String = when (target) {
     DocumentStatus.InReview -> "Submit for review"

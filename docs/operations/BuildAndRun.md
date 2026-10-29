@@ -252,6 +252,32 @@ to use left **Project** / **Search** tools, central document tabs and right
 to collapse it. Drag a divider or use the panel's minus/plus controls to resize.
 Widths, selected tools and open tabs last for the session only.
 
+The outer rails use icons only: folder (Project), magnifier (Search), check
+(Review) and clock (History). Hover an icon for its name and shortcut.
+On macOS use **Command+1** Project, **Command+2** Search, **Command+3** Review
+and **Command+4** History; on Windows/Linux use **Alt+1..4** in the same order.
+Shortcuts work within the document workspace, including title/Markdown/search
+fields, and toggle the panel just like clicking. Opening a tool preserves
+editor focus; hiding a focused panel moves focus to its rail icon. Only the
+exact modifier with a top-row digit matches; holding the key toggles once.
+Busy operations and modal dialogs block background toggles. About is a
+separate non-modal window: its keys do not toggle workspace tools.
+Panel headings remain labelled. Tab through controls and use Enter to activate.
+
+Tool and editor surfaces have rounded corners. Drag either 8dp gutter between
+a tool panel and the editor horizontally; the pointer changes to a resize
+cursor. Both sides preserve a usable editor width, and disabled/busy panels
+cannot be dragged. The minus/plus controls remain available for keyboard users.
+Hover hints open inward beside their icon, aligned with its vertical center.
+Editor tabs use a Markdown icon, a quiet inactive label, a rounded selected
+surface and an integrated close icon. Unsaved tabs retain a separate `*`
+marker; saved historical revisions retain their read-only qualifier.
+The tab strip scrolls horizontally and reveals the selected tab automatically.
+Panel fills are intentionally distinct from the surrounding shell so rounded
+cutouts remain visible in both themes. Hovering any part of an enabled tab,
+including its close control, highlights the whole tab; selected styling remains
+visible when the pointer leaves.
+
 Each latest-document tab keeps its own unsaved buffer. Switching tabs or tools
 does not discard edits; selecting an already-open document focuses its tab.
 Exact historical revisions open in separate read-only tabs. Closing dirty tabs
@@ -270,6 +296,10 @@ drafts rendered with the real native adapters at the earlier scaffold revision.
 Those are historical previews, not evidence for the lifecycle UI.
 See the [Jewel assessment/design](../architecture/EQMS-092.md) and
 [workspace follow-up evidence](../testing/evidence/EQMS-092-document-workspace.md).
+The [icon-rail follow-up evidence](../testing/evidence/EQMS-092-tool-rail-icons.md)
+records the compact rails, hover tooltips and shortcut checks separately.
+The [UI/UX review evidence](../testing/evidence/EQMS-092-workspace-ux-review.md)
+shows the subsequent rounded panels, level hints, split cursors and editor tabs.
 
 To regenerate captures without touching existing workspaces, choose an output
 directory outside the repository; the opt-in test creates a fresh workspace

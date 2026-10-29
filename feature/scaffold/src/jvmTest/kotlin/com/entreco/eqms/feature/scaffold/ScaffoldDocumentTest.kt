@@ -12,6 +12,43 @@ import org.junit.Test
 class ScaffoldDocumentTest {
     @get:Rule val compose = createComposeRule()
 
+    @Test
+    fun settingsProjectChooserAndAboutDoNotToggleBackgroundTools() {
+        val chrome = chrome()
+        val projects = Projects()
+        val documents = Documents()
+        compose.setContent { ProjectScreen(projects, documents, chrome = chrome) }
+        compose.onNodeWithText("Open project").performClick()
+        compose.onNodeWithText("Select directory").performClick()
+        compose.onNodeWithText("Policy (Draft)").performClick()
+        fun sendToFocusedWindow() {
+            compose.onAllNodes(isRoot()).onLast().performKeyInput {
+                val modifier = if (System.getProperty("os.name").startsWith("Mac"))
+                    androidx.compose.ui.input.key.Key.MetaLeft else androidx.compose.ui.input.key.Key.AltLeft
+                keyDown(modifier)
+                pressKey(androidx.compose.ui.input.key.Key.Two)
+                keyUp(modifier)
+            }
+        }
+        compose.runOnIdle { chrome.request(DesktopCommand.Settings) }
+        compose.onNodeWithText("Close").performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.RequestFocus) { it() }
+        sendToFocusedWindow()
+        compose.onNodeWithContentDescription("Toggle Search panel").assertIsNotSelected().assertIsNotEnabled()
+        compose.onNodeWithText("Close").performClick()
+        compose.onNodeWithText("Open project").performClick()
+        compose.onNodeWithContentDescription("Directory path")
+            .performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.RequestFocus) { it() }
+        sendToFocusedWindow()
+        compose.onNodeWithContentDescription("Toggle Search panel").assertIsNotSelected().assertIsNotEnabled()
+        compose.onNodeWithText("Cancel").performClick()
+        compose.runOnIdle { chrome.request(DesktopCommand.About) }
+        compose.onNodeWithText("Close").performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.RequestFocus) { it() }
+        sendToFocusedWindow()
+        compose.onNodeWithContentDescription("Toggle Search panel").assertIsNotSelected()
+        compose.onNodeWithText("Close").performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.OnClick) { it() }
+        compose.onNodeWithContentDescription("Markdown body").assertTextContains("original")
+    }
+
     private fun searchField(): SemanticsNodeInteraction {
         if (compose.onAllNodesWithContentDescription("Search saved documents").fetchSemanticsNodes().isEmpty()) {
             compose.onNodeWithContentDescription("Toggle Search panel").performClick()

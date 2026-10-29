@@ -14,6 +14,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.graphics.toPixelMap
+import kotlin.math.abs
 import kotlin.test.*
 import kotlinx.coroutines.CompletableDeferred
 import org.junit.Rule
@@ -21,6 +23,167 @@ import org.junit.Test
 
 class DocumentScreenTest {
     @get:Rule val compose = createComposeRule()
+
+    @Test
+    fun roundedPanelCornersExposeShellAndFillsRemainVisiblyDistinctInBothThemes() {
+        var dark by mutableStateOf(true)
+        val capabilities = Capabilities()
+        compose.setContent {
+            IntUiTheme(isDark = dark) {
+                DocumentScreen("/project", capabilities, { _, _ -> })
+            }
+        }
+        for (theme in listOf(true, false)) {
+            compose.runOnIdle { dark = theme }
+            for (name in listOf("Project panel", "Review panel", "Document editor panel")) {
+                val pixels = compose.onNodeWithContentDescription(name).captureToImage().toPixelMap()
+                val corner = pixels[0, 0]
+                val fill = pixels[pixels.width / 2, pixels.height - 20]
+                assertTrue(abs(fill.red - corner.red) >= 0.025f,
+                    "$name in dark=$theme must expose a contrasting rounded cutout: $corner vs $fill")
+                val opposite = pixels[pixels.width - 1, pixels.height - 1]
+                assertEquals(corner, opposite, "Opposite rounded cutouts must expose the same shell")
+            }
+        }
+    }
+
+    @Test
+    fun bothSplittersDragResizeToolsAndEditorWithinBoundsAndDisableWhileBusy() {
+        val capabilities = Capabilities()
+        var busy by mutableStateOf(false)
+        compose.setContent {
+            IntUiTheme(isDark = true) {
+                Box(Modifier.requiredSize(1100.dp, 800.dp)) {
+                    DocumentScreen("/project", capabilities, { _, _ -> }, workspaceBusy = busy)
+                }
+            }
+        }
+        compose.onNodeWithText("Policy (Draft)").performClick()
+        compose.onNodeWithContentDescription("Markdown body").performTextReplacement("keep during resize")
+        fun width(label: String) = compose.onNodeWithContentDescription(label).fetchSemanticsNode().boundsInRoot.width
+        fun drag(label: String, delta: Float) {
+            compose.onNodeWithContentDescription(label).performMouseInput {
+                moveTo(center); press(); moveTo(center + androidx.compose.ui.geometry.Offset(delta, 0f), 500); release()
+            }
+        }
+        val project = width("Project panel")
+        val editor = width("Document editor panel")
+        drag("Resize left panel", -60f)
+        assertTrue(width("Project panel") < project - 40)
+        assertTrue(width("Document editor panel") > editor + 40)
+        val review = width("Review panel")
+        val widerEditor = width("Document editor panel")
+        drag("Resize right panel", 60f)
+        assertTrue(width("Review panel") < review - 40)
+        assertTrue(width("Document editor panel") > widerEditor + 40)
+        drag("Resize left panel", -500f)
+        compose.onNodeWithContentDescription("Project panel").assertWidthIsEqualTo(140.dp)
+        drag("Resize right panel", -500f)
+        assertTrue(width("Review panel") <= 297.5f)
+        assertTrue(width("Document editor panel") >= 300f)
+        compose.runOnIdle { busy = true }
+        val leftBefore = width("Project panel")
+        val rightBefore = width("Review panel")
+        drag("Resize left panel", 60f)
+        drag("Resize right panel", 60f)
+        assertEquals(leftBefore, width("Project panel"))
+        assertEquals(rightBefore, width("Review panel"))
+        compose.onNodeWithContentDescription("Markdown body").assertTextContains("keep during resize")
+    }
+
+    private fun shortcut(number: Key) {
+        compose.onRoot().performKeyInput {
+            val modifier = if (System.getProperty("os.name").startsWith("Mac")) Key.MetaLeft else Key.AltLeft
+            keyDown(modifier)
+            pressKey(number)
+            keyUp(modifier)
+        }
+    }
+
+    @Test
+    fun selectedTabIsRevealedAfterOpeningAndReturningAcrossOverflow() {
+        val capabilities = Capabilities()
+        compose.setContent {
+            IntUiTheme(isDark = true) {
+                Box(Modifier.requiredSize(960.dp, 720.dp)) {
+                    DocumentScreen("/project", capabilities, { _, _ -> })
+                }
+            }
+        }
+        compose.onNodeWithText("Policy (Draft)").performClick()
+        repeat(5) { number ->
+            compose.onNodeWithText("New document").performClick()
+            compose.onNodeWithContentDescription("Document title").performTextReplacement("Long document title number $number")
+        }
+        compose.onNodeWithContentDescription("Document tab Long document title number 4").assertIsDisplayed().assertIsSelected()
+        compose.onNodeWithText("Policy (Draft)").performClick()
+        compose.onNodeWithContentDescription("Document tab Policy").assertIsDisplayed().assertIsSelected()
+    }
+
+    @Test
+    fun panelShortcutsRetainDirtyEditorCaretAndOperateFromTitleAndSearch() {
+        val capabilities = Capabilities()
+        compose.setContent { IntUiTheme(isDark = true) { DocumentScreen("/project", capabilities, { _, _ -> }) } }
+        compose.onNodeWithText("Policy (Draft)").performClick()
+        val body = compose.onNodeWithContentDescription("Markdown body")
+        body.performTextReplacement("unsaved body")
+        body.performTextInputSelection(TextRange(3))
+        val before = body.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange]
+        for ((key, name) in listOf(Key.One to "Project", Key.Two to "Search", Key.Three to "Review", Key.Four to "History")) {
+            val button = compose.onNodeWithContentDescription("Toggle $name panel")
+            shortcut(key)
+            if (name == "Project" || name == "Review") button.assertIsNotSelected() else button.assertIsSelected()
+            body.assertIsFocused().assertTextContains("unsaved body")
+            assertEquals(before, body.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange])
+        }
+        compose.onNodeWithContentDescription("Document title").performClick()
+        shortcut(Key.Three)
+        compose.onNodeWithContentDescription("Toggle Review panel").assertIsSelected()
+        compose.onNodeWithContentDescription("Document title").assertIsFocused()
+        compose.onNodeWithContentDescription("Search saved documents").performTextReplacement("retained query")
+        shortcut(Key.Two)
+        compose.onNodeWithContentDescription("Toggle Search panel").assertIsFocused().assertIsNotSelected()
+        shortcut(Key.Two)
+        compose.onNodeWithContentDescription("Search saved documents").assertTextContains("retained query")
+        body.assertTextContains("unsaved body")
+        compose.runOnIdle { assertEquals(0, capabilities.saves) }
+    }
+
+    @Test
+    fun workspaceBusyAndLifecycleAndUnsavedDialogsBlockPanelShortcuts() {
+        val capabilities = Capabilities()
+        var workspaceBusy by mutableStateOf(false)
+        compose.setContent {
+            IntUiTheme(isDark = true) {
+                DocumentScreen("/project", capabilities, { _, _ -> }, workspaceBusy = workspaceBusy)
+            }
+        }
+        compose.onNodeWithText("Policy (Draft)").performClick()
+        compose.onNodeWithContentDescription("Markdown body").performClick()
+        compose.runOnIdle { workspaceBusy = true }
+        shortcut(Key.One)
+        compose.onNodeWithContentDescription("Toggle Project panel").assertIsSelected().assertIsNotEnabled()
+        compose.runOnIdle { workspaceBusy = false }
+        compose.onNodeWithText("Submit for review").performScrollTo().performClick()
+        compose.onNodeWithText("Cancel").performSemanticsAction(SemanticsActions.RequestFocus) { it() }
+        compose.onAllNodes(isRoot()).onLast().performKeyInput {
+            val modifier = if (System.getProperty("os.name").startsWith("Mac")) Key.MetaLeft else Key.AltLeft
+            keyDown(modifier); pressKey(Key.One); keyUp(modifier)
+        }
+        compose.onNodeWithContentDescription("Toggle Project panel").assertIsSelected().assertIsNotEnabled()
+        compose.onNodeWithText("Cancel").performClick()
+        compose.onNodeWithContentDescription("Markdown body").performTextReplacement("dirty")
+        compose.onNodeWithContentDescription("Close tab Policy").performClick()
+        compose.onNodeWithText("Cancel").performSemanticsAction(SemanticsActions.RequestFocus) { it() }
+        compose.onAllNodes(isRoot()).onLast().performKeyInput {
+            val modifier = if (System.getProperty("os.name").startsWith("Mac")) Key.MetaLeft else Key.AltLeft
+            keyDown(modifier); pressKey(Key.Four); keyUp(modifier)
+        }
+        compose.onNodeWithContentDescription("Toggle Review panel").assertIsSelected()
+        compose.onNodeWithContentDescription("Toggle History panel").assertIsNotSelected()
+        compose.onNodeWithText("Cancel").performClick()
+        compose.onNodeWithContentDescription("Markdown body").assertTextContains("dirty")
+    }
 
     private fun searchField(): SemanticsNodeInteraction {
         if (compose.onAllNodesWithContentDescription("Search saved documents").fetchSemanticsNodes().isEmpty()) {
@@ -130,6 +293,9 @@ class DocumentScreenTest {
         compose.onNodeWithText("Save").performClick()
         compose.onNodeWithText("Save").assertIsNotEnabled()
         compose.onNodeWithText("New document").assertIsNotEnabled()
+        shortcut(Key.Four)
+        compose.onNodeWithContentDescription("Toggle History panel").assertIsNotEnabled().assertIsNotSelected()
+        compose.onNodeWithContentDescription("Toggle Review panel").assertIsSelected()
         compose.runOnIdle { assertEquals(1, capabilities.saves); pending.complete(Result.success(capabilities.first)) }
         compose.onNodeWithText("Draft saved.").assertExists()
         compose.waitUntil(3000) { capabilities.prepares == 2 }

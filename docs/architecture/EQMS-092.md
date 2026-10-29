@@ -157,3 +157,68 @@ direct process boundaries, native verification and local Git trust limitations
 remain; no new trusted clock, remote identity or cryptographic signature is
 provided. Human usability/accessibility and manual workflow testing remain
 required before merge.
+
+## Icon-only tool rails (stacked follow-up)
+
+Issue #50 continues on `feature/eqms-092-tool-rail-icons`, explicitly stacked
+from #61 at `c80db99374821535702be29b455dd05119c6aab5` instead of main.
+Only the four rail controls change: compact Jewel selectable icon buttons,
+themed bundled IntelliJ icons, stable accessible names and hover tooltips.
+Project/Search stay left, Review/History right; panel headings remain text.
+Use a 44dp rail with 36dp hit targets and 20dp icons. Selection and keyboard
+focus remain visible in both themes. Shared JVM UI metadata owns names, icons,
+side and shortcut numbers; no dependency or native/domain change is needed.
+
+Tooltips and the workspace preview-key handler share the mapping: macOS
+Command+1/2/3/4, Windows/Linux Alt+1/2/3/4, in Project/Search/Review/History
+order. Match top-row digits with exactly the designated modifier, key-down
+only, suppress repeats until release, and clear held keys on focus loss.
+Mouse and keyboard use one live busy/modal-guarded toggle path. Opening a
+tool does not steal editor focus; hiding a focused panel returns focus to its
+rail button. Scope keys to the document workspace, never global AWT hooks.
+Unrelated keys pass through; modal windows retain their own input.
+
+Both risk disciplines apply proportionately: icon-only controls reduce
+discoverability, and shortcuts can accidentally hide content or bypass guards.
+Mitigate with truthful tooltips, stable labels/selection/focus, exact modifier
+matching, repeat suppression and mapped editor/modal/busy tests. Toggling must
+not save, mutate lifecycle state, destroy buffers or reset widths/search.
+No new filesystem/network capability or trust boundary is introduced.
+Cross-platform native runtime, human usability and assistive-technology review
+remain manual limitations, not inferred approvals.
+
+### UI/UX review refinement on #62
+
+UI/UX excellence is a core product principle. Tool panels and the central
+editor use clipped 10dp rounded surfaces separated by quiet 8dp split gutters.
+Both side boundaries drag horizontally with an east/west resize cursor when
+enabled; resizing either boundary also resizes the central editor. Retain
+bounded widths and keyboard minus/plus controls, with no free-floating docking.
+Hover hints anchor beside the icon, vertically centered on its bounds rather
+than below the moving cursor, and open inward on both rails.
+
+Replace action-button tabs with compact IntelliJ-style editor tabs: Markdown
+glyph, quiet inactive labels, rounded selected surface, integrated close icon,
+dirty marker and historical qualifier. Reuse Jewel icon/button/theme tokens.
+The pinned Jewel TabStrip hardcodes non-focusable tabs and a generic close
+label and does not propagate enabled to tab selection; use a small shared
+tab primitive to retain descriptive close names, keyboard focus and real
+disabled semantics rather than bypass existing guards to adopt that API.
+Selection stays horizontally scrollable and automatically reveals the active
+tab. No decorative chevron or separate close-button column.
+
+Both risk disciplines remain applicable: mitigate accidental closing and
+content starvation with existing dirty-close guards and bounded split widths;
+retain focus, selected/disabled semantics and buffer ownership during cosmetic
+changes. Test actual drags, disabled drags, cursor feedback, tooltip geometry
+on both sides and tab keyboard/close behavior. Manual visual/accessibility and
+physical platform checks are still required.
+
+The subsequent visual review found that clipping alone was insufficient:
+surfaces matched the shell, and editor-tab hover tokens did not visibly change
+the whole tab. Use a distinct neutral panel fill (darker in dark mode, white
+in light mode) against the unchanged shell. Blend a visible theme-foreground
+hover overlay over the entire tab, including while its close child is hovered;
+disabled tabs do not react. Keep selected styling independently visible.
+Pixel-level regressions must verify fill contrast, exposed rounded corners and
+hover changes away from the close icon, for selected/inactive tabs in both themes.
