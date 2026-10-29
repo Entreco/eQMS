@@ -9,6 +9,7 @@ use std::collections::BTreeMap;
 use std::io::Write;
 use std::path::Path;
 use std::process::{Command, Stdio};
+use std::str::FromStr;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 const PREFIX: &str = "refs/heads/eqms-drafts/";
@@ -31,6 +32,67 @@ struct VerifiedHistory {
     documents: Vec<Document>,
     journal: Vec<u8>,
     last: JournalRecord,
+    lifecycle_events: Vec<LifecycleEvent>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LifecycleState {
+    Draft,
+    InReview,
+    Approved,
+    Effective,
+    Obsolete,
+    Superseded,
+}
+
+impl LifecycleState {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Draft => "Draft",
+            Self::InReview => "In Review",
+            Self::Approved => "Approved",
+            Self::Effective => "Effective",
+            Self::Obsolete => "Obsolete",
+            Self::Superseded => "Superseded",
+        }
+    }
+
+    fn allows(self, next: Self) -> bool {
+        matches!(
+            (self, next),
+            (Self::Draft, Self::InReview)
+                | (Self::InReview, Self::Approved)
+                | (Self::Approved, Self::Effective)
+                | (Self::Effective, Self::Obsolete)
+                | (Self::Effective, Self::Superseded)
+        )
+    }
+}
+
+impl FromStr for LifecycleState {
+    type Err = String;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "Draft" => Ok(Self::Draft),
+            "In Review" | "InReview" => Ok(Self::InReview),
+            "Approved" => Ok(Self::Approved),
+            "Effective" => Ok(Self::Effective),
+            "Obsolete" => Ok(Self::Obsolete),
+            "Superseded" => Ok(Self::Superseded),
+            _ => Err(format!("unknown document lifecycle state: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct LifecycleEvent {
+    pub revision: String,
+    pub event_hash: String,
+    pub content_hash: String,
+    pub from_status: String,
+    pub to_status: String,
+    pub local_timestamp: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -258,6 +320,12 @@ impl Documents {
         self.history_at(id, &self.head(id)?)
     }
 
+    pub fn lifecycle_history(&self, id: &str) -> Result<Vec<LifecycleEvent>, WorkspaceError> {
+        let _lock = self.workspace.acquire_lock()?;
+        self.verify_baseline()?;
+        Ok(self.verified_history(id, &self.head(id)?)?.lifecycle_events)
+    }
+
     pub fn show(&self, id: &str, revision: Option<&str>) -> Result<Document, WorkspaceError> {
         let history = self.history(id)?;
         match revision {
@@ -328,11 +396,123 @@ impl Documents {
         }
         let verified = self.verified_history(id, &current)?;
         let previous = &verified.documents[0];
+        if previous.status != LifecycleState::Draft.as_str() {
+            return Err(error(
+                "document content cannot be saved after leaving Draft; lifecycle rework is not supported",
+            ));
+        }
         let content = canonical(id, title, body)?;
         if previous.content_hash == hash(&content) {
             return Ok(previous.clone());
         }
         self.record(id, &current, Some(expected), &content, Some(&verified))
+    }
+
+    pub fn transition(
+        &self,
+        id: &str,
+        expected: &str,
+        target: LifecycleState,
+    ) -> Result<Document, WorkspaceError> {
+        let _lock = self.workspace.acquire_lock()?;
+        self.verify_baseline()?;
+        let current = self.head(id)?;
+        if expected != current {
+            return Err(error(
+                "document changed since it was opened; reopen before transitioning (no lifecycle state was changed)",
+            ));
+        }
+        let verified = self.verified_history(id, &current)?;
+        let previous = &verified.documents[0];
+        let from = LifecycleState::from_str(&previous.status).map_err(error)?;
+        if !from.allows(target) {
+            return Err(error(format!(
+                "invalid document lifecycle transition: {} -> {}",
+                from.as_str(),
+                target.as_str()
+            )));
+        }
+        self.record_lifecycle(id, expected, from, target, previous, &verified)
+    }
+
+    fn record_lifecycle(
+        &self,
+        id: &str,
+        expected: &str,
+        from: LifecycleState,
+        target: LifecycleState,
+        previous: &Document,
+        verified_parent: &VerifiedHistory,
+    ) -> Result<Document, WorkspaceError> {
+        let parent = expected;
+        ensure_git_identity(self.root())?;
+        let mut journal = verified_parent.journal.clone();
+        let parent_length = journal.len();
+        let path = format!("documents/{id}.md");
+        let event = with_hash(JournalRecord {
+            schema_version: verified_parent.last.schema_version,
+            sequence: verified_parent
+                .last
+                .sequence
+                .checked_add(1)
+                .ok_or_else(|| error("journal sequence overflow"))?,
+            previous_hash: Some(verified_parent.last.hash.clone()),
+            timestamp: timestamp()?,
+            event_type: "document.lifecycle.transition".to_owned(),
+            payload: BTreeMap::from([
+                ("document_id".to_owned(), id.to_owned()),
+                ("expected_revision".to_owned(), expected.to_owned()),
+                ("from_status".to_owned(), from.as_str().to_owned()),
+                ("to_status".to_owned(), target.as_str().to_owned()),
+            ]),
+            content_hashes: BTreeMap::from([(path, previous.content_hash.clone())]),
+            hash: String::new(),
+        })?;
+        serde_json::to_writer(&mut journal, &event).map_err(|e| error(e.to_string()))?;
+        journal.push(b'\n');
+        let journal_oid = input_git(self.root(), &["hash-object", "-w", "--stdin"], &journal)?;
+        let eqms = replace_tree(
+            self.root(),
+            &format!("{parent}:.eqms"),
+            "journal.jsonl",
+            "blob",
+            &journal_oid,
+        )?;
+        let tree = replace_tree(self.root(), parent, ".eqms", "tree", &eqms)?;
+        let revision = input_git(
+            self.root(),
+            &[
+                "-c",
+                "user.useConfigOnly=true",
+                "commit-tree",
+                &tree,
+                "-p",
+                parent,
+            ],
+            format!("Transition document {id} to {}\n", target.as_str()).as_bytes(),
+        )?;
+        if blob(self.root(), &revision, JOURNAL)? != journal {
+            return Err(error(
+                "candidate journal differs from constructed lifecycle event",
+            ));
+        }
+        let (mut document, actual_parent, created) =
+            self.verify_revision(id, &revision, &event, &journal[..parent_length])?;
+        if actual_parent != parent || created {
+            return Err(error("candidate parent differs from verified parent"));
+        }
+        document.status = target.as_str().to_owned();
+        git(
+            self.root(),
+            &[
+                "update-ref",
+                "--no-deref",
+                &format!("{PREFIX}{id}"),
+                &revision,
+                expected,
+            ],
+        )?;
+        Ok(document)
     }
 
     fn record(
@@ -444,6 +624,16 @@ impl Documents {
         Ok(self.verified_history(id, head)?.documents)
     }
 
+    pub(crate) fn history_with_saved_revision_count_at(
+        &self,
+        id: &str,
+        head: &str,
+    ) -> Result<(Vec<Document>, usize), WorkspaceError> {
+        let history = self.verified_history(id, head)?;
+        let saved_revisions = history.documents.len() - history.lifecycle_events.len();
+        Ok((history.documents, saved_revisions))
+    }
+
     fn verified_history(&self, id: &str, head: &str) -> Result<VerifiedHistory, WorkspaceError> {
         validate_id(id)?;
         if !valid_hex(head, &[40, 64]) {
@@ -478,17 +668,65 @@ impl Documents {
                     &journal[..boundaries[event_index - 1]],
                 )
                 .map_err(|cause| error(format!("draft revision {revision}: {cause}")))?;
-            history.push(document);
+            history.push((document, event.clone()));
             if created {
-                return Ok(VerifiedHistory {
-                    documents: history,
-                    journal,
-                    last,
-                });
+                break;
             }
             revision = parent;
             event_index -= 1;
         }
+        history.reverse();
+        let mut state = LifecycleState::Draft;
+        let mut lifecycle_events = Vec::new();
+        for (document, event) in &mut history {
+            match event.event_type.as_str() {
+                "document.created" => state = LifecycleState::Draft,
+                "document.saved" => {
+                    if state != LifecycleState::Draft {
+                        return Err(error(
+                            "document content was saved after leaving Draft; lifecycle history is invalid",
+                        ));
+                    }
+                }
+                "document.lifecycle.transition" => {
+                    let from = LifecycleState::from_str(
+                        event
+                            .payload
+                            .get("from_status")
+                            .ok_or_else(|| error("lifecycle event is missing from_status"))?,
+                    )
+                    .map_err(error)?;
+                    let to = LifecycleState::from_str(
+                        event
+                            .payload
+                            .get("to_status")
+                            .ok_or_else(|| error("lifecycle event is missing to_status"))?,
+                    )
+                    .map_err(error)?;
+                    if from != state || !from.allows(to) {
+                        return Err(error("invalid document lifecycle event history"));
+                    }
+                    lifecycle_events.push(LifecycleEvent {
+                        revision: document.revision.clone(),
+                        event_hash: document.event_hash.clone(),
+                        content_hash: document.content_hash.clone(),
+                        from_status: from.as_str().to_owned(),
+                        to_status: to.as_str().to_owned(),
+                        local_timestamp: event.timestamp.clone(),
+                    });
+                    state = to;
+                }
+                _ => return Err(error("invalid document event in draft history")),
+            }
+            document.status = state.as_str().to_owned();
+        }
+        history.reverse();
+        Ok(VerifiedHistory {
+            documents: history.into_iter().map(|(document, _)| document).collect(),
+            journal,
+            last,
+            lifecycle_events,
+        })
     }
 
     fn verify_revision(
@@ -517,13 +755,34 @@ impl Documents {
             return Err(error("ancestor journal differs from verified head prefix"));
         }
         let created = event.event_type == "document.created";
+        let saved = event.event_type == "document.saved";
+        let lifecycle = event.event_type == "document.lifecycle.transition";
         let expected_payload = if created {
             BTreeMap::from([
                 ("document_id".to_owned(), id.to_owned()),
                 ("base_revision".to_owned(), parent.to_owned()),
             ])
-        } else {
+        } else if saved {
             BTreeMap::from([("document_id".to_owned(), id.to_owned())])
+        } else if lifecycle {
+            BTreeMap::from([
+                ("document_id".to_owned(), id.to_owned()),
+                ("expected_revision".to_owned(), parent.to_owned()),
+                (
+                    "from_status".to_owned(),
+                    event
+                        .payload
+                        .get("from_status")
+                        .cloned()
+                        .unwrap_or_default(),
+                ),
+                (
+                    "to_status".to_owned(),
+                    event.payload.get("to_status").cloned().unwrap_or_default(),
+                ),
+            ])
+        } else {
+            BTreeMap::new()
         };
         let changed = git(
             self.root(),
@@ -542,17 +801,28 @@ impl Documents {
             .split(|b| *b == 0)
             .filter(|p| !p.is_empty())
             .collect();
-        if (!created && event.event_type != "document.saved")
+        let expected_changed = if lifecycle {
+            vec![JOURNAL.as_bytes()]
+        } else {
+            vec![JOURNAL.as_bytes(), path.as_bytes()]
+        };
+        if (!created && !saved && !lifecycle)
             || event.payload != expected_payload
             || event.content_hashes != BTreeMap::from([(path.clone(), hash(&bytes))])
-            || changed.len() != 2
-            || !changed.contains(&JOURNAL.as_bytes())
-            || !changed.contains(&path.as_bytes())
+            || changed.len() != expected_changed.len()
+            || expected_changed
+                .iter()
+                .any(|entry| !changed.contains(entry))
         {
             return Err(error("invalid document revision or audit linkage"));
         }
-        if !created && blob(self.root(), parent, &path)? == bytes {
+        if saved && blob(self.root(), parent, &path)? == bytes {
             return Err(error("unchanged content recorded as a new revision"));
+        }
+        if lifecycle && blob(self.root(), parent, &path)? != bytes {
+            return Err(error(
+                "lifecycle transition changed canonical document content",
+            ));
         }
         let author = git_text(self.root(), &["show", "-s", "--format=%an <%ae>", revision])?
             .trim()
@@ -803,6 +1073,160 @@ mod tests {
         assert_eq!(fs::read(f.0.join(JOURNAL)).unwrap(), journal);
         assert_eq!(fs::read_to_string(f.0.join("untracked")).unwrap(), "keep");
         Workspace::open(&f.0).unwrap().verify().unwrap();
+    }
+
+    #[test]
+    fn lifecycle_transitions_are_strict_durable_and_isolated() {
+        let f = Fixture::new();
+        fs::write(f.0.join("unrelated"), "staged").unwrap();
+        git(&f.0, &["add", "unrelated"]).unwrap();
+        fs::write(f.0.join("untracked"), "keep").unwrap();
+        let baseline = git_text(&f.0, &["rev-parse", "HEAD"]).unwrap();
+        let index = fs::read(f.0.join(".git/index")).unwrap();
+        let journal = fs::read(f.0.join(JOURNAL)).unwrap();
+
+        let docs = f.docs();
+        let initial = docs.create("Policy", "unchanged bytes\n").unwrap();
+        let content = blob(
+            &f.0,
+            &initial.revision,
+            &format!("documents/{}.md", initial.id),
+        )
+        .unwrap();
+        let allowed = [
+            LifecycleState::InReview,
+            LifecycleState::Approved,
+            LifecycleState::Effective,
+            LifecycleState::Superseded,
+        ];
+        let mut current = initial.clone();
+        let mut observed = vec![LifecycleState::Draft.as_str().to_owned()];
+        for target in allowed {
+            let before = current.clone();
+            for invalid in [
+                LifecycleState::Draft,
+                LifecycleState::InReview,
+                LifecycleState::Approved,
+                LifecycleState::Effective,
+                LifecycleState::Obsolete,
+                LifecycleState::Superseded,
+            ] {
+                if LifecycleState::from_str(&before.status)
+                    .unwrap()
+                    .allows(invalid)
+                {
+                    continue;
+                }
+                assert!(
+                    docs.transition(&initial.id, &before.revision, invalid)
+                        .is_err(),
+                    "{} -> {} must be rejected",
+                    before.status,
+                    invalid.as_str()
+                );
+                assert_eq!(docs.show(&initial.id, None).unwrap(), before);
+            }
+            current = docs
+                .transition(&initial.id, &before.revision, target)
+                .unwrap();
+            observed.push(target.as_str().to_owned());
+            assert_eq!(current.status, target.as_str());
+            assert_eq!(
+                blob(
+                    &f.0,
+                    &current.revision,
+                    &format!("documents/{}.md", initial.id)
+                )
+                .unwrap(),
+                content
+            );
+        }
+
+        let stale = docs
+            .transition(&initial.id, &initial.revision, LifecycleState::InReview)
+            .unwrap_err();
+        assert!(stale.to_string().contains("changed since it was opened"));
+        assert_eq!(docs.show(&initial.id, None).unwrap(), current);
+        assert!(
+            docs.save(&initial.id, &current.revision, "Changed", "overwrite")
+                .is_err()
+        );
+        for target in [
+            LifecycleState::Draft,
+            LifecycleState::InReview,
+            LifecycleState::Approved,
+            LifecycleState::Effective,
+            LifecycleState::Obsolete,
+            LifecycleState::Superseded,
+        ] {
+            assert!(
+                docs.transition(&initial.id, &current.revision, target)
+                    .is_err()
+            );
+        }
+
+        let reopened = Documents::open(&f.0).unwrap();
+        assert_eq!(reopened.show(&initial.id, None).unwrap(), current);
+        assert_eq!(
+            reopened
+                .history(&initial.id)
+                .unwrap()
+                .iter()
+                .map(|document| document.status.clone())
+                .rev()
+                .collect::<Vec<_>>(),
+            observed
+        );
+        let events = reopened.lifecycle_history(&initial.id).unwrap();
+        assert_eq!(events.len(), 4);
+        assert_eq!(events[0].from_status, "Draft");
+        assert_eq!(events[0].to_status, "In Review");
+        assert_eq!(events[2].to_status, "Effective");
+        assert_eq!(events[3].to_status, "Superseded");
+        assert!(
+            events
+                .iter()
+                .all(|event| event.content_hash == initial.content_hash)
+        );
+
+        let second = reopened.create("Procedure", "same").unwrap();
+        let mut second_current = second;
+        for target in [
+            LifecycleState::InReview,
+            LifecycleState::Approved,
+            LifecycleState::Effective,
+            LifecycleState::Obsolete,
+        ] {
+            second_current = reopened
+                .transition(&second_current.id, &second_current.revision, target)
+                .unwrap();
+        }
+        assert_eq!(second_current.status, "Obsolete");
+        for target in [
+            LifecycleState::Draft,
+            LifecycleState::InReview,
+            LifecycleState::Approved,
+            LifecycleState::Effective,
+            LifecycleState::Obsolete,
+            LifecycleState::Superseded,
+        ] {
+            assert!(
+                reopened
+                    .transition(&second_current.id, &second_current.revision, target)
+                    .is_err()
+            );
+        }
+        let audit = crate::audit::verify_ledger(&f.0, None).unwrap();
+        assert!(audit.drafts.iter().all(|draft| draft.saved_revisions == 1));
+        assert_eq!(git_text(&f.0, &["rev-parse", "HEAD"]).unwrap(), baseline);
+        assert_eq!(fs::read(f.0.join(".git/index")).unwrap(), index);
+        assert_eq!(fs::read(f.0.join(JOURNAL)).unwrap(), journal);
+        assert_eq!(fs::read_to_string(f.0.join("untracked")).unwrap(), "keep");
+        assert!(
+            git_text(&f.0, &["status", "--porcelain"])
+                .unwrap()
+                .contains("A  unrelated")
+        );
     }
 
     #[test]

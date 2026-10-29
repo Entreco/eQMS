@@ -88,6 +88,7 @@ fn document_commands_persist_drafts_and_report_conflicts() {
     for (args, command) in [
         (vec!["list"], "document.list"),
         (vec!["show", id, "--revision", first], "document.show"),
+        (vec!["status", id], "document.status"),
         (vec!["history", id], "document.history"),
         (vec!["diff", id, first, second], "document.diff"),
     ] {
@@ -108,6 +109,61 @@ fn document_commands_persist_drafts_and_report_conflicts() {
             assert_eq!(result["data"].as_array().unwrap().len(), 2);
         }
     }
+    let invalid_transition = invoke(
+        &["transition", id, "--expected", second, "--to", "Approved"],
+        "",
+    );
+    assert_eq!(invalid_transition.status.code(), Some(1));
+    let invalid: serde_json::Value = serde_json::from_slice(&invalid_transition.stderr).unwrap();
+    assert_cli_envelope(&invalid, "error");
+    assert_eq!(invalid["error"]["code"], "OPERATION_FAILED");
+    let mut revision = second.to_owned();
+    for state in ["In Review", "Approved", "Effective"] {
+        let transitioned = invoke(
+            &["transition", id, "--expected", &revision, "--to", state],
+            "",
+        );
+        assert!(
+            transitioned.status.success(),
+            "{}",
+            String::from_utf8_lossy(&transitioned.stderr)
+        );
+        let result: serde_json::Value = serde_json::from_slice(&transitioned.stdout).unwrap();
+        assert_cli_envelope(&result, "ok");
+        assert_eq!(result["command"], "document.transition");
+        assert_eq!(result["data"]["status"], state);
+        assert_eq!(result["data"]["body"], "Second\n");
+        revision = result["data"]["revision"].as_str().unwrap().to_owned();
+    }
+    let status = invoke(&["status", id], "");
+    let status: serde_json::Value = serde_json::from_slice(&status.stdout).unwrap();
+    assert_cli_envelope(&status, "ok");
+    assert_eq!(status["data"]["status"], "Effective");
+    let human_status = Command::new(env!("CARGO_BIN_EXE_qms"))
+        .args(["document", "status"])
+        .arg(&root)
+        .arg(id)
+        .output()
+        .unwrap();
+    assert!(human_status.status.success());
+    assert!(
+        String::from_utf8(human_status.stdout)
+            .unwrap()
+            .contains("\"status\": \"Effective\"")
+    );
+    let lifecycle = invoke(&["lifecycle-history", id], "");
+    assert!(lifecycle.status.success());
+    let lifecycle: serde_json::Value = serde_json::from_slice(&lifecycle.stdout).unwrap();
+    assert_cli_envelope(&lifecycle, "ok");
+    assert_eq!(lifecycle["command"], "document.lifecycle-history");
+    assert_eq!(lifecycle["data"].as_array().unwrap().len(), 3);
+    assert_eq!(lifecycle["data"][0]["from_status"], "Draft");
+    assert_eq!(lifecycle["data"][2]["to_status"], "Effective");
+    let stale = invoke(
+        &["transition", id, "--expected", second, "--to", "In Review"],
+        "",
+    );
+    assert_eq!(stale.status.code(), Some(1));
     let conflict = invoke(
         &["save", id, "--title", "Quality policy", "--expected", first],
         "Lost",

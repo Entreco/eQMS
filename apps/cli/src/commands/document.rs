@@ -33,6 +33,19 @@ pub(crate) fn command() -> Command {
                 .arg(title_argument())
                 .arg(Arg::new("expected").long("expected").required(true)),
         )
+        .subcommand(
+            operation("transition")
+                .about("Apply an allowed lifecycle transition to a document")
+                .arg(Arg::new("id").required(true))
+                .arg(Arg::new("expected").long("expected").required(true))
+                .arg(
+                    Arg::new("to").long("to").required(true).help(
+                        "Target state: In Review, Approved, Effective, Obsolete, or Superseded",
+                    ),
+                ),
+        )
+        .subcommand(operation("status").arg(Arg::new("id").required(true)))
+        .subcommand(operation("lifecycle-history").arg(Arg::new("id").required(true)))
         .subcommand(operation("history").arg(Arg::new("id").required(true)))
         .subcommand(
             operation("diff")
@@ -82,13 +95,28 @@ pub(crate) fn run(
             .map_err(|e| e.to_string())?;
             serde_json::to_value(document)
         }
-        "list" => serde_json::to_value(docs.list().map_err(|e| e.to_string())?),
-        "show" => serde_json::to_value(
-            docs.show(
-                value("id"),
-                args.get_one::<String>("revision").map(String::as_str),
+        "transition" => {
+            let target = value("to").parse::<eqms_core::document::LifecycleState>()?;
+            serde_json::to_value(
+                docs.transition(value("id"), value("expected"), target)
+                    .map_err(|e| e.to_string())?,
             )
-            .map_err(|e| e.to_string())?,
+        }
+        "list" => serde_json::to_value(docs.list().map_err(|e| e.to_string())?),
+        "show" | "status" => {
+            let revision = if operation == "show" {
+                args.get_one::<String>("revision").map(String::as_str)
+            } else {
+                None
+            };
+            serde_json::to_value(
+                docs.show(value("id"), revision)
+                    .map_err(|e| e.to_string())?,
+            )
+        }
+        "lifecycle-history" => serde_json::to_value(
+            docs.lifecycle_history(value("id"))
+                .map_err(|e| e.to_string())?,
         ),
         "history" => serde_json::to_value(docs.history(value("id")).map_err(|e| e.to_string())?),
         "diff" => serde_json::to_value(

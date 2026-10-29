@@ -284,8 +284,8 @@ pub fn verify_ledger(
             })?;
             let mut drafts = Vec::new();
             for (id, head) in sources {
-                let revisions = documents
-                    .history_at(id, head)
+                let (revisions, saved_revisions) = documents
+                    .history_with_saved_revision_count_at(id, head)
                     .map_err(|cause| error(format!("draft {id} at {head}: {cause}")))?;
                 let creation = revisions
                     .last()
@@ -300,7 +300,7 @@ pub fn verify_ledger(
                 drafts.push(DraftVerification {
                     id: id.clone(),
                     revision: head.clone(),
-                    saved_revisions: revisions.len(),
+                    saved_revisions,
                 });
             }
             Ok(LedgerVerification {
