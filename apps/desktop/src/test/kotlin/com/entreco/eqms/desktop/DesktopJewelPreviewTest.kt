@@ -3,6 +3,7 @@ package com.entreco.eqms.desktop
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.awt.ComposeWindow
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.graphics.toAwtImage
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -181,6 +182,11 @@ class DesktopJewelPreviewTest {
             }
             compose.waitForIdle()
         }
+        fun captureDocument(name: String) {
+            compose.waitForIdle()
+            val image = compose.onNodeWithContentDescription("Document editor panel").captureToImage()
+            check(ImageIO.write(image.toAwtImage(), "png", File(output, name)))
+        }
         fun captureTooltip(name: String, tool: String = "Project", number: Int = 1) {
             compose.mainClock.autoAdvance = false
             val bounds = compose.onNodeWithContentDescription("Toggle $tool panel").fetchSemanticsNode().boundsInRoot
@@ -268,11 +274,11 @@ class DesktopJewelPreviewTest {
             if (theme == "dark") compose.onNodeWithText("Dark theme").activate()
             selectMode("Preview")
             compose.waitUntil(30_000) { compose.onAllNodesWithText("Table of contents").fetchSemanticsNodes().isNotEmpty() }
-            capture("document-preview-$theme.png")
+            captureDocument("document-preview-$theme.png")
             selectMode("Split")
-            capture("document-split-$theme.png")
+            captureDocument("document-split-$theme.png")
             selectMode("Source")
-            capture("document-source-$theme.png")
+            captureDocument("document-source-$theme.png")
         }
         selectMode("Preview")
         compose.onNodeWithText("Table of contents").activate()
@@ -281,6 +287,6 @@ class DesktopJewelPreviewTest {
         compose.onNodeWithContentDescription("Rendered document content").performScrollToNode(hasText("[Image: Synthetic workflow]"))
         compose.waitUntil(10_000) { compose.onAllNodesWithContentDescription("Synthetic workflow").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithContentDescription("Synthetic workflow").performScrollTo()
-        capture("document-image-dark.png")
+        captureDocument("document-image-dark.png")
     }
 }
