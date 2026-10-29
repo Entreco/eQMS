@@ -31,14 +31,15 @@ fun SearchPanel(
     Column(modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
         WorkspaceTextField(
             value = search.query, onValueChange = search::updateQuery,
-            label = "Search saved drafts", singleLine = true,
+            label = "Search saved documents", singleLine = true,
+            enabled = enabled,
             modifier = Modifier.fillMaxWidth(),
         )
-        if (search.preparing) Text("Preparing saved-draft search...")
-        if (search.loading && !search.preparing) Text("Searching saved drafts...")
+        if (search.preparing) Text("Preparing saved-document search...")
+        if (search.loading && !search.preparing) Text("Searching saved documents...")
         search.error?.let {
             Text(it, color = JewelTheme.globalColors.text.error)
-            OutlinedButton(onClick = search::refresh) { Text("Refresh search") }
+            OutlinedButton(enabled = enabled, onClick = search::refresh) { Text("Refresh search") }
         }
         key(renderRequest?.generation) {
             LazyColumn(Modifier.fillMaxWidth().weight(1f).onGloballyPositioned {
@@ -48,8 +49,8 @@ fun SearchPanel(
                     documentsContent()
                 } else {
                     displayedResults?.let { results ->
-                        if (results.historical) item { Text("Draft/history matches — older saved revisions, read-only.") }
-                        if (SearchGroup.entries.all { results.page(it).hits.isEmpty() }) item { Text("No matching saved drafts.") }
+                        if (results.historical) item { Text("History matches - older saved revisions, read-only.") }
+                        if (SearchGroup.entries.all { results.page(it).hits.isEmpty() }) item { Text("No matching saved documents.") }
                         SearchGroup.entries.forEach { group ->
                             item(key = group) { Text(group.name, Modifier.padding(vertical = 8.dp), fontWeight = FontWeight.SemiBold) }
                             items(results.page(group).hits, key = { "${group.name}:${it.id}:${it.revision}" }) { hit ->
@@ -59,7 +60,7 @@ fun SearchPanel(
                                     SearchGroup.Content -> "${hit.title} | ${hit.excerpt}"
                                 }
                                 WorkspaceItem(
-                                    if (results.historical) "${hit.title} (Draft/history)\n" +
+                                    if (results.historical) "${hit.title} (Saved revision)\n" +
                                         "Revision: ${hit.revision}\nConfigured author: ${hit.configuredAuthor}\n" +
                                         "Local timestamp: ${hit.localTimestamp}\n${hit.excerpt}" else summary,
                                     selected = isSelected(hit, results.historical),
@@ -69,7 +70,7 @@ fun SearchPanel(
                             }
                             if (results.page(group).nextOffset != null) {
                                 item(key = "more:$group") {
-                                    OutlinedButton(enabled = !search.loading, onClick = { search.more(group) }) {
+                                    OutlinedButton(enabled = enabled && !search.loading, onClick = { search.more(group) }) {
                                         Text("Show more ${group.name}")
                                     }
                                 }

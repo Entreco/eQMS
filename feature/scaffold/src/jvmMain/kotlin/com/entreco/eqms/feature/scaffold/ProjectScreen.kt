@@ -2,6 +2,7 @@ package com.entreco.eqms.feature.scaffold
 
 import com.entreco.eqms.feature.document.DocumentCapabilities
 import com.entreco.eqms.feature.document.DocumentScreen
+import com.entreco.eqms.feature.document.DocumentNavigationController
 import com.entreco.eqms.feature.ui.*
 
 import androidx.compose.foundation.background
@@ -62,7 +63,7 @@ fun ProjectScreen(
     var creating by remember { mutableStateOf<Boolean?>(null) }
     var documentDirty by remember { mutableStateOf(false) }
     var documentBusy by remember { mutableStateOf(false) }
-    var pendingNavigation by remember { mutableStateOf<(() -> Unit)?>(null) }
+    val documentNavigation = remember { DocumentNavigationController() }
     var localDark by remember { mutableStateOf(true) }
     val dark = chrome?.dark ?: localDark
     var appearanceError by remember {
@@ -72,7 +73,7 @@ fun ProjectScreen(
     var chromeDialog by remember { mutableStateOf<DesktopCommand?>(null) }
     var aboutVisible by remember { mutableStateOf(false) }
     var aboutRequest by remember { mutableIntStateOf(0) }
-    val interactive = !busy && !documentBusy && creating == null && pendingNavigation == null &&
+    val interactive = !busy && !documentBusy && creating == null &&
         chromeDialog == null && !savingAppearance
 
     fun changeAppearance(value: Boolean) {
@@ -95,7 +96,7 @@ fun ProjectScreen(
     }
 
     fun navigate(action: () -> Unit) {
-        if (documentDirty) pendingNavigation = action else action()
+        documentNavigation.request(action)
     }
 
     SideEffect {
@@ -111,7 +112,7 @@ fun ProjectScreen(
                     aboutVisible = true
                     aboutRequest++
                 }
-                DesktopCommand.NewProject -> navigate { creating = true }
+                DesktopCommand.NewProject -> { creating = true }
                 DesktopCommand.CloseProject -> if (project != null) navigate {
                     project = null
                     projectGeneration++
@@ -154,8 +155,8 @@ fun ProjectScreen(
             },
             {
                 Row(headerActionsModifier, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    OutlinedButton(enabled = interactive, onClick = { navigate { creating = true } }) { Text("Create project") }
-                    OutlinedButton(enabled = interactive, onClick = { navigate { creating = false } }) { Text("Open project") }
+                    OutlinedButton(enabled = interactive, onClick = { creating = true }) { Text("Create project") }
+                    OutlinedButton(enabled = interactive, onClick = { creating = false }) { Text("Open project") }
                     OutlinedButton(enabled = interactive, onClick = { changeAppearance(!dark) }) { Text(if (dark) "Light theme" else "Dark theme") }
                 }
             },
@@ -168,10 +169,11 @@ fun ProjectScreen(
                             if (path != null && documents != null) {
                                 key(path, projectGeneration) {
                                     DocumentScreen(
-                                        path, documents, requestNavigation = { navigate(it) },
+                                        path, documents,
                                         onStateChanged = { dirty, working -> documentDirty = dirty; documentBusy = working },
                                         modifier = Modifier.fillMaxSize(),
                                         workspaceBusy = busy || creating != null || chromeDialog != null || savingAppearance,
+                                        navigation = documentNavigation,
                                     )
                                 }
                             } else {
@@ -227,19 +229,6 @@ fun ProjectScreen(
                             }
                         }
                     }
-                    pendingNavigation?.let { action ->
-                        WorkspaceDialog(
-                            onDismissRequest = { pendingNavigation = null },
-                            title = { Text("Unsaved changes") },
-                            text = { Text("Discard your unsaved document edits?") },
-                            confirmButton = {
-                                DefaultButton(onClick = { pendingNavigation = null; documentDirty = false; action() }) { Text("Discard changes") }
-                            },
-                            dismissButton = {
-                                OutlinedButton(onClick = { pendingNavigation = null }) { Text("Keep editing") }
-                            },
-                        )
-                    }
                     creating?.let { create ->
                         DirectoryDialog(
                             capabilities = capabilities,
@@ -257,10 +246,12 @@ fun ProjectScreen(
                                     try {
                                         capabilities.openProject(path, create).fold(
                                             onSuccess = {
-                                                project = it
-                                                projectGeneration++
-                                                error = false
-                                                message = if (create) "Project created successfully." else "Project verified and opened."
+                                                navigate {
+                                                    project = it
+                                                    projectGeneration++
+                                                    error = false
+                                                    message = if (create) "Project created successfully." else "Project verified and opened."
+                                                }
                                             },
                                             onFailure = {
                                                 error = true

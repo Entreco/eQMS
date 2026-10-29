@@ -50,8 +50,10 @@ fun WorkspaceTextField(
     enabled: Boolean = true,
     readOnly: Boolean = false,
     singleLine: Boolean = false,
+    textState: MutableState<TextFieldValue>? = null,
 ) {
-    var field by remember { mutableStateOf(TextFieldValue(value)) }
+    val localField = remember { mutableStateOf(TextFieldValue(value)) }
+    var field by (textState ?: localField)
     val displayed = if (field.text == value) field else field.copy(text = value, selection = TextRange(value.length))
     val change: (TextFieldValue) -> Unit = {
         field = it

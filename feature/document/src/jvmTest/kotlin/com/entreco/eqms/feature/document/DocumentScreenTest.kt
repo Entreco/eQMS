@@ -8,6 +8,12 @@ import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.text.TextRange
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.requiredSize
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import kotlin.test.*
 import kotlinx.coroutines.CompletableDeferred
 import org.junit.Rule
@@ -16,7 +22,24 @@ import org.junit.Test
 class DocumentScreenTest {
     @get:Rule val compose = createComposeRule()
 
+    private fun searchField(): SemanticsNodeInteraction {
+        if (compose.onAllNodesWithContentDescription("Search saved documents").fetchSemanticsNodes().isEmpty()) {
+            compose.onNodeWithContentDescription("Toggle Search panel").performClick()
+        }
+        return compose.onNodeWithContentDescription("Search saved documents")
+    }
+
     private class Capabilities : DocumentCapabilities {
+        var transitionFails = false
+        var transitions = 0
+        override suspend fun transitionDocument(project: String, document: DocumentSnapshot, target: DocumentStatus): Result<DocumentSnapshot> {
+            transitions++
+            if (transitionFails) return Result.failure(IllegalStateException("Stale lifecycle request"))
+            saved = document.copy(status = target, revision = "transition-$transitions")
+            return Result.success(saved)
+        }
+        override suspend fun documentLifecycleHistory(project: String, id: String) =
+            Result.success(emptyList<DocumentLifecycleEvent>())
         val first = DocumentSnapshot("DOC-1", "Policy", "original", "first", "hash", "event", "Test", "1")
         var saved = first
         var fail = false
@@ -33,8 +56,12 @@ class DocumentScreenTest {
             lists++
             return Result.success(listOf(saved))
         }
-        override suspend fun createDocument(project: String, title: String, body: String): Result<DocumentSnapshot> =
-            saveDocument(project, first.id, first.revision, title, body)
+        override suspend fun createDocument(project: String, title: String, body: String): Result<DocumentSnapshot> {
+            saves++
+            pending?.let { return it.await() }
+            if (fail) return Result.failure(IllegalArgumentException("Conflict: edits not saved"))
+            return Result.success(first.copy(id = "DOC-new-$saves", title = title, body = body, revision = "created"))
+        }
         override suspend fun saveDocument(project: String, id: String, expected: String, title: String, body: String): Result<DocumentSnapshot> {
             saves++
             pending?.let { return it.await() }
@@ -71,7 +98,7 @@ class DocumentScreenTest {
         var dirty = false
         compose.setContent {
             IntUiTheme(isDark = true) {
-                DocumentScreen("/project", capabilities, { it() }, { value, _ -> dirty = value })
+                DocumentScreen("/project", capabilities, { value, _ -> dirty = value })
             }
         }
         compose.onNodeWithText("Policy (Draft)").performClick()
@@ -84,8 +111,8 @@ class DocumentScreenTest {
         compose.onNodeWithText("Save").performClick()
         compose.onNodeWithText("Draft saved.").assertExists()
         compose.runOnIdle { assertFalse(dirty) }
-        compose.onNodeWithText("History").performClick()
-        compose.onNodeWithText("Draft history").assertExists()
+        compose.onNodeWithContentDescription("Toggle History panel").performClick()
+        compose.onNodeWithText("Older revision").assertExists()
         compose.onNodeWithText("Compare").performClick()
         compose.onNodeWithText("-original\n+edited").assertExists()
     }
@@ -95,7 +122,7 @@ class DocumentScreenTest {
         val capabilities = Capabilities()
         val pending = CompletableDeferred<Result<DocumentSnapshot>>()
         capabilities.pending = pending
-        compose.setContent { IntUiTheme(isDark = true) { DocumentScreen("/project", capabilities, { it() }, { _, _ -> }) } }
+        compose.setContent { IntUiTheme(isDark = true) { DocumentScreen("/project", capabilities, { _, _ -> }) } }
         compose.onNodeWithText("New document").performClick()
         compose.onNodeWithText("Save").assertIsNotEnabled()
         compose.onNodeWithContentDescription("Document title").performTextInput("New policy")
@@ -111,39 +138,25 @@ class DocumentScreenTest {
     }
 
     @Test
-    fun historicalSearchGuardsDirtyNavigationAndCannotOverwriteLatest() {
+    fun historicalSearchPreservesDirtyLatestTabAndCannotOverwriteIt() {
         val capabilities = Capabilities()
         capabilities.saved = capabilities.first.copy(title = "Latest policy", body = "latest", revision = "second")
         val hit = SearchHit(capabilities.first.id, "Policy", "first", "Test", "1", "original")
         capabilities.searchResult = capabilities.searchResult.copy(
             historical = true, documents = SearchPage(listOf(hit), null),
         )
-        var allowNavigation = false
-        var guarded = false
         compose.setContent {
             IntUiTheme(isDark = true) {
-                DocumentScreen("/project", capabilities, {
-                    if (allowNavigation) it() else guarded = true
-                }, { _, _ -> })
+                DocumentScreen("/project", capabilities, { _, _ -> })
             }
         }
-        compose.runOnIdle { allowNavigation = true }
         compose.onNodeWithText("Latest policy (Draft)").performClick()
         compose.onNodeWithContentDescription("Markdown body").performTextReplacement("unsaved latest")
-        compose.runOnIdle { allowNavigation = false }
-        compose.onNodeWithContentDescription("Search saved drafts").performTextReplacement("original")
+        searchField().performTextReplacement("original")
         compose.waitUntil(3000) { capabilities.queries.isNotEmpty() }
-        compose.onNodeWithText("Draft/history matches", substring = true).assertExists()
-        compose.onNodeWithText("Policy (Draft/history)", substring = true).performClick()
-        compose.runOnIdle {
-            assertTrue(guarded)
-            assertTrue(capabilities.reads.isEmpty())
-            assertEquals(listOf("original"), capabilities.queries)
-            allowNavigation = true
-        }
-        compose.onNodeWithContentDescription("Markdown body").assertTextContains("unsaved latest")
-        compose.onNodeWithText("Policy (Draft/history)", substring = true).performClick()
-        compose.onNodeWithText("Draft/history — read-only saved revision").assertExists()
+        compose.onNodeWithText("History matches", substring = true).assertExists()
+        compose.onNodeWithText("Policy (Saved revision)", substring = true).performClick()
+        compose.onNodeWithText("Saved revision - read-only").assertExists()
         compose.onNodeWithText("Save").assertIsNotEnabled()
         compose.onNodeWithContentDescription("Markdown body").assertTextContains("original")
         compose.runOnIdle {
@@ -151,10 +164,11 @@ class DocumentScreenTest {
             assertEquals(0, capabilities.saves)
             assertEquals("latest", capabilities.saved.body)
         }
-        compose.onNodeWithText("Return to latest draft").performClick()
-        compose.onNodeWithContentDescription("Markdown body").assertTextContains("latest")
+        compose.onNodeWithText("Return to latest document").performClick()
+        compose.onNodeWithContentDescription("Markdown body").assertTextContains("unsaved latest")
         compose.onNodeWithText("Save").assertIsEnabled()
-        compose.onNodeWithContentDescription("Search saved drafts").performTextClearance()
+        searchField().performTextClearance()
+        compose.onNodeWithContentDescription("Toggle Project panel").performClick()
         compose.onNodeWithText("Latest policy (Draft)").assertExists()
     }
 
@@ -166,10 +180,10 @@ class DocumentScreenTest {
         capabilities.searchResult = capabilities.searchResult.copy(documents = SearchPage(listOf(hit), null))
         compose.setContent {
             IntUiTheme(isDark = true) {
-                DocumentScreen("/project", capabilities, { it() }, { _, _ -> }, onSearchResultsLaidOut = { timings += it })
+                DocumentScreen("/project", capabilities, { _, _ -> }, onSearchResultsLaidOut = { timings += it })
             }
         }
-        compose.onNodeWithContentDescription("Search saved drafts").performTextReplacement("policy")
+        searchField().performTextReplacement("policy")
         compose.waitUntil(3000) { capabilities.queries.isNotEmpty() }
         compose.onNodeWithText("Policy", substring = false).performClick()
         compose.runOnIdle {
@@ -192,8 +206,8 @@ class DocumentScreenTest {
         val capabilities = Capabilities()
         val hit = SearchHit(capabilities.first.id, "Policy", "first", "Test", "1", "saved excerpt")
         capabilities.searchResult = capabilities.searchResult.copy(documents = SearchPage(listOf(hit), null))
-        compose.setContent { IntUiTheme(isDark = true) { DocumentScreen("/project", capabilities, { it() }, { _, _ -> }) } }
-        compose.onNodeWithContentDescription("Search saved drafts").performTextReplacement("policy")
+        compose.setContent { IntUiTheme(isDark = true) { DocumentScreen("/project", capabilities, { _, _ -> }) } }
+        searchField().performTextReplacement("policy")
         compose.waitUntil(3000) { capabilities.queries.isNotEmpty() }
         compose.runOnIdle {
             capabilities.saved = capabilities.first.copy(revision = "second", body = "external update")
@@ -226,8 +240,8 @@ class DocumentScreenTest {
             authors = SearchPage(listOf(hits.first()), null),
             content = SearchPage(listOf(hits.first()), 5),
         )
-        compose.setContent { IntUiTheme(isDark = true) { DocumentScreen("/project", capabilities, { it() }, { _, _ -> }) } }
-        compose.onNodeWithContentDescription("Search saved drafts").performTextReplacement("title")
+        compose.setContent { IntUiTheme(isDark = true) { DocumentScreen("/project", capabilities, { _, _ -> }) } }
+        searchField().performTextReplacement("title")
         compose.waitUntil(3000) { capabilities.queries.isNotEmpty() }
         compose.onNodeWithText("Title 0", substring = false).assertExists()
         compose.onNodeWithText("Title 19", substring = false).assertDoesNotExist()
@@ -246,12 +260,12 @@ class DocumentScreenTest {
         val timings = mutableListOf<SearchRenderTiming>()
         compose.setContent {
             IntUiTheme(isDark = true) {
-                DocumentScreen("/project", capabilities, { it() }, { _, _ -> }, onSearchResultsLaidOut = { timings += it })
+                DocumentScreen("/project", capabilities, { _, _ -> }, onSearchResultsLaidOut = { timings += it })
             }
         }
         val queries = listOf("And", "risk", "And", "trace", "risk")
         queries.forEachIndexed { index, query ->
-            compose.onNodeWithContentDescription("Search saved drafts").performTextReplacement(query)
+            searchField().performTextReplacement(query)
             compose.waitUntil(3000) { timings.size > index }
             compose.runOnIdle {
                 assertEquals(index + 1, timings.size)
@@ -266,14 +280,14 @@ class DocumentScreenTest {
     fun comparisonErrorsAreVisibleAndClosingPanelRestoresEditor() {
         val capabilities = Capabilities().apply { diffFails = true }
         compose.setContent {
-            IntUiTheme(isDark = true) { DocumentScreen("/project", capabilities, { it() }, { _, _ -> }) }
+            IntUiTheme(isDark = true) { DocumentScreen("/project", capabilities, { _, _ -> }) }
         }
         compose.onNodeWithText("Policy (Draft)").performClick()
-        compose.onNodeWithText("History").performClick()
+        compose.onNodeWithContentDescription("Toggle History panel").performClick()
         compose.onNodeWithText("Compare").performClick()
         compose.onNodeWithText("Comparison unavailable").assertExists()
-        compose.onNodeWithText("New document").assertIsNotEnabled()
-        compose.onNodeWithText("Close history").performClick()
+        compose.onNodeWithText("New document").assertIsEnabled()
+        compose.onNodeWithContentDescription("Hide History panel").performClick()
         compose.onNodeWithText("New document").assertIsEnabled()
         compose.onNodeWithContentDescription("Markdown body").assertTextContains("original")
     }
@@ -282,7 +296,7 @@ class DocumentScreenTest {
     fun documentRowsSupportKeyboardFocusAndActivation() {
         val capabilities = Capabilities()
         compose.setContent {
-            IntUiTheme(isDark = true) { DocumentScreen("/project", capabilities, { it() }, { _, _ -> }) }
+            IntUiTheme(isDark = true) { DocumentScreen("/project", capabilities, { _, _ -> }) }
         }
         compose.onNodeWithText("Policy (Draft)").performSemanticsAction(SemanticsActions.RequestFocus) { it() }
         compose.onNodeWithText("Policy (Draft)").assertIsFocused()
@@ -291,4 +305,120 @@ class DocumentScreenTest {
         compose.onNodeWithText("Policy (Draft)").assertIsSelected()
     }
 
+    @Test
+    fun confirmedLifecycleLocksContentAndShowsOnlyObservedStateOnFailure() {
+        val capabilities = Capabilities()
+        compose.setContent { IntUiTheme(isDark = true) { DocumentScreen("/project", capabilities, { _, _ -> }) } }
+        compose.onNodeWithText("Policy (Draft)").performClick()
+        compose.onNodeWithText("Submit for review").performScrollTo().performClick()
+        compose.onNodeWithText("Cancel").performClick()
+        compose.runOnIdle { assertEquals(0, capabilities.transitions) }
+        compose.onNodeWithContentDescription("Markdown body").performTextReplacement("dirty")
+        compose.onNodeWithText("Submit for review").assertIsNotEnabled()
+        compose.onNodeWithText("Save").performScrollTo().performClick()
+        for (action in listOf("Submit for review", "Approve", "Publish")) {
+            compose.onNodeWithText(action).performScrollTo().performClick()
+            compose.onNodeWithText("Confirm").performClick()
+            compose.onNodeWithText("Save").assertIsNotEnabled()
+        }
+        compose.runOnIdle { capabilities.transitionFails = true }
+        compose.onNodeWithText("Mark obsolete").performScrollTo().performClick()
+        compose.onNodeWithText("Confirm").performClick()
+        compose.onNodeWithText("Stale lifecycle request").assertExists()
+        compose.runOnIdle { assertEquals(DocumentStatus.Effective, capabilities.saved.status) }
+        compose.runOnIdle { capabilities.transitionFails = false }
+        compose.onNodeWithText("Mark obsolete").performScrollTo().performClick()
+        compose.onNodeWithText("Confirm").performClick()
+        compose.runOnIdle { assertEquals(DocumentStatus.Obsolete, capabilities.saved.status) }
+        compose.onNodeWithText("Mark obsolete").assertDoesNotExist()
+        compose.onNodeWithText("Save").assertIsNotEnabled()
+    }
+
+    @Test
+    fun panelsAndTabsRetainTextAndCaretWhileDirtyCloseCanBeCancelled() {
+        val capabilities = Capabilities()
+        compose.setContent { IntUiTheme(isDark = true) { DocumentScreen("/project", capabilities, { _, _ -> }) } }
+        compose.onNodeWithText("Policy (Draft)").performClick()
+        compose.onNodeWithContentDescription("Markdown body").performTextReplacement("keep policy edits")
+        compose.onNodeWithContentDescription("Markdown body").performTextInputSelection(TextRange(6))
+        compose.onNodeWithText("New document").performClick()
+        compose.onNodeWithContentDescription("Document title").performTextInput("Second")
+        compose.onNodeWithContentDescription("Document tab Policy").performClick()
+        compose.onNodeWithContentDescription("Markdown body").assertTextContains("keep policy edits")
+        assertEquals(TextRange(6), compose.onNodeWithContentDescription("Markdown body").fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange])
+        compose.onNodeWithContentDescription("Widen Project panel").performClick()
+        compose.onNodeWithContentDescription("Narrow Project panel").performClick()
+        compose.onNodeWithContentDescription("Hide Project panel").performClick()
+        compose.onNodeWithContentDescription("Toggle Project panel").performClick()
+        compose.onNodeWithContentDescription("Hide Review panel").performClick()
+        compose.onNodeWithContentDescription("Toggle Review panel").performClick()
+        compose.onNodeWithContentDescription("Markdown body").assertTextContains("keep policy edits")
+        compose.onNodeWithContentDescription("Close tab Policy").performClick()
+        compose.onNodeWithText("Unsaved changes").assertExists()
+        compose.onNodeWithText("Cancel").performClick()
+        compose.onNodeWithContentDescription("Markdown body").assertTextContains("keep policy edits")
+        compose.onNodeWithContentDescription("Close tab Policy").performClick()
+        compose.onNodeWithText("Discard changes").performClick()
+        compose.onNodeWithContentDescription("Document title").assertTextContains("Second")
+    }
+
+    @Test
+    fun minimumSizeKeepsEditorAccessibleAndPanelsHaveKeyboardControls() {
+        val capabilities = Capabilities()
+        compose.setContent {
+            IntUiTheme(isDark = true) {
+                Box(Modifier.requiredSize(960.dp, 720.dp)) {
+                    DocumentScreen("/project", capabilities, { _, _ -> })
+                }
+            }
+        }
+        compose.onNodeWithText("Policy (Draft)").performClick()
+        repeat(15) { compose.onNodeWithContentDescription("Widen Project panel").performClick() }
+        repeat(15) { compose.onNodeWithContentDescription("Widen Review panel").performClick() }
+        compose.onNodeWithContentDescription("Markdown body").assertIsDisplayed()
+        assertTrue(compose.onNodeWithContentDescription("Markdown body").fetchSemanticsNode().boundsInRoot.width >= 180f)
+        compose.onNodeWithContentDescription("Hide Project panel")
+            .performSemanticsAction(SemanticsActions.RequestFocus) { it() }
+        compose.onNodeWithContentDescription("Hide Project panel").performKeyInput { pressKey(Key.Enter) }
+        compose.onNodeWithText("New document").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Toggle Project panel")
+            .performSemanticsAction(SemanticsActions.RequestFocus) { it() }
+        compose.onNodeWithContentDescription("Toggle Project panel").performKeyInput { pressKey(Key.Enter) }
+        compose.onNodeWithText("New document").assertExists()
+    }
+
+    @Test
+    fun workspaceCloseOffersSaveAllAndFailedSavePreventsNavigation() {
+        val capabilities = Capabilities()
+        val navigation = DocumentNavigationController()
+        var closed = false
+        compose.setContent {
+            IntUiTheme(isDark = true) {
+                DocumentScreen("/project", capabilities, { _, _ -> }, navigation = navigation)
+            }
+        }
+        compose.onNodeWithText("Policy (Draft)").performClick()
+        compose.onNodeWithContentDescription("Markdown body").performTextReplacement("first edit")
+        compose.onNodeWithText("New document").performClick()
+        compose.onNodeWithContentDescription("Document title").performTextInput("Second")
+        compose.runOnIdle { navigation.request { closed = true } }
+        compose.onNodeWithText("Save all").assertExists()
+        compose.onNodeWithText("Discard all").assertExists()
+        compose.onNodeWithText("Cancel").performClick()
+        compose.runOnIdle {
+            assertFalse(closed)
+            capabilities.fail = true
+            navigation.request { closed = true }
+        }
+        compose.onNodeWithText("Save all").performClick()
+        compose.onNodeWithContentDescription("Markdown body").assertTextContains("first edit")
+        compose.onNodeWithText("Conflict: edits not saved").assertExists()
+        compose.runOnIdle {
+            assertFalse(closed)
+            capabilities.fail = false
+            navigation.request { closed = true }
+        }
+        compose.onNodeWithText("Save all").performClick()
+        compose.runOnIdle { assertTrue(closed); assertEquals(3, capabilities.saves) }
+    }
 }

@@ -97,3 +97,63 @@ Risk Management and Security Risk Management both apply proportionately.
 
 Requirements and tests are in [EQMS-092 requirements](../requirements/EQMS-092.md)
 and [test specification](../testing/EQMS-092.md). Draft records are not approvals.
+
+## Approved document workspace increment
+
+Issue #50 reuses EQMS-092 for the document lifecycle UI, depending on #16 and
+draft PR #60. The user approved stacking `feature/eqms-092-document-workspace`
+on lifecycle tip `4be3b76054d283fb885f91b0ce79da2f5afd0d0f`, rather than
+main. This supersedes single-active-tab/no-review scope above, not historical
+evidence or EQMS-093's unified chrome. The eventual draft PR targets the
+lifecycle branch until the user decides to consolidate.
+
+Use the supplied mockup for structure only: selectable left Project/Search
+tools, central closable document tabs and selectable right Review/History
+tools. Panels collapse/resize with bounded widths; defaults are Project and
+Review open. Layout and tabs are session-only. Do not invent a folder hierarchy
+or implement docking, rich text, comments, reviewer assignment or traceability.
+
+One project-scoped document state owner holds every tab's loaded snapshot,
+expected revision, title/body, dirty/error state and history. Latest tabs
+deduplicate by document ID; read-only historical tabs by ID and exact revision.
+New tabs have stable local keys until creation. Tab switching retains edits
+without prompting; hiding panels/theme changes must not destroy buffers.
+Async reads apply only to their source project/tab and must not overwrite
+dirty text. UI writes are serialized; external changes fail through Rust's
+expected-revision checks. Successful writes refresh search separately: a
+failed index refresh is not a failed save/transition.
+
+The scaffold delegates destructive navigation to the document workspace
+rather than duplicating dirty state decisions. Closing dirty tabs offers
+Save/Discard/Cancel; project switching/closing and quit offer Save all/Discard
+all/Cancel. Invalid titles or failed saves stop navigation and retain text.
+Partial Save all keeps successful saves and names/focuses the failed tab.
+Cancelled/failed project opening retains the prior workspace; discard and
+workspace destruction happen only on a successful, confirmed navigation.
+
+The common capability contract carries typed status/events; apps:desktop
+strictly decodes all six native statuses and invokes transition/history with
+literal arguments and versioned envelopes. Missing/unknown status fails rather
+than defaulting to Draft. Rust alone validates the transition policy. UI action
+availability is advisory: Draft -> Submit for review, In Review -> Approve,
+Approved -> Publish (Effective), Effective -> Mark obsolete/Mark superseded.
+All actions require confirmation and a clean, saved, latest tab. Historical
+and terminal tabs cannot transition. After submission content is read-only;
+rework is unavailable. The Review tool explains these restrictions.
+
+Publish is only the existing internal Effective state: no baseline merge,
+immutable release record, external distribution or regulatory acceptance.
+Approval is a local lifecycle event, not signing, authenticated reviewer
+identity or role authorization. History preserves exact statuses/revisions,
+content/event hashes and configured identity/local-time limitations.
+Search hits without status use neutral saved-document/revision wording.
+
+Risk Management and Security Risk Management both apply. Lost buffers and
+wrong-tab responses are mitigated by project/tab-owned state, source identity
+checks and save/close guards. Stale transitions and protocol errors fail
+explicitly and cannot change observed status optimistically. Confirmations
+and accurate limits mitigate false approval/publication assurance. Existing
+direct process boundaries, native verification and local Git trust limitations
+remain; no new trusted clock, remote identity or cryptographic signature is
+provided. Human usability/accessibility and manual workflow testing remain
+required before merge.

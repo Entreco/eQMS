@@ -32,3 +32,20 @@ cargo build --workspace --release --locked
 Evidence: [EQMS-092 observed results](evidence/EQMS-092.md).
 Feature restructuring: [revision-specific results](evidence/EQMS-092-feature-split.md).
 Human review/testing must remain unchecked until actually performed.
+
+## Document workspace follow-up mapping
+
+Define before implementation; earlier IDs/evidence are retained.
+
+| ID | Requirements | Planned check |
+|---|---|---|
+| T092-10 | R092-12, R092-13 | Compose/state tests: independent dirty tabs, deduplication, historical/latest coexistence, panel selection/collapse/bounded resizing, keyboard controls, minimum size and theme retention. |
+| T092-11 | R092-14 | Tab/project/menu/quit Save/Discard/Cancel, multi-buffer partial failure, invalid title, busy guards and cancelled/failed project opening retain text. |
+| T092-12 | R092-15 | Adapter/process tests cover six states, transition args/expected revision, wrong ID/target/content, unknown/missing status, malformed history/envelope, exit/launch errors and cancellation. |
+| T092-13 | R092-13, R092-16 | State/UI tests: confirmed clean-only lifecycle actions, read-only after submit, terminal/historical guards, stale failure, duplicate clicks and source-bound late results. |
+| T092-14 | R092-15, R092-16, R092-17 | Real native workspace create/save/submit/approve/publish/reopen, lifecycle history and unchanged content/baseline/index; captures in both themes distinguish internal state from signatures/releases. |
+| T092-15 | R092-17, R092-18 | Existing feature/desktop regressions, neutral search/history wording, exact diff including lifecycle-only no-change revisions, all feature/web Wasm compilation; rerun opt-in 10k p95 <=150 ms benchmark if result rendering changes. |
+
+Evidence belongs in `evidence/EQMS-092-document-workspace.md` with the exact
+tested source revision, environment, commands, observed outcomes/exclusions
+and unchecked manual review/testing. Skipped opt-in tests are not coverage.

@@ -45,7 +45,7 @@ class DesktopJewelPreviewTest {
                     "## Purpose\n\nKeep quality work clear, traceable, and easy to find.\n\n" +
                     "## Working practices\n\n- Write concise Markdown drafts.\n- Save changes explicitly.\n" +
                     "- Inspect previous revisions in History.\n- Search saved drafts from the Project panel.\n\n" +
-                    "Review, approval, signatures, and publication are not available in this scaffold.\n",
+                    "Lifecycle approval is a local action, not a signature. Effective is internal publication only.\n",
             ).getOrThrow()
             documents.createDocument(
                 project.toString(), "Risk management plan (sample)",
@@ -71,7 +71,16 @@ class DesktopJewelPreviewTest {
             compose.onAllNodesWithText("Quality policy (sample) (Draft)").fetchSemanticsNodes().size == 1
         }
         compose.onNodeWithText("Quality policy (sample) (Draft)").performClick()
+        compose.waitUntil(30_000) {
+            compose.onAllNodesWithContentDescription("Markdown body").fetchSemanticsNodes().size == 1
+        }
         compose.onNodeWithContentDescription("Markdown body").assertTextContains("## Working practices", substring = true)
+        compose.onNodeWithText("Risk management plan (sample) (Draft)").performClick()
+        compose.waitUntil(30_000) {
+            compose.onAllNodesWithContentDescription("Document tab Risk management plan (sample)").fetchSemanticsNodes().size == 1
+        }
+        compose.onNodeWithContentDescription("Markdown body").performTextReplacement("Unsaved sample risk notes - retained in a separate tab.")
+        compose.onNodeWithContentDescription("Document tab Quality policy (sample)").performClick()
         fun capture(name: String) {
             compose.waitForIdle()
             check(ImageIO.write(compose.onRoot().captureToImage().toAwtImage(), "png", File(output, name)))
@@ -80,17 +89,43 @@ class DesktopJewelPreviewTest {
         compose.onNodeWithText("Light theme").performClick()
         compose.onNodeWithContentDescription("Markdown body").assertTextContains("## Working practices", substring = true)
         capture("jewel-light.png")
-        compose.onNodeWithText("History").performClick()
+        compose.onNodeWithContentDescription("Toggle History panel").performClick()
         compose.waitUntil(30_000) {
-            compose.onAllNodesWithText("Compare").fetchSemanticsNodes().size == 1
+            compose.onAllNodes(hasText("Compare") and isEnabled()).fetchSemanticsNodes().size == 1
         }
         capture("jewel-history.png")
-        compose.onNodeWithText("Compare").performClick()
+        compose.onNodeWithText("Compare").performScrollTo().performClick()
         compose.waitUntil(30_000) {
             compose.onAllNodesWithText("+## Purpose", substring = true).fetchSemanticsNodes().isNotEmpty()
         }
-        compose.onNodeWithText("Close history").assertIsEnabled()
         compose.onNodeWithText("+## Purpose", substring = true).performScrollTo()
         capture("jewel-diff.png")
+        compose.onNodeWithContentDescription("Toggle Review panel").performClick()
+        for ((action, captureName) in listOf(
+            "Submit for review" to "jewel-in-review.png",
+            "Approve" to "jewel-approved.png",
+            "Publish" to "jewel-effective.png",
+        )) {
+            compose.waitUntil(30_000) {
+                compose.onAllNodes(hasText(action) and isEnabled()).fetchSemanticsNodes().size == 1
+            }
+            compose.onNodeWithText(action).performScrollTo().performClick()
+            compose.onNodeWithText("Confirm").performClick()
+            val status = when (action) {
+                "Submit for review" -> "In Review"
+                "Approve" -> "Approved"
+                else -> "Effective"
+            }
+            compose.waitUntil(30_000) {
+                compose.onAllNodesWithText("Document is now $status.").fetchSemanticsNodes().isNotEmpty()
+            }
+            compose.onNodeWithText("Save").assertIsNotEnabled()
+            capture(captureName)
+        }
+        compose.onNodeWithContentDescription("Hide Project panel").performClick()
+        compose.onNodeWithContentDescription("Hide Review panel").performClick()
+        capture("jewel-collapsed.png")
+        compose.onNodeWithContentDescription("Document tab Risk management plan (sample)").performClick()
+        compose.onNodeWithContentDescription("Markdown body").assertTextContains("Unsaved sample risk notes", substring = true)
     }
 }

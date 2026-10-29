@@ -3,6 +3,7 @@ package com.entreco.eqms.desktop
 import java.io.IOException
 import kotlin.test.*
 import kotlinx.coroutines.runBlocking
+import com.entreco.eqms.feature.document.DocumentStatus
 
 class DesktopDocumentCapabilitiesTest {
     private val id = "DOC-${"0".repeat(32)}"
@@ -66,5 +67,64 @@ class DesktopDocumentCapabilitiesTest {
         assertEquals("stale save", failed.createDocument("project", "Policy", "").exceptionOrNull()?.message)
         val missing = DesktopDocumentCapabilities("missing", DocumentExecutor { _, _, _ -> throw IOException("not found") })
         assertEquals("not found", missing.listDocuments("project").exceptionOrNull()?.message)
+    }
+
+    @Test
+    fun lifecycleStatesAreStrictAndTransitionArgumentsAndContentAreValidated() = runBlocking {
+        val calls = mutableListOf<List<String>>()
+        var state = "Draft"
+        var altered = false
+        val capabilities = DesktopDocumentCapabilities("qms", DocumentExecutor { _, args, input ->
+            assertNull(input)
+            calls += args
+            var data = document.replace("\"Draft\"", "\"$state\"")
+            if (args[1] == "transition") data = data.replace(revision, "d".repeat(40))
+            if (altered) data = data.replace("sha256:${"b".repeat(64)}", "sha256:${"e".repeat(64)}")
+            ProcessResult(0, response(args[1], data))
+        })
+        val observed = capabilities.showLatestDocument("path with spaces", id).getOrThrow()
+        DocumentStatus.entries.forEach { status ->
+            state = status.label
+            assertEquals(status, capabilities.showLatestDocument("path", id).getOrThrow().status)
+        }
+        state = "In Review"
+        val transitioned = capabilities.transitionDocument("path with spaces", observed, DocumentStatus.InReview).getOrThrow()
+        assertEquals(DocumentStatus.InReview, transitioned.status)
+        assertEquals(listOf("document", "transition", "--json", "path with spaces", id, "--expected", revision, "--to", "In Review"), calls.last())
+        altered = true
+        assertTrue(capabilities.transitionDocument("path", observed, DocumentStatus.InReview).isFailure)
+        altered = false
+        state = "Unknown"
+        assertTrue(capabilities.showLatestDocument("path", id).isFailure)
+        state = "Approved"
+        assertTrue(capabilities.transitionDocument("path", observed, DocumentStatus.InReview).isFailure)
+        val validTransition = document.replace("\"Draft\"", "\"In Review\"").replace(revision, "d".repeat(40))
+        for (invalid in listOf(
+            validTransition.replace(id, "DOC-${"1".repeat(32)}"),
+            validTransition.replace("d".repeat(40), revision),
+            validTransition.replace("# Policy", "# Unexpected"),
+            validTransition.replace("\"status\":\"In Review\",", ""),
+        )) {
+            val malformed = DesktopDocumentCapabilities("qms", DocumentExecutor { _, _, _ ->
+                ProcessResult(0, response("transition", invalid))
+            })
+            assertTrue(malformed.transitionDocument("path", observed, DocumentStatus.InReview).isFailure, invalid)
+        }
+    }
+
+    @Test
+    fun lifecycleHistoryValidatesHashesStatesOrderAndDuplicateRevisions() = runBlocking {
+        val event = """{"revision":"$revision","event_hash":"${"c".repeat(64)}","content_hash":"sha256:${"b".repeat(64)}","from_status":"Draft","to_status":"In Review","local_timestamp":"1"}"""
+        var data = "[$event]"
+        val capabilities = DesktopDocumentCapabilities("qms", DocumentExecutor { _, args, _ ->
+            ProcessResult(0, response(args[1], data))
+        })
+        assertEquals(DocumentStatus.InReview, capabilities.documentLifecycleHistory("project", id).getOrThrow().single().to)
+        for (invalid in listOf("[$event,$event]", "[$event]".replace("In Review", "Unknown"), "[$event]".replace("\"Draft\"", "\"Effective\""), "[$event]".replace(revision, "invalid"), "{}")) {
+            data = invalid
+            assertTrue(capabilities.documentLifecycleHistory("project", id).isFailure, invalid)
+        }
+        data = "[]"
+        assertTrue(capabilities.documentLifecycleHistory("project", id).getOrThrow().isEmpty())
     }
 }

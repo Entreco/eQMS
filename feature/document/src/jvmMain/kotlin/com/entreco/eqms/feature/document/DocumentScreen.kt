@@ -1,318 +1,367 @@
 package com.entreco.eqms.feature.document
 
-import com.entreco.eqms.feature.search.*
-import com.entreco.eqms.feature.ui.*
-
+import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.*
-import androidx.compose.ui.Modifier
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.entreco.eqms.feature.search.SearchPanel
+import com.entreco.eqms.feature.search.SearchRenderTiming
+import com.entreco.eqms.feature.ui.*
 import kotlinx.coroutines.launch
 import org.jetbrains.jewel.foundation.theme.JewelTheme
 import org.jetbrains.jewel.ui.component.DefaultButton
-import org.jetbrains.jewel.ui.component.OutlinedButton
 import org.jetbrains.jewel.ui.component.ListComboBox
+import org.jetbrains.jewel.ui.component.IconButton
+import org.jetbrains.jewel.ui.component.OutlinedButton
 import org.jetbrains.jewel.ui.component.Text
 
 @Composable
 fun DocumentScreen(
     project: String,
     capabilities: DocumentCapabilities,
-    requestNavigation: (() -> Unit) -> Unit,
     onStateChanged: (dirty: Boolean, busy: Boolean) -> Unit,
     modifier: Modifier = Modifier,
     onSearchResultsLaidOut: (SearchRenderTiming) -> Unit = {},
     workspaceBusy: Boolean = false,
+    navigation: DocumentNavigationController? = null,
 ) {
     key(project, capabilities) {
-        DocumentWorkspace(project, capabilities, requestNavigation, onStateChanged, modifier, onSearchResultsLaidOut, workspaceBusy)
-    }
-}
-
-@Composable
-private fun DocumentWorkspace(
-    project: String,
-    capabilities: DocumentCapabilities,
-    requestNavigation: (() -> Unit) -> Unit,
-    onStateChanged: (Boolean, Boolean) -> Unit,
-    modifier: Modifier,
-    onSearchResultsLaidOut: (SearchRenderTiming) -> Unit,
-    workspaceBusy: Boolean,
-) {
-    val scope = rememberCoroutineScope()
-    val search = remember { DocumentSearch(project, capabilities, scope) }
-    var documents by remember { mutableStateOf(emptyList<DocumentSnapshot>()) }
-    var selected by remember { mutableStateOf<DocumentSnapshot?>(null) }
-    var editing by remember { mutableStateOf(false) }
-    var title by remember { mutableStateOf("") }
-    var body by remember { mutableStateOf("") }
-    var busy by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf<String?>(null) }
-    var history by remember { mutableStateOf<List<DocumentSnapshot>?>(null) }
-    var savedMessage by remember { mutableStateOf<String?>(null) }
-    var historical by remember { mutableStateOf(false) }
-    val interactive = !busy && !workspaceBusy && history == null
-    val dirty = editing && !historical && (title != (selected?.title ?: "") || body != (selected?.body ?: ""))
-    SideEffect { onStateChanged(dirty, busy) }
-    DisposableEffect(Unit) { onDispose { search.dispose(); onStateChanged(false, false) } }
-
-    fun select(document: DocumentSnapshot?) {
-        selected = document
-        title = document?.title ?: ""
-        body = document?.body ?: ""
-        editing = true
-        historical = false
-        savedMessage = null
-        error = null
-    }
-
-    suspend fun refresh() {
-        capabilities.listDocuments(project).fold(
-            onSuccess = { documents = it },
-            onFailure = { error = it.message ?: "Could not list documents." },
-        )
-    }
-
-    LaunchedEffect(project, capabilities) {
-        search.refresh()
-        busy = true
-        try { refresh() } finally { busy = false }
-    }
-
-    Column(modifier.fillMaxWidth()) {
-        error?.let { Text(it, Modifier.padding(12.dp), color = JewelTheme.globalColors.text.error) }
-        Row(Modifier.fillMaxWidth().weight(1f)) {
-            Column(
-                Modifier.width(300.dp).fillMaxHeight().border(1.dp, JewelTheme.globalColors.borders.normal).padding(12.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                Text("Project", fontWeight = FontWeight.SemiBold)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    DefaultButton(enabled = interactive, onClick = { requestNavigation { select(null) } }) { Text("New document") }
-                    OutlinedButton(enabled = interactive, onClick = {
-                        scope.launch {
-                            busy = true
-                            error = null
-                            try { refresh(); search.refresh() } finally { busy = false }
-                        }
-                    }) { Text("Refresh documents") }
-                }
-                if (busy) Text("Loading documents...")
-                SearchPanel(
-                    search = search, enabled = interactive,
-                    onSelect = { hit, fromHistory ->
-                        requestNavigation {
-                            scope.launch {
-                                busy = true
-                                error = null
-                                try {
-                                    val result = if (fromHistory) {
-                                        capabilities.showDocument(project, hit.id, hit.revision)
-                                    } else {
-                                        capabilities.showLatestDocument(project, hit.id)
-                                    }
-                                    result.fold(
-                                        onSuccess = { select(it); historical = fromHistory },
-                                        onFailure = { error = it.message ?: "Could not open saved draft." },
-                                    )
-                                } finally { busy = false }
-                            }
-                        }
-                    },
-                    isSelected = { hit, fromHistory ->
-                        selected?.id == hit.id && (!fromHistory || selected?.revision == hit.revision)
-                    },
-                    onResultsLaidOut = onSearchResultsLaidOut,
-                    modifier = Modifier.fillMaxWidth().weight(1f),
-                ) {
-                    item { Text("Documents", Modifier.padding(vertical = 8.dp), fontWeight = FontWeight.SemiBold) }
-                    if (documents.isEmpty() && !busy) item { Text("No saved drafts yet.") }
-                    items(documents, key = { it.id }) { document ->
-                        WorkspaceItem(
-                            "${document.title} (Draft)",
-                            selected = selected?.id == document.id, enabled = interactive,
-                            onClick = { requestNavigation { select(document) } },
-                        )
-                    }
-                }
+        val scope = rememberCoroutineScope()
+        val state = remember { DocumentWorkspaceState(project, capabilities, scope) }
+        val editorStates = rememberSaveableStateHolder()
+        val previousKeys = remember { mutableSetOf<Int>() }
+        val openKeys = state.tabs.map { it.key }.toSet()
+        SideEffect {
+            (previousKeys - openKeys).forEach(editorStates::removeState)
+            previousKeys.clear()
+            previousKeys.addAll(openKeys)
+        }
+        var left by remember { mutableStateOf<String?>("Project") }
+        var right by remember { mutableStateOf<String?>("Review") }
+        var leftWidth by remember { mutableFloatStateOf(260f) }
+        var rightWidth by remember { mutableFloatStateOf(300f) }
+        var confirmation by remember { mutableStateOf<Pair<DocumentTab, DocumentStatus>?>(null) }
+        val tab = state.active
+        val interactive = !state.busy && !workspaceBusy && state.pendingClose == null && confirmation == null
+        val dirty = state.dirty
+        val working = state.busy || state.pendingClose != null || confirmation != null
+        SideEffect { onStateChanged(dirty, working) }
+        DisposableEffect(state, navigation) {
+            navigation?.handler = { state.requestNavigation(it) }
+            onDispose {
+                navigation?.handler = null
+                state.dispose()
+                onStateChanged(false, false)
             }
-            if (editing) {
-                Column(Modifier.weight(1f).fillMaxHeight().padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Row(
-                        Modifier.fillMaxWidth().border(1.dp, JewelTheme.globalColors.borders.normal).padding(10.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            (if (dirty) "* " else "") + (selected?.title ?: "Untitled"),
-                            Modifier.weight(1f), fontWeight = FontWeight.SemiBold,
-                            maxLines = 1, overflow = TextOverflow.Ellipsis,
-                        )
-                        Text("Markdown", color = JewelTheme.globalColors.text.info)
-                    }
-                    Text(if (historical) "Draft/history — read-only saved revision" else if (dirty) "Draft - unsaved changes" else "Draft")
-                    selected?.let { Text(it.id, color = JewelTheme.globalColors.text.info) }
-                    if (historical) {
-                        Text("Saved working revision, not an approval. Author is configured identity; timestamp is a local claim.")
-                        selected?.let {
-                            Text("Revision: ${it.revision}")
-                            Text("Configured author: ${it.configuredAuthor}")
-                            Text("Local timestamp: ${it.localTimestamp}")
-                        }
-                        OutlinedButton(enabled = interactive, onClick = {
-                            val id = selected?.id ?: return@OutlinedButton
-                            scope.launch {
-                                busy = true
-                                try {
-                                    capabilities.showLatestDocument(project, id).fold(
-                                        onSuccess = { select(it) },
-                                        onFailure = { error = it.message ?: "Could not read latest draft." },
-                                    )
-                                } finally { busy = false }
-                            }
-                        }) { Text("Return to latest draft") }
-                    }
-                    WorkspaceTextField(
-                        value = title, onValueChange = { title = it; savedMessage = null },
-                        label = "Document title", singleLine = true,
-                        enabled = interactive, readOnly = historical, modifier = Modifier.fillMaxWidth(),
-                    )
-                    WorkspaceTextField(
-                        value = body, onValueChange = { body = it; savedMessage = null },
-                        label = "Markdown body", enabled = interactive, readOnly = historical,
-                        modifier = Modifier.fillMaxWidth().weight(1f).heightIn(min = 100.dp),
-                    )
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        DefaultButton(enabled = interactive && !historical && title.isNotBlank(), onClick = {
-                            scope.launch {
-                                busy = true
-                                error = null
-                                try {
-                                    val previous = selected
-                                    val result = if (previous == null) {
-                                        capabilities.createDocument(project, title, body)
-                                    } else {
-                                        capabilities.saveDocument(project, previous.id, previous.revision, title, body)
+        }
+        LaunchedEffect(state) { state.refresh() }
+        LaunchedEffect(right, tab?.key, tab?.snapshot?.revision) {
+            if (right == "History" && tab != null) state.loadHistory(tab)
+        }
+
+        Column(modifier.fillMaxSize()) {
+            state.error?.let { Text(it, Modifier.padding(8.dp), color = JewelTheme.globalColors.text.error) }
+            BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
+                val panelLimit = (maxWidth.value * 0.27f).coerceAtLeast(140f)
+                Row(Modifier.fillMaxSize()) {
+                    ToolRail(listOf("Project", "Search"), left, interactive) { left = if (left == it) null else it }
+                    if (left != null) {
+                        ToolPanel(left!!, leftWidth.coerceIn(140f, panelLimit), interactive,
+                            onNarrow = { leftWidth = (leftWidth - 24).coerceAtLeast(140f) },
+                            onWiden = { leftWidth = (leftWidth + 24).coerceAtMost(panelLimit) },
+                            onClose = { left = null }) {
+                            when (left) {
+                                "Project" -> {
+                                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        DefaultButton(enabled = interactive, onClick = state::newDocument) { Text("New document") }
                                     }
-                                    result.fold(
-                                        onSuccess = {
-                                            select(it)
-                                            savedMessage = if (previous?.revision == it.revision) "No changes to save." else "Draft saved."
-                                            documents = (documents.filterNot { old -> old.id == it.id } + it).sortedBy { doc -> doc.id }
-                                            search.refresh()
+                                    OutlinedButton(enabled = interactive, onClick = { scope.launch { state.refresh() } }) { Text("Refresh documents") }
+                                    LazyColumn(Modifier.weight(1f)) {
+                                        if (state.documents.isEmpty()) item { Text("No saved documents yet.") }
+                                        items(state.documents, key = { it.id }) { document ->
+                                            WorkspaceItem("${document.title} (${document.status.label})",
+                                                selected = tab?.snapshot?.id == document.id,
+                                                enabled = interactive,
+                                                onClick = { scope.launch { state.open(document.id) } })
+                                        }
+                                    }
+                                }
+                                "Search" -> SearchPanel(
+                                    state.search, interactive,
+                                    onSelect = { hit, historical ->
+                                        scope.launch { state.open(hit.id, if (historical) hit.revision else null) }
+                                    },
+                                    isSelected = { hit, historical ->
+                                        tab?.snapshot?.id == hit.id && tab.historical == historical &&
+                                            (!historical || tab.snapshot?.revision == hit.revision)
+                                    },
+                                    onResultsLaidOut = onSearchResultsLaidOut,
+                                    modifier = Modifier.weight(1f),
+                                ) {}
+                            }
+                        }
+                        PanelDivider("Resize left panel", interactive) { delta ->
+                            leftWidth = (leftWidth + delta).coerceIn(140f, panelLimit)
+                        }
+                    }
+                    Column(Modifier.weight(1f).fillMaxHeight()) {
+                        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            state.tabs.forEach { open ->
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    OutlinedButton(
+                                        enabled = !workspaceBusy && state.pendingClose == null && confirmation == null,
+                                        onClick = { state.activeKey = open.key },
+                                        modifier = Modifier.semantics {
+                                            contentDescription = "Document tab ${open.title.ifBlank { "Untitled" }}${if (open.historical) " historical ${open.snapshot?.revision}" else ""}"
+                                            role = Role.Tab
+                                            selected = open.key == state.activeKey
                                         },
-                                        onFailure = { error = it.message ?: "Save failed. Your edits are still here." },
-                                    )
-                                } finally { busy = false }
+                                    ) {
+                                        Text((if (open.key == state.activeKey) "> " else "") +
+                                            open.title.ifBlank { "Untitled" } + (if (open.dirty) " *" else "") +
+                                            (if (open.historical) " [saved revision]" else ""))
+                                    }
+                                    IconButton(enabled = interactive, onClick = { state.requestClose(open) },
+                                        modifier = Modifier.semantics {
+                                            contentDescription = "Close tab ${open.title.ifBlank { "Untitled" }}${if (open.historical) " historical ${open.snapshot?.revision}" else ""}"
+                                        }) {
+                                        Text("x")
+                                    }
+                                }
                             }
-                        }) { Text("Save") }
-                        OutlinedButton(enabled = interactive && selected != null, onClick = {
-                            val document = selected ?: return@OutlinedButton
-                            scope.launch {
-                                busy = true
-                                error = null
-                                try {
-                                    capabilities.documentHistory(project, document.id).fold(
-                                        onSuccess = { history = it },
-                                        onFailure = { error = it.message ?: "Could not load history." },
-                                    )
-                                } finally { busy = false }
+                        }
+                        if (tab == null) {
+                            Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                                Text("Select a document or create a new draft.")
                             }
-                        }) { Text("History") }
+                        } else editorStates.SaveableStateProvider(tab.key) {
+                            Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(tab.scroll).padding(16.dp),
+                                verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                Text(tab.snapshot?.status?.label ?: "New draft", fontWeight = FontWeight.SemiBold)
+                                if (tab.dirty) Text("Draft - unsaved changes")
+                                if (tab.historical) Text("Saved revision - read-only")
+                                tab.error?.let { Text(it, color = JewelTheme.globalColors.text.error) }
+                                tab.message?.let { Text(it) }
+                                WorkspaceTextField(tab.title, { tab.titleField.value = tab.titleField.value.copy(text = it); tab.message = null },
+                                    "Document title", singleLine = true, readOnly = !tab.editable, enabled = interactive,
+                                    textState = tab.titleField, modifier = Modifier.fillMaxWidth())
+                                WorkspaceTextField(tab.body, { tab.bodyField.value = tab.bodyField.value.copy(text = it); tab.message = null },
+                                    "Markdown body", readOnly = !tab.editable, enabled = interactive,
+                                    textState = tab.bodyField, modifier = Modifier.fillMaxWidth().height(440.dp))
+                                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    DefaultButton(enabled = interactive && tab.editable && tab.title.isNotBlank(),
+                                        onClick = { scope.launch { state.save(tab) } }) { Text("Save") }
+                                    OutlinedButton(enabled = interactive && tab.snapshot != null,
+                                        onClick = { right = "History"; scope.launch { state.loadHistory(tab) } }) { Text("Show history") }
+                                    OutlinedButton(enabled = interactive && tab.snapshot != null, onClick = {
+                                        val source = tab.snapshot ?: return@OutlinedButton
+                                        if (tab.historical) scope.launch { state.open(source.id) }
+                                        else state.requestTabNavigation(tab) { scope.launch { state.reload(tab) } }
+                                    }) { Text(if (tab.historical) "Return to latest document" else "Reload saved document") }
+                                }
+                                if (!tab.editable) Text("Read-only. Rework is not available in this version.")
+                                Text("Configured identity and local timestamps are claims, not authenticated identity or trusted time.",
+                                    color = JewelTheme.globalColors.text.info)
+                            }
+                        }
                     }
-                    savedMessage?.let { Text(it) }
-                }
-            } else {
-                Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.Center) {
-                    Text("Select a document or create a new draft.", color = JewelTheme.globalColors.text.info)
+                    if (right != null) {
+                        PanelDivider("Resize right panel", interactive) { delta ->
+                            rightWidth = (rightWidth - delta).coerceIn(140f, panelLimit)
+                        }
+                        ToolPanel(right!!, rightWidth.coerceIn(140f, panelLimit), interactive,
+                            onNarrow = { rightWidth = (rightWidth - 24).coerceAtLeast(140f) },
+                            onWiden = { rightWidth = (rightWidth + 24).coerceAtMost(panelLimit) },
+                            onClose = { right = null }) {
+                            if (tab == null) Text("Select a document.") else when (right) {
+                                "Review" -> ReviewPanel(tab, interactive) { confirmation = tab to it }
+                                "History" -> DocumentHistoryPanel(tab, interactive,
+                                    onRefresh = { scope.launch { state.loadHistory(tab) } },
+                                    onCompare = { scope.launch { state.compare(tab) } },
+                                    onOpen = { state.openSnapshot(it, historical = true) })
+                            }
+                        }
+                    }
+                    ToolRail(listOf("Review", "History"), right, interactive) { right = if (right == it) null else it }
                 }
             }
         }
-        history?.let { revisions ->
-            HistoryPanel(project, capabilities, revisions, onDismiss = { history = null }, onBusy = { busy = it })
+        confirmation?.let { (source, target) ->
+            WorkspaceDialog(
+                onDismissRequest = { confirmation = null },
+                title = { Text(actionLabel(target)) },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("${source.title}: ${source.snapshot?.status?.label} -> ${target.label}")
+                        Text("Revision: ${source.snapshot?.revision}")
+                        Text("This records a local lifecycle action, not a cryptographic signature or proof of reviewer authority.")
+                        if (target == DocumentStatus.InReview) Text("Content becomes read-only. Return to draft/rework is not available.")
+                        if (target == DocumentStatus.Effective) Text("Internal Effective state only. No baseline merge, release record or external distribution.")
+                    }
+                },
+                confirmButton = { DefaultButton(onClick = {
+                    confirmation = null
+                    scope.launch { state.transition(source, target) }
+                }) { Text("Confirm") } },
+                dismissButton = { OutlinedButton(onClick = { confirmation = null }) { Text("Cancel") } },
+            )
+        }
+        state.pendingClose?.let { affected ->
+            WorkspaceDialog(
+                onDismissRequest = { if (!state.busy) state.cancelClose() },
+                title = { Text("Unsaved changes") },
+                text = { Text("Save changes to ${affected.joinToString { it.title.ifBlank { "Untitled" } }}?") },
+                confirmButton = {
+                    DefaultButton(enabled = !state.busy, onClick = { scope.launch { state.saveAndContinue() } }) {
+                        Text(if (affected.size > 1) "Save all" else "Save")
+                    }
+                },
+                dismissButton = {
+                    OutlinedButton(enabled = !state.busy, onClick = state::cancelClose) { Text("Cancel") }
+                    OutlinedButton(enabled = !state.busy, onClick = state::discardAndContinue) {
+                        Text(if (affected.size > 1) "Discard all" else "Discard changes")
+                    }
+                },
+            )
         }
     }
 }
 
 @Composable
-private fun HistoryPanel(
-    project: String,
-    capabilities: DocumentCapabilities,
-    revisions: List<DocumentSnapshot>,
-    onDismiss: () -> Unit,
-    onBusy: (Boolean) -> Unit,
-) {
-    val scope = rememberCoroutineScope()
-    var older by remember { mutableStateOf(revisions.lastOrNull()) }
-    var newer by remember { mutableStateOf(revisions.firstOrNull()) }
-    var difference by remember { mutableStateOf<String?>(null) }
-    var error by remember { mutableStateOf<String?>(null) }
-    var busy by remember { mutableStateOf(false) }
-    Column(Modifier.fillMaxWidth().heightIn(max = 300.dp).border(1.dp, JewelTheme.globalColors.borders.normal).padding(12.dp)) {
-        Row(
-            Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text("Draft history", Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
-            DefaultButton(enabled = !busy && older != null && newer != null, onClick = {
-                val from = older ?: return@DefaultButton
-                val to = newer ?: return@DefaultButton
-                scope.launch {
-                    busy = true
-                    onBusy(true)
-                    error = null
-                    difference = null
-                    try {
-                        capabilities.documentDiff(project, to.id, from.revision, to.revision).fold(
-                            onSuccess = { difference = it.ifEmpty { "No differences." } },
-                            onFailure = { error = it.message ?: "Could not compare revisions." },
-                        )
-                    } finally { busy = false; onBusy(false) }
-                }
-            }) { Text("Compare") }
-            OutlinedButton(enabled = !busy, onClick = onDismiss) { Text("Close history") }
-        }
-        error?.let { Text(it, color = JewelTheme.globalColors.text.error) }
-        Column(Modifier.fillMaxWidth().weight(1f, fill = false).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Saved working revisions, not approvals. Author is configured identity; timestamps are local claims.")
-            RevisionPicker("Older revision", revisions, older, !busy) { older = it; difference = null }
-            RevisionPicker("Newer revision", revisions, newer, !busy) { newer = it; difference = null }
-            difference?.let { Text(it, fontFamily = FontFamily.Monospace) }
-            newer?.let {
-                Text("Configured author: ${it.configuredAuthor}")
-                Text("Local timestamp (Unix seconds): ${it.localTimestamp}")
-                Text("Content: ${it.contentHash}", color = JewelTheme.globalColors.text.info)
-                Text("Event: ${it.eventHash}", color = JewelTheme.globalColors.text.info)
-                WorkspaceTextField(value = it.body, onValueChange = {}, readOnly = true, label = "Saved Markdown (read-only)")
+private fun ToolRail(tools: List<String>, selected: String?, enabled: Boolean, select: (String) -> Unit) {
+    Column(Modifier.width(88.dp).fillMaxHeight().padding(4.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        tools.forEach { tool ->
+            OutlinedButton(enabled = enabled, onClick = { select(tool) },
+                modifier = Modifier.semantics {
+                    contentDescription = "Toggle $tool panel"
+                    this.selected = selected == tool
+                }) {
+                Text(tool, fontWeight = if (selected == tool) FontWeight.Bold else FontWeight.Normal)
             }
+        }
+    }
+}
+
+@Composable
+private fun ToolPanel(
+    title: String, width: Float, enabled: Boolean, onNarrow: () -> Unit, onWiden: () -> Unit,
+    onClose: () -> Unit, content: @Composable ColumnScope.() -> Unit,
+) {
+    Column(Modifier.width(width.dp).fillMaxHeight().border(1.dp, JewelTheme.globalColors.borders.normal).padding(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(title, fontWeight = FontWeight.SemiBold)
+        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            IconButton(enabled = enabled, onClick = onNarrow,
+                modifier = Modifier.semantics { contentDescription = "Narrow $title panel" }) { Text("-") }
+            IconButton(enabled = enabled, onClick = onWiden,
+                modifier = Modifier.semantics { contentDescription = "Widen $title panel" }) { Text("+") }
+            IconButton(enabled = enabled, onClick = onClose,
+                modifier = Modifier.semantics { contentDescription = "Hide $title panel" }) { Text("x") }
+        }
+        content()
+    }
+}
+
+@Composable
+private fun PanelDivider(label: String, enabled: Boolean, resize: (Float) -> Unit) {
+    val density = LocalDensity.current.density
+    Box(Modifier.width(5.dp).fillMaxHeight().background(JewelTheme.globalColors.borders.normal)
+        .semantics { contentDescription = label }
+        .draggable(rememberDraggableState { resize(it / density) }, Orientation.Horizontal, enabled = enabled))
+}
+
+internal fun actionLabel(target: DocumentStatus): String = when (target) {
+    DocumentStatus.InReview -> "Submit for review"
+    DocumentStatus.Approved -> "Approve"
+    DocumentStatus.Effective -> "Publish"
+    DocumentStatus.Obsolete -> "Mark obsolete"
+    DocumentStatus.Superseded -> "Mark superseded"
+    DocumentStatus.Draft -> "Draft"
+}
+
+@Composable
+private fun ReviewPanel(tab: DocumentTab, enabled: Boolean, transition: (DocumentStatus) -> Unit) {
+    Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        val document = tab.snapshot
+        Text(document?.status?.label ?: "Save this draft before submitting it.", fontWeight = FontWeight.SemiBold)
+        document?.let {
+            Text(it.id)
+            Text("Revision: ${it.revision}")
+            Text("Content: ${it.contentHash}")
+            Text("Event: ${it.eventHash}")
+            Text("Configured author: ${it.configuredAuthor}")
+            Text("Local timestamp: ${it.localTimestamp}")
+        }
+        val targets = when (document?.status) {
+            DocumentStatus.Draft -> listOf(DocumentStatus.InReview)
+            DocumentStatus.InReview -> listOf(DocumentStatus.Approved)
+            DocumentStatus.Approved -> listOf(DocumentStatus.Effective)
+            DocumentStatus.Effective -> listOf(DocumentStatus.Obsolete, DocumentStatus.Superseded)
+            else -> emptyList()
+        }
+        if (tab.dirty) Text("Save your changes before a lifecycle action.")
+        if (tab.historical) Text("Historical revision - lifecycle actions unavailable.")
+        targets.forEach { target ->
+            DefaultButton(enabled = enabled && !tab.dirty && !tab.historical, onClick = { transition(target) }) {
+                Text(actionLabel(target))
+            }
+        }
+        Text("Approval is not a signature or authenticated reviewer authority. Publish means internal Effective only, not a release or external distribution.")
+    }
+}
+
+@Composable
+private fun DocumentHistoryPanel(
+    tab: DocumentTab, enabled: Boolean, onRefresh: () -> Unit, onCompare: () -> Unit,
+    onOpen: (DocumentSnapshot) -> Unit,
+) {
+    Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        OutlinedButton(enabled = enabled && tab.snapshot != null, onClick = onRefresh) { Text("Refresh history") }
+        Text("Saved revisions and local lifecycle events. Configured identity/time are not trusted attestations.")
+        if (tab.history.isNotEmpty()) {
+            RevisionPicker("Older revision", tab.history, tab.older, enabled) { tab.older = it; tab.difference = null }
+            RevisionPicker("Newer revision", tab.history, tab.newer, enabled) { tab.newer = it; tab.difference = null }
+            DefaultButton(enabled = enabled && tab.older != null && tab.newer != null, onClick = onCompare) { Text("Compare") }
+            tab.newer?.let { selected ->
+                OutlinedButton(enabled = enabled, onClick = { onOpen(selected) }) { Text("Open saved revision") }
+            }
+        }
+        tab.difference?.let { Text(it) }
+        tab.events.forEach {
+            Text("${it.from.label} -> ${it.to.label}\nRevision: ${it.revision}\nLocal timestamp: ${it.localTimestamp}")
         }
     }
 }
 
 @Composable
 private fun RevisionPicker(
-    label: String,
-    revisions: List<DocumentSnapshot>,
-    selected: DocumentSnapshot?,
-    enabled: Boolean,
+    label: String, revisions: List<DocumentSnapshot>, selected: DocumentSnapshot?, enabled: Boolean,
     onSelect: (DocumentSnapshot) -> Unit,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(label)
-        ListComboBox(
-            items = revisions.mapIndexed { index, revision ->
-                "Revision ${revisions.size - index}: ${revision.revision.take(12)} - ${revision.title}"
-            },
-            selectedIndex = revisions.indexOf(selected),
-            onSelectedItemChange = { onSelect(revisions[it]) },
-            enabled = enabled && revisions.isNotEmpty(),
-        )
-    }
+    Text(label)
+    ListComboBox(
+        items = revisions.map { "${it.status.label}: ${it.revision.take(12)} - ${it.title}" },
+        selectedIndex = revisions.indexOf(selected),
+        onSelectedItemChange = { onSelect(revisions[it]) }, enabled = enabled,
+    )
 }

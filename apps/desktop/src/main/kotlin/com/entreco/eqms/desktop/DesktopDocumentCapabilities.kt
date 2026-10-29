@@ -2,6 +2,8 @@ package com.entreco.eqms.desktop
 
 import com.entreco.eqms.feature.document.DocumentCapabilities
 import com.entreco.eqms.feature.document.DocumentSnapshot
+import com.entreco.eqms.feature.document.DocumentStatus
+import com.entreco.eqms.feature.document.DocumentLifecycleEvent
 import com.entreco.eqms.feature.search.SearchHit
 import com.entreco.eqms.feature.search.SearchPage
 import com.entreco.eqms.feature.search.SearchPreparation
@@ -25,6 +27,50 @@ internal class DesktopDocumentCapabilities(
         executeProcess(command, arguments, input)
     },
 ) : DocumentCapabilities {
+    override suspend fun transitionDocument(
+        project: String, document: DocumentSnapshot, target: DocumentStatus,
+    ): Result<DocumentSnapshot> =
+        operation("transition", project, listOf(document.id, "--expected", document.revision, "--to", target.label)) {
+            snapshot(it).also { updated ->
+                require(updated.id == document.id && updated.status == target && updated.revision != document.revision &&
+                    updated.contentHash == document.contentHash && updated.title == document.title && updated.body == document.body) {
+                    "qms returned an unexpected lifecycle transition."
+                }
+            }
+        }
+
+    override suspend fun documentLifecycleHistory(project: String, id: String): Result<List<DocumentLifecycleEvent>> =
+        operation("lifecycle-history", project, listOf(id)) { data ->
+            data.jsonArray.map { element ->
+                val value = element.jsonObject
+                val revision = value.string("revision")
+                val eventHash = value.string("event_hash")
+                val contentHash = value.string("content_hash")
+                validateHashes(revision, contentHash, eventHash)
+                DocumentLifecycleEvent(
+                    revision, eventHash, contentHash, status(value.string("from_status")),
+                    status(value.string("to_status")), value.nonemptyString("local_timestamp"),
+                )
+            }.also { events ->
+                require(events.map { it.revision }.distinct().size == events.size) { "Duplicate lifecycle revisions." }
+                require(events.map { it.eventHash }.distinct().size == events.size) { "Duplicate lifecycle events." }
+                events.zipWithNext().forEach { (previous, next) ->
+                    require(previous.to == next.from && previous.contentHash == next.contentHash) { "Invalid lifecycle event chain." }
+                }
+                var previous = DocumentStatus.Draft
+                events.forEach { event ->
+                    require(event.from == previous && event.to in when (previous) {
+                        DocumentStatus.Draft -> listOf(DocumentStatus.InReview)
+                        DocumentStatus.InReview -> listOf(DocumentStatus.Approved)
+                        DocumentStatus.Approved -> listOf(DocumentStatus.Effective)
+                        DocumentStatus.Effective -> listOf(DocumentStatus.Obsolete, DocumentStatus.Superseded)
+                        else -> emptyList()
+                    }) { "Invalid lifecycle transition history." }
+                    previous = event.to
+                }
+            }
+        }
+
     override suspend fun prepareSearch(project: String): Result<SearchPreparation> =
         operation("search.prepare", project, listOf("--prepare"), search = true) { data ->
             val value = data.jsonObject
@@ -78,13 +124,19 @@ internal class DesktopDocumentCapabilities(
         }
 
     override suspend fun createDocument(project: String, title: String, body: String): Result<DocumentSnapshot> =
-        operation("create", project, listOf("--title", title), body, decode = ::snapshot)
+        operation("create", project, listOf("--title", title), body) {
+            snapshot(it).also { document ->
+                require(document.status == DocumentStatus.Draft) { "qms created a non-Draft document." }
+            }
+        }
 
     override suspend fun saveDocument(
         project: String, id: String, expected: String, title: String, body: String,
     ): Result<DocumentSnapshot> =
         operation("save", project, listOf(id, "--title", title, "--expected", expected), body) {
-            snapshot(it).also { doc -> require(doc.id == id) { "qms returned a different document." } }
+            snapshot(it).also { doc ->
+                require(doc.id == id && doc.status == DocumentStatus.Draft) { "qms returned a different document or non-Draft save." }
+            }
         }
 
     override suspend fun documentHistory(project: String, id: String): Result<List<DocumentSnapshot>> =
@@ -191,12 +243,20 @@ private fun snapshot(data: JsonElement): DocumentSnapshot {
     val eventHash = value.string("event_hash")
     val title = value.string("title")
     require(Regex("DOC-[0-9a-f]{32}").matches(id)) { "Invalid document ID." }
+    validateHashes(revision, contentHash, eventHash)
+    require(title.isNotBlank()) { "Invalid document title." }
+    return DocumentSnapshot(
+        id, title, value.string("body"), revision, contentHash, eventHash,
+        value.string("configured_author"), value.string("local_timestamp"), status(value.string("status")),
+    )
+}
+
+private fun status(value: String): DocumentStatus =
+    DocumentStatus.entries.firstOrNull { it.label == value }
+        ?: throw IllegalArgumentException("Unknown document status: $value")
+
+private fun validateHashes(revision: String, contentHash: String, eventHash: String) {
     require(Regex("([0-9a-f]{40}|[0-9a-f]{64})").matches(revision)) { "Invalid saved revision." }
     require(Regex("sha256:[0-9a-f]{64}").matches(contentHash)) { "Invalid content hash." }
     require(Regex("[0-9a-f]{64}").matches(eventHash)) { "Invalid event hash." }
-    require(title.isNotBlank() && value.string("status") == "Draft") { "Invalid draft metadata." }
-    return DocumentSnapshot(
-        id, title, value.string("body"), revision, contentHash, eventHash,
-        value.string("configured_author"), value.string("local_timestamp"),
-    )
 }

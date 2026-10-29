@@ -12,6 +12,13 @@ import org.junit.Test
 class ScaffoldDocumentTest {
     @get:Rule val compose = createComposeRule()
 
+    private fun searchField(): SemanticsNodeInteraction {
+        if (compose.onAllNodesWithContentDescription("Search saved documents").fetchSemanticsNodes().isEmpty()) {
+            compose.onNodeWithContentDescription("Toggle Search panel").performClick()
+        }
+        return compose.onNodeWithContentDescription("Search saved documents")
+    }
+
     private class Projects : ProjectCapabilities {
         var failOpen = false
         override suspend fun listDirectory(path: String?) = Result.success(DirectoryListing("/project", null, emptyList()))
@@ -21,6 +28,10 @@ class ScaffoldDocumentTest {
     }
 
     private class Documents : DocumentCapabilities {
+        override suspend fun transitionDocument(project: String, document: DocumentSnapshot, target: DocumentStatus) =
+            Result.failure<DocumentSnapshot>(IllegalStateException("This navigation test must not transition"))
+        override suspend fun documentLifecycleHistory(project: String, id: String) =
+            Result.success(emptyList<DocumentLifecycleEvent>())
         val first = DocumentSnapshot("DOC-1", "Policy", "original", "first", "hash", "event", "Test", "1")
         var saved = first
         var lists = 0
@@ -64,14 +75,17 @@ class ScaffoldDocumentTest {
         compose.onNodeWithText("New document").performClick()
         compose.onNodeWithContentDescription("Document title").performTextInput("Unsaved")
         compose.onNodeWithText("Open project").performClick()
+        compose.onNodeWithText("Select directory").performClick()
         compose.onNodeWithText("Unsaved changes").assertExists()
-        compose.onNodeWithText("Keep editing").performClick()
+        compose.onNodeWithText("Cancel").performClick()
         compose.onNodeWithContentDescription("Document title").assertTextContains("Unsaved")
         compose.runOnIdle { closeRequested = true }
         compose.onNodeWithText("Unsaved changes").assertExists()
         compose.runOnIdle { assertFalse(closed) }
-        compose.onNodeWithText("Keep editing").performClick()
+        compose.onNodeWithText("Cancel").performClick()
         compose.onNodeWithText("New document").performClick()
+        compose.onNodeWithContentDescription("Document tab Unsaved").performClick()
+        compose.onNodeWithContentDescription("Close tab Unsaved").performClick()
         compose.onNodeWithText("Discard changes").performClick()
         compose.onNodeWithContentDescription("Document title").assertTextContains("")
         compose.runOnIdle { closeRequested = true }
@@ -89,13 +103,13 @@ class ScaffoldDocumentTest {
         compose.onNodeWithText("Select directory").performClick()
         compose.onNodeWithText("Policy (Draft)").performClick()
         compose.onNodeWithContentDescription("Markdown body").performTextReplacement("keep these edits")
-        compose.onNodeWithContentDescription("Search saved drafts").performTextReplacement("policy")
+        searchField().performTextReplacement("policy")
         compose.waitUntil(3000) { capabilities.queries.isNotEmpty() }
         repeat(2) {
             compose.onNodeWithText(if (it == 0) "Light theme" else "Dark theme").performClick()
             compose.runOnIdle { assertEquals(it != 0, chrome.dark) }
             compose.onNodeWithContentDescription("Markdown body").assertTextContains("keep these edits")
-            compose.onNodeWithContentDescription("Search saved drafts").assertTextContains("policy")
+            searchField().assertTextContains("policy")
             compose.onNodeWithText("Draft has unsaved edits").assertExists()
         }
         compose.runOnIdle {
@@ -104,8 +118,9 @@ class ScaffoldDocumentTest {
             assertEquals(listOf("policy"), capabilities.queries)
         }
         compose.onNodeWithText("Open project").performClick()
+        compose.onNodeWithText("Select directory").performClick()
         compose.onNodeWithText("Unsaved changes").assertExists()
-        compose.onNodeWithText("Keep editing").performClick()
+        compose.onNodeWithText("Cancel").performClick()
         compose.onNodeWithContentDescription("Markdown body").assertTextContains("keep these edits")
     }
 
@@ -120,14 +135,15 @@ class ScaffoldDocumentTest {
         compose.onNodeWithText("Open project").performClick()
         compose.onNodeWithText("Select directory").performClick()
         compose.onNodeWithText("Policy (Draft)").performClick()
+        compose.onNodeWithContentDescription("Markdown body").performTextReplacement("unsaved before switch")
         compose.onNodeWithText("Open project").performClick()
         compose.onNodeWithText("Cancel").performClick()
-        compose.onNodeWithContentDescription("Markdown body").assertTextContains("original")
+        compose.onNodeWithContentDescription("Markdown body").assertTextContains("unsaved before switch")
         compose.runOnIdle { projects.failOpen = true }
         compose.onNodeWithText("Open project").performClick()
         compose.onNodeWithText("Select directory").performClick()
         compose.onNodeWithText("Verification failed").assertExists()
-        compose.onNodeWithContentDescription("Markdown body").assertTextContains("original")
+        compose.onNodeWithContentDescription("Markdown body").assertTextContains("unsaved before switch")
         compose.runOnIdle {
             assertEquals(1, capabilities.lists)
             projects.failOpen = false
@@ -135,6 +151,8 @@ class ScaffoldDocumentTest {
         }
         compose.onNodeWithText("Open project").performClick()
         compose.onNodeWithText("Select directory").performClick()
+        compose.onNodeWithText("Unsaved changes").assertExists()
+        compose.onNodeWithText("Discard changes").performClick()
         compose.onNodeWithText("External policy (Draft)").assertExists()
         compose.onNodeWithContentDescription("Markdown body").assertDoesNotExist()
         compose.runOnIdle { assertEquals(2, capabilities.lists) }
@@ -172,7 +190,7 @@ class ScaffoldDocumentTest {
         compose.onNodeWithContentDescription("Markdown body").assertTextContains("edit while About is open")
         compose.runOnIdle { closeRequested = true }
         compose.onNodeWithText("Unsaved changes").assertExists()
-        compose.onNodeWithText("Keep editing").performClick()
+        compose.onNodeWithText("Cancel").performClick()
         compose.onNodeWithContentDescription("Markdown body").assertTextContains("edit while About is open")
         compose.runOnIdle { assertFalse(exited) }
     }
@@ -197,7 +215,7 @@ class ScaffoldDocumentTest {
             assertFalse(chrome.enabled)
             chrome.request(DesktopCommand.NewProject)
         }
-        compose.onNodeWithText("Keep editing").performClick()
+        compose.onNodeWithText("Cancel").performClick()
         compose.onNodeWithContentDescription("Markdown body").assertTextContains("keep edits")
         compose.runOnIdle { chrome.request(DesktopCommand.CloseProject) }
         compose.onNodeWithText("Discard changes").performClick()
@@ -220,7 +238,7 @@ class ScaffoldDocumentTest {
         compose.onNodeWithText("Project created successfully.").assertExists()
         compose.onNodeWithText("Policy (Draft)").performClick()
         compose.onNodeWithContentDescription("Markdown body").performTextReplacement("keep edits")
-        compose.onNodeWithContentDescription("Search saved drafts").performTextReplacement("policy")
+        searchField().performTextReplacement("policy")
         compose.waitUntil(3000) { documents.queries.isNotEmpty() }
         compose.runOnIdle { chrome.request(DesktopCommand.Settings) }
         compose.onNodeWithText("Use light appearance").performClick()
@@ -228,7 +246,7 @@ class ScaffoldDocumentTest {
         compose.onNodeWithText("Close").performClick()
         compose.onNodeWithText("Dark theme").assertExists()
         compose.onNodeWithContentDescription("Markdown body").assertTextContains("keep edits")
-        compose.onNodeWithContentDescription("Search saved drafts").assertTextContains("policy")
+        searchField().assertTextContains("policy")
         compose.runOnIdle {
             assertEquals(1, documents.lists)
             assertEquals(1, documents.prepares)
