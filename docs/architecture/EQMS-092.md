@@ -157,3 +157,32 @@ direct process boundaries, native verification and local Git trust limitations
 remain; no new trusted clock, remote identity or cryptographic signature is
 provided. Human usability/accessibility and manual workflow testing remain
 required before merge.
+
+## Icon-only tool rails (stacked follow-up)
+
+Issue #50 continues on `feature/eqms-092-tool-rail-icons`, explicitly stacked
+from #61 at `c80db99374821535702be29b455dd05119c6aab5` instead of main.
+Only the four rail controls change: compact Jewel selectable icon buttons,
+themed bundled IntelliJ icons, stable accessible names and hover tooltips.
+Project/Search stay left, Review/History right; panel headings remain text.
+Use a 44dp rail with 36dp hit targets and 20dp icons. Selection and keyboard
+focus remain visible in both themes. Shared JVM UI metadata owns names, icons,
+side and shortcut numbers; no dependency or native/domain change is needed.
+
+Tooltips and the workspace preview-key handler share the mapping: macOS
+Command+1/2/3/4, Windows/Linux Alt+1/2/3/4, in Project/Search/Review/History
+order. Match top-row digits with exactly the designated modifier, key-down
+only, suppress repeats until release, and clear held keys on focus loss.
+Mouse and keyboard use one live busy/modal-guarded toggle path. Opening a
+tool does not steal editor focus; hiding a focused panel returns focus to its
+rail button. Scope keys to the document workspace, never global AWT hooks.
+Unrelated keys pass through; modal windows retain their own input.
+
+Both risk disciplines apply proportionately: icon-only controls reduce
+discoverability, and shortcuts can accidentally hide content or bypass guards.
+Mitigate with truthful tooltips, stable labels/selection/focus, exact modifier
+matching, repeat suppression and mapped editor/modal/busy tests. Toggling must
+not save, mutate lifecycle state, destroy buffers or reset widths/search.
+No new filesystem/network capability or trust boundary is introduced.
+Cross-platform native runtime, human usability and assistive-technology review
+remain manual limitations, not inferred approvals.

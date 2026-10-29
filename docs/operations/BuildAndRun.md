@@ -252,6 +252,18 @@ to use left **Project** / **Search** tools, central document tabs and right
 to collapse it. Drag a divider or use the panel's minus/plus controls to resize.
 Widths, selected tools and open tabs last for the session only.
 
+The outer rails use icons only: folder (Project), magnifier (Search), check
+(Review) and clock (History). Hover an icon for its name and shortcut.
+On macOS use **Command+1** Project, **Command+2** Search, **Command+3** Review
+and **Command+4** History; on Windows/Linux use **Alt+1..4** in the same order.
+Shortcuts work within the document workspace, including title/Markdown/search
+fields, and toggle the panel just like clicking. Opening a tool preserves
+editor focus; hiding a focused panel moves focus to its rail icon. Only the
+exact modifier with a top-row digit matches; holding the key toggles once.
+Busy operations and modal dialogs block background toggles. About is a
+separate non-modal window: its keys do not toggle workspace tools.
+Panel headings remain labelled. Tab through controls and use Enter to activate.
+
 Each latest-document tab keeps its own unsaved buffer. Switching tabs or tools
 does not discard edits; selecting an already-open document focuses its tab.
 Exact historical revisions open in separate read-only tabs. Closing dirty tabs
@@ -270,6 +282,8 @@ drafts rendered with the real native adapters at the earlier scaffold revision.
 Those are historical previews, not evidence for the lifecycle UI.
 See the [Jewel assessment/design](../architecture/EQMS-092.md) and
 [workspace follow-up evidence](../testing/evidence/EQMS-092-document-workspace.md).
+The [icon-rail follow-up evidence](../testing/evidence/EQMS-092-tool-rail-icons.md)
+records the compact rails, hover tooltips and shortcut checks separately.
 
 To regenerate captures without touching existing workspaces, choose an output
 directory outside the repository; the opt-in test creates a fresh workspace

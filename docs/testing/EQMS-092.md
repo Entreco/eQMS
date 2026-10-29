@@ -45,6 +45,14 @@ Define before implementation; earlier IDs/evidence are retained.
 | T092-13 | R092-13, R092-16 | State/UI tests: confirmed clean-only lifecycle actions, read-only after submit, terminal/historical guards, stale failure, duplicate clicks and source-bound late results. |
 | T092-14 | R092-15, R092-16, R092-17 | Real native workspace create/save/submit/approve/publish/reopen, lifecycle history and unchanged content/baseline/index; captures in both themes distinguish internal state from signatures/releases. |
 | T092-15 | R092-17, R092-18 | Existing feature/desktop regressions, neutral search/history wording, exact diff including lifecycle-only no-change revisions, all feature/web Wasm compilation; rerun opt-in 10k p95 <=150 ms benchmark if result rendering changes. |
+| T092-16 | R092-19 | Real hover/dismissal, name/shortcut formatting, icon-only compact rails, accessible selected/enabled/focus semantics, dark/light previews and minimum-width layout. Manual assistive-technology and visual acceptance remain unchecked. |
+| T092-17 | R092-13, R092-18, R092-20 | Both platform policies, all four toggles, extra/wrong modifiers, plain digit input, key-down/up/repeats and focus reset; editor/title/search focus and dirty-buffer/caret retention; busy, lifecycle/unsaved dialogs and scaffold modal guards; existing UI/native regressions and Wasm compilation. |
+
+Icon-rail follow-up evidence belongs in
+`evidence/EQMS-092-tool-rail-icons.md`, identifying its tested source revision
+separately from the earlier workspace evidence. Policy tests do not establish
+Windows/Linux native runtime behavior. The icon-only increment does not change
+search results/timing; the earlier missing-fixture benchmark is not a new pass.
 
 Evidence belongs in `evidence/EQMS-092-document-workspace.md` with the exact
 tested source revision, environment, commands, observed outcomes/exclusions

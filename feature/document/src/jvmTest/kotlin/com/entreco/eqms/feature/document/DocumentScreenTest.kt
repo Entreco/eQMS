@@ -22,6 +22,80 @@ import org.junit.Test
 class DocumentScreenTest {
     @get:Rule val compose = createComposeRule()
 
+    private fun shortcut(number: Key) {
+        compose.onRoot().performKeyInput {
+            val modifier = if (System.getProperty("os.name").startsWith("Mac")) Key.MetaLeft else Key.AltLeft
+            keyDown(modifier)
+            pressKey(number)
+            keyUp(modifier)
+        }
+    }
+
+    @Test
+    fun panelShortcutsRetainDirtyEditorCaretAndOperateFromTitleAndSearch() {
+        val capabilities = Capabilities()
+        compose.setContent { IntUiTheme(isDark = true) { DocumentScreen("/project", capabilities, { _, _ -> }) } }
+        compose.onNodeWithText("Policy (Draft)").performClick()
+        val body = compose.onNodeWithContentDescription("Markdown body")
+        body.performTextReplacement("unsaved body")
+        body.performTextInputSelection(TextRange(3))
+        val before = body.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange]
+        for ((key, name) in listOf(Key.One to "Project", Key.Two to "Search", Key.Three to "Review", Key.Four to "History")) {
+            val button = compose.onNodeWithContentDescription("Toggle $name panel")
+            shortcut(key)
+            if (name == "Project" || name == "Review") button.assertIsNotSelected() else button.assertIsSelected()
+            body.assertIsFocused().assertTextContains("unsaved body")
+            assertEquals(before, body.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange])
+        }
+        compose.onNodeWithContentDescription("Document title").performClick()
+        shortcut(Key.Three)
+        compose.onNodeWithContentDescription("Toggle Review panel").assertIsSelected()
+        compose.onNodeWithContentDescription("Document title").assertIsFocused()
+        compose.onNodeWithContentDescription("Search saved documents").performTextReplacement("retained query")
+        shortcut(Key.Two)
+        compose.onNodeWithContentDescription("Toggle Search panel").assertIsFocused().assertIsNotSelected()
+        shortcut(Key.Two)
+        compose.onNodeWithContentDescription("Search saved documents").assertTextContains("retained query")
+        body.assertTextContains("unsaved body")
+        compose.runOnIdle { assertEquals(0, capabilities.saves) }
+    }
+
+    @Test
+    fun workspaceBusyAndLifecycleAndUnsavedDialogsBlockPanelShortcuts() {
+        val capabilities = Capabilities()
+        var workspaceBusy by mutableStateOf(false)
+        compose.setContent {
+            IntUiTheme(isDark = true) {
+                DocumentScreen("/project", capabilities, { _, _ -> }, workspaceBusy = workspaceBusy)
+            }
+        }
+        compose.onNodeWithText("Policy (Draft)").performClick()
+        compose.onNodeWithContentDescription("Markdown body").performClick()
+        compose.runOnIdle { workspaceBusy = true }
+        shortcut(Key.One)
+        compose.onNodeWithContentDescription("Toggle Project panel").assertIsSelected().assertIsNotEnabled()
+        compose.runOnIdle { workspaceBusy = false }
+        compose.onNodeWithText("Submit for review").performScrollTo().performClick()
+        compose.onNodeWithText("Cancel").performSemanticsAction(SemanticsActions.RequestFocus) { it() }
+        compose.onAllNodes(isRoot()).onLast().performKeyInput {
+            val modifier = if (System.getProperty("os.name").startsWith("Mac")) Key.MetaLeft else Key.AltLeft
+            keyDown(modifier); pressKey(Key.One); keyUp(modifier)
+        }
+        compose.onNodeWithContentDescription("Toggle Project panel").assertIsSelected().assertIsNotEnabled()
+        compose.onNodeWithText("Cancel").performClick()
+        compose.onNodeWithContentDescription("Markdown body").performTextReplacement("dirty")
+        compose.onNodeWithContentDescription("Close tab Policy").performClick()
+        compose.onNodeWithText("Cancel").performSemanticsAction(SemanticsActions.RequestFocus) { it() }
+        compose.onAllNodes(isRoot()).onLast().performKeyInput {
+            val modifier = if (System.getProperty("os.name").startsWith("Mac")) Key.MetaLeft else Key.AltLeft
+            keyDown(modifier); pressKey(Key.Four); keyUp(modifier)
+        }
+        compose.onNodeWithContentDescription("Toggle Review panel").assertIsSelected()
+        compose.onNodeWithContentDescription("Toggle History panel").assertIsNotSelected()
+        compose.onNodeWithText("Cancel").performClick()
+        compose.onNodeWithContentDescription("Markdown body").assertTextContains("dirty")
+    }
+
     private fun searchField(): SemanticsNodeInteraction {
         if (compose.onAllNodesWithContentDescription("Search saved documents").fetchSemanticsNodes().isEmpty()) {
             compose.onNodeWithContentDescription("Toggle Search panel").performClick()
@@ -130,6 +204,9 @@ class DocumentScreenTest {
         compose.onNodeWithText("Save").performClick()
         compose.onNodeWithText("Save").assertIsNotEnabled()
         compose.onNodeWithText("New document").assertIsNotEnabled()
+        shortcut(Key.Four)
+        compose.onNodeWithContentDescription("Toggle History panel").assertIsNotEnabled().assertIsNotSelected()
+        compose.onNodeWithContentDescription("Toggle Review panel").assertIsSelected()
         compose.runOnIdle { assertEquals(1, capabilities.saves); pending.complete(Result.success(capabilities.first)) }
         compose.onNodeWithText("Draft saved.").assertExists()
         compose.waitUntil(3000) { capabilities.prepares == 2 }
