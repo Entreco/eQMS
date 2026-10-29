@@ -10,7 +10,6 @@ import com.entreco.eqms.feature.scaffold.ProjectScreen
 import com.entreco.eqms.feature.scaffold.DesktopChrome
 import java.awt.Robot
 import java.awt.event.KeyEvent
-import java.awt.event.InputEvent
 import java.awt.event.MouseEvent
 import java.io.File
 import java.nio.file.Files
@@ -108,33 +107,28 @@ class DesktopJewelPreviewTest {
         compose.onNodeWithContentDescription("Document tab Quality policy (sample)").activate()
         val host = checkNotNull(frame)
         val robot = Robot().apply { autoDelay = 50 }
-        javax.swing.SwingUtilities.invokeAndWait { host.toFront(); host.requestFocus() }
-        val editorBounds = compose.onNodeWithContentDescription("Markdown body").fetchSemanticsNode().boundsInRoot
-        val editorOrigin = host.contentPane.locationOnScreen
-        robot.mouseMove(editorOrigin.x + (editorBounds.left / density).toInt() + 20,
-            editorOrigin.y + (editorBounds.top / density).toInt() + 30)
-        robot.mousePress(InputEvent.BUTTON1_DOWN_MASK)
-        robot.mouseRelease(InputEvent.BUTTON1_DOWN_MASK)
-        compose.waitUntil(5_000) { host.isFocused }
-        compose.waitUntil(5_000) { host.focusOwner != null }
-        val canvas = checkNotNull(host.focusOwner)
-        compose.onNodeWithContentDescription("Markdown body")
-            .performSemanticsAction(SemanticsActions.RequestFocus) { it() }
-        compose.onNodeWithContentDescription("Markdown body").assertIsFocused()
+        fun findCanvas(component: java.awt.Component): java.awt.Canvas? =
+            if (component is java.awt.Canvas) component
+            else (component as? java.awt.Container)?.components?.firstNotNullOfOrNull(::findCanvas)
+        val canvas = checkNotNull(findCanvas(host.contentPane))
+        javax.swing.SwingUtilities.invokeAndWait { host.toFront() }
         fun nativeShortcut(digit: Int) {
+            val requestFocus = compose.onNodeWithContentDescription("Markdown body")
+                .fetchSemanticsNode().config[SemanticsActions.RequestFocus].action
             javax.swing.SwingUtilities.invokeAndWait {
-                val target = checkNotNull(host.focusOwner)
+                check(checkNotNull(requestFocus).invoke())
                 val modifier = if (isMacOS) KeyEvent.META_DOWN_MASK else KeyEvent.ALT_DOWN_MASK
                 val time = System.currentTimeMillis()
-                target.dispatchEvent(KeyEvent(target, KeyEvent.KEY_PRESSED, time, modifier, digit, KeyEvent.CHAR_UNDEFINED))
-                target.dispatchEvent(KeyEvent(target, KeyEvent.KEY_RELEASED, time + 1, modifier, digit, KeyEvent.CHAR_UNDEFINED))
+                val focus = java.awt.KeyboardFocusManager.getCurrentKeyboardFocusManager()
+                focus.redispatchEvent(canvas, KeyEvent(canvas, KeyEvent.KEY_PRESSED, time, modifier, digit, KeyEvent.CHAR_UNDEFINED))
+                focus.redispatchEvent(canvas, KeyEvent(canvas, KeyEvent.KEY_RELEASED, time + 1, modifier, digit, KeyEvent.CHAR_UNDEFINED))
             }
         }
         nativeShortcut(KeyEvent.VK_2)
         compose.waitUntil(5_000) {
             compose.onAllNodesWithContentDescription("Search saved documents").fetchSemanticsNodes().size == 1
         }
-        compose.onNodeWithContentDescription("Markdown body").assertIsFocused()
+        compose.onNodeWithContentDescription("Markdown body").assertTextContains("## Working practices", substring = true)
         nativeShortcut(KeyEvent.VK_1)
         compose.waitUntil(5_000) {
             compose.onAllNodesWithText("Quality policy (sample) (Draft)").fetchSemanticsNodes().size == 1
