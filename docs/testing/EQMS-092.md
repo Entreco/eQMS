@@ -49,6 +49,9 @@ Define before implementation; earlier IDs/evidence are retained.
 | T092-17 | R092-13, R092-18, R092-20 | Both platform policies, all four toggles, extra/wrong modifiers, plain digit input, key-down/up/repeats and focus reset; editor/title/search focus and dirty-buffer/caret retention; busy, lifecycle/unsaved dialogs and scaffold modal guards; existing UI/native regressions and Wasm compilation. |
 | T092-18 | R092-13, R092-14, R092-19, R092-21 | Assert left/right tooltip geometry at different pointer heights; real split drags change tool/editor widths, obey bounds/disabled state and show native resize cursor. Verify tab selected/disabled/focus, integrated close and dirty guards, and active-tab visibility. Review generated dark/light rounded-panel/tab captures; manual visual acceptance remains unchecked. |
 
+Review-refinement outcomes and new captures are recorded separately in
+`evidence/EQMS-092-workspace-ux-review.md`; earlier evidence is not overwritten.
+
 Icon-rail follow-up evidence belongs in
 `evidence/EQMS-092-tool-rail-icons.md`, identifying its tested source revision
 separately from the earlier workspace evidence. Policy tests do not establish

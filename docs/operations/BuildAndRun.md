@@ -294,6 +294,8 @@ See the [Jewel assessment/design](../architecture/EQMS-092.md) and
 [workspace follow-up evidence](../testing/evidence/EQMS-092-document-workspace.md).
 The [icon-rail follow-up evidence](../testing/evidence/EQMS-092-tool-rail-icons.md)
 records the compact rails, hover tooltips and shortcut checks separately.
+The [UI/UX review evidence](../testing/evidence/EQMS-092-workspace-ux-review.md)
+shows the subsequent rounded panels, level hints, split cursors and editor tabs.
 
 To regenerate captures without touching existing workspaces, choose an output
 directory outside the repository; the opt-in test creates a fresh workspace
