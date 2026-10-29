@@ -125,7 +125,7 @@ impl Markdown {
     }
 }
 
-pub(crate) fn hash(bytes: &[u8]) -> String {
+pub fn hash(bytes: &[u8]) -> String {
     format!("sha256:{:x}", Sha256::digest(bytes))
 }
 

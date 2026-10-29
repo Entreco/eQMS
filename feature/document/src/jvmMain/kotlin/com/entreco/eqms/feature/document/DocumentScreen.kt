@@ -50,6 +50,7 @@ fun DocumentScreen(
     onSearchResultsLaidOut: (SearchRenderTiming) -> Unit = {},
     workspaceBusy: Boolean = false,
     navigation: DocumentNavigationController? = null,
+    onDocumentRendered: (DocumentRenderTiming) -> Unit = {},
 ) {
     key(project, capabilities) {
         val scope = rememberCoroutineScope()
@@ -67,8 +68,11 @@ fun DocumentScreen(
         var leftWidth by remember { mutableFloatStateOf(260f) }
         var rightWidth by remember { mutableFloatStateOf(300f) }
         var confirmation by remember { mutableStateOf<Pair<DocumentTab, DocumentStatus>?>(null) }
+        var externalLink by remember { mutableStateOf<String?>(null) }
+        var linkBusy by remember { mutableStateOf(false) }
+        val bitmapCache = remember { DocumentBitmapCache() }
         val tab = state.active
-        val interactive = !state.busy && !workspaceBusy && state.pendingClose == null && confirmation == null
+        val interactive = !state.busy && !workspaceBusy && state.pendingClose == null && confirmation == null && externalLink == null && !linkBusy
         val isMac = remember { System.getProperty("os.name").startsWith("Mac") }
         val shortcuts = remember(isMac) { ToolShortcutHandler(isMac) }
         val railFocus = remember { WorkspaceTool.entries.associateWith { FocusRequester() } }
@@ -88,7 +92,7 @@ fun DocumentScreen(
         val windowFocused = LocalWindowInfo.current.isWindowFocused
         LaunchedEffect(windowFocused) { if (!windowFocused) shortcuts.reset() }
         val dirty = state.dirty
-        val working = state.busy || state.pendingClose != null || confirmation != null
+        val working = state.busy || state.pendingClose != null || confirmation != null || externalLink != null || linkBusy
         SideEffect { onStateChanged(dirty, working) }
         DisposableEffect(state, navigation) {
             navigation?.handler = { state.requestNavigation(it) }
@@ -178,19 +182,16 @@ fun DocumentScreen(
                                 Text("Select a document or create a new draft.")
                             }
                         } else editorStates.SaveableStateProvider(tab.key) {
-                            Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(tab.scroll).padding(16.dp),
+                            Column(Modifier.weight(1f).fillMaxWidth().padding(12.dp),
                                 verticalArrangement = Arrangement.spacedBy(12.dp)) {
                                 Text(tab.snapshot?.status?.label ?: "New draft", fontWeight = FontWeight.SemiBold)
                                 if (tab.dirty) Text("Draft - unsaved changes")
                                 if (tab.historical) Text("Saved revision - read-only")
                                 tab.error?.let { Text(it, color = JewelTheme.globalColors.text.error) }
                                 tab.message?.let { Text(it) }
-                                WorkspaceTextField(tab.title, { tab.titleField.value = tab.titleField.value.copy(text = it); tab.message = null },
-                                    "Document title", singleLine = true, readOnly = !tab.editable, enabled = interactive,
-                                    textState = tab.titleField, modifier = Modifier.fillMaxWidth())
-                                WorkspaceTextField(tab.body, { tab.bodyField.value = tab.bodyField.value.copy(text = it); tab.message = null },
-                                    "Markdown body", readOnly = !tab.editable, enabled = interactive,
-                                    textState = tab.bodyField, modifier = Modifier.fillMaxWidth().height(440.dp))
+                                DocumentPresentation(project, tab, capabilities, interactive, bitmapCache,
+                                    onExternalLink = { if (interactive) externalLink = it }, modifier = Modifier.weight(1f).fillMaxWidth(),
+                                    onRendered = onDocumentRendered)
                                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                     DefaultButton(enabled = interactive && tab.editable && tab.title.isNotBlank(),
                                         onClick = { scope.launch { state.save(tab) } }) { Text("Save") }
@@ -230,6 +231,27 @@ fun DocumentScreen(
                     ToolRail(WorkspaceTool.entries.filter { !it.isLeft }, right, interactive, isMac, railFocus, toggle)
                 }
             }
+        }
+        externalLink?.let { target ->
+            WorkspaceDialog(
+                onDismissRequest = { if (!linkBusy) externalLink = null },
+                title = { Text("Open external link?") },
+                text = { Text("This opens your default application outside DutchDoxx:\n$target") },
+                confirmButton = {
+                    DefaultButton(enabled = !linkBusy, onClick = {
+                        linkBusy = true
+                        scope.launch {
+                            try {
+                                capabilities.openDocumentLink(target).onFailure {
+                                    tab?.error = it.message ?: "Could not open external link."
+                                }
+                                externalLink = null
+                            } finally { linkBusy = false }
+                        }
+                    }) { Text("Open link") }
+                },
+                dismissButton = { OutlinedButton(enabled = !linkBusy, onClick = { externalLink = null }) { Text("Cancel") } },
+            )
         }
         confirmation?.let { (source, target) ->
             WorkspaceDialog(

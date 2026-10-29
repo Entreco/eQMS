@@ -13,6 +13,57 @@ related:
 
 # Build and Run
 
+## Document reading and source modes (EQMS-083)
+
+Documents open in **Preview**. Choose **Source** to edit compact Markdown, or
+**Split** to see source beside the rendered document. The split grip supports
+horizontal dragging and left/right arrow keys when focused. Modes, source
+caret and independent scroll positions are retained per open tab for the session.
+Use **Save** explicitly; changing modes and rendering never save or approve.
+Unsaved preview is labelled and never displays a saved content hash as its own.
+Saved/historical preview exposes exact ID/revision/hash under **Source details**.
+
+The renderer supports CommonMark headings, lists, emphasis, links, blockquotes,
+code and thematic breaks, plus tables, strikethrough and footnotes. **Table of
+contents** expands heading navigation. Reference-style links and footnotes are
+navigation, not cross-document traceability or a bibliography manager.
+Raw HTML is shown literally. External HTTP/HTTPS/mailto links require confirmation;
+there is no automatic browser launch or remote image/resource loading.
+
+Reference existing local PNG/JPEG images as `![Alternative text](assets/name.png)`.
+Files must already be under the project's `assets/` directory; there is no import
+or asset-versioning UI. Unix hosts use anchored no-follow reads; other hosts
+report unsupported secure image reads. Absolute/escaping/symlink/remote paths are
+rejected. Limit images to 10 MiB encoded and 16 megapixels; decoded caching is
+bounded to 64 MiB. Current images are unversioned and not covered by the document
+hash. Historical views show an explicit placeholder rather than today's image.
+Missing/unsupported images retain alt text and a visible diagnostic.
+
+Preview accepts at most 1 MiB UTF-8 body, 16 KiB title, depth 64 and 100,000
+parse events. Larger existing documents remain accessible in Source and can
+still be saved; preview errors never truncate storage. Parsing is off-thread,
+updates coalesce for 100 ms and closed/stale tab results are discarded.
+
+Native rendering is read-only:
+
+```sh
+qms document render <project> <document-id> --revision <full-commit> --json
+qms document render <project> <document-id> --output html
+printf '{"title":"Example","body":"# Purpose\\n\\nCompact source."}' |
+  qms document render-buffer --json
+```
+
+`render-buffer` consumes title/body JSON from stdin (8 MiB transport limit),
+returns an unsaved body input digest, and never claims saved provenance.
+`--output html` returns escaped deterministic HTML (16 MiB output limit);
+local images use explicit unversioned/unavailable placeholders, not remote
+resource URLs. Native JSON uses outer schema 2 and semantic schema 1.
+PDF pagination, page numbers/repeated page headers/footers and DOCX are separate
+roadmap work (#35/#33), not supported by this continuous on-screen preview.
+
+Design/risk, requirements and test mapping: `docs/architecture/EQMS-083.md`,
+`docs/requirements/EQMS-083.md`, `docs/testing/EQMS-083.md`.
+
 Run commands from the repository root. The Rust native CLI owns workspace
 operations and the derived SQLite index; Kotlin cmd remains a bootstrap
 prototype.

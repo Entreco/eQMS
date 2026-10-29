@@ -454,11 +454,14 @@ requirements and tests; targets are not claims of observed results.
 **Type:** Feature  
 **Priority:** P1  
 **Dependencies:** EQMS-020  
-**Description:** Render canonical documents as HTML without coupling core content to presentation.
+**Description:** Render compact canonical Markdown through one versioned Rust semantic model, consumed by a polished native Compose Preview/Source/Split document panel and deterministic HTML, without coupling content to presentation.
 **Acceptance criteria:**
 - Output preserves document IDs, version references, and source hashes.
 - Rendering is reproducible for fixed content, template, and renderer versions.
 - Untrusted document content is handled safely; rendered output cannot change canonical records or imply approval.
+- Preview is the default; source buffers, caret, history and lifecycle guards remain independent of presentation.
+- Support headings/TOC, tables, references/footnotes and bounded project-local raster images; no automatic networking or mutable-image historical claims.
+- Pagination, page numbers and repeating print headers/footers remain EQMS-082; DOCX remains EQMS-080.
 
 ---
 
