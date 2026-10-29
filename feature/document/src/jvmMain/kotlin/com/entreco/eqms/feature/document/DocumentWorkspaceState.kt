@@ -27,6 +27,15 @@ internal class DocumentTab(
     val dirty get() = !historical && (title != snapshot?.title.orEmpty() || body != snapshot?.body.orEmpty())
     val editable get() = !historical && (snapshot == null || snapshot?.status == DocumentStatus.Draft)
     val scroll = ScrollState(0)
+    var viewMode by mutableStateOf(DocumentViewMode.Preview)
+    val previewScroll = androidx.compose.foundation.lazy.LazyListState()
+    var splitFraction by mutableFloatStateOf(0.5f)
+    var rendered by mutableStateOf<RenderedDocument?>(null)
+    var renderedTitle = ""
+    var renderedBody = ""
+    var renderedRevision: String? = null
+    var renderRequestedAt = System.nanoTime()
+    var reportedRendering: RenderedDocument? = null
     var error by mutableStateOf<String?>(null)
     var message by mutableStateOf<String?>(null)
     var history by mutableStateOf<List<DocumentSnapshot>>(emptyList())

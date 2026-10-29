@@ -4,6 +4,11 @@ import com.entreco.eqms.feature.document.DocumentCapabilities
 import com.entreco.eqms.feature.document.DocumentSnapshot
 import com.entreco.eqms.feature.document.DocumentStatus
 import com.entreco.eqms.feature.document.DocumentLifecycleEvent
+import com.entreco.eqms.feature.document.RenderedDocument
+import com.entreco.eqms.feature.document.RenderNode
+import com.entreco.eqms.feature.document.RenderHeading
+import com.entreco.eqms.feature.document.RenderSource
+import com.entreco.eqms.feature.document.DocumentImage
 import com.entreco.eqms.feature.search.SearchHit
 import com.entreco.eqms.feature.search.SearchPage
 import com.entreco.eqms.feature.search.SearchPreparation
@@ -27,6 +32,68 @@ internal class DesktopDocumentCapabilities(
         executeProcess(command, arguments, input)
     },
 ) : DocumentCapabilities {
+    override suspend fun renderBuffer(project: String, title: String, body: String): Result<RenderedDocument> =
+        operation("render-buffer", project, emptyList(), buildJsonObject {
+            put("title", title); put("body", body)
+        }.toString()) { data ->
+            renderedDocument(data).also {
+                require(it.title == title && it.inputDigest == bodyDigest(body) && it.source.kind == "unsaved" &&
+                    it.source.id.isEmpty() && it.source.revision.isEmpty() && it.source.contentHash.isEmpty()) {
+                    "qms returned rendering for a different buffer."
+                }
+            }
+        }
+
+    override suspend fun renderSaved(project: String, document: DocumentSnapshot): Result<RenderedDocument> =
+        operation("render", project, listOf(document.id, "--revision", document.revision)) { data ->
+            renderedDocument(data).also {
+                require(it.title == document.title && it.inputDigest == bodyDigest(document.body) &&
+                    it.source == RenderSource("saved", document.id, document.revision, document.contentHash)) {
+                    "qms returned rendering for a different saved revision."
+                }
+            }
+        }
+
+    override suspend fun readDocumentImage(project: String, asset: String): Result<DocumentImage> =
+        operation("render-asset", project, listOf(asset)) { data ->
+            val value = data.jsonObject
+            require(value.string("asset") == asset && value.getValue("unversioned").jsonPrimitive.boolean) {
+                "qms returned an unexpected asset."
+            }
+            val width = value.nonnegativeInt("width")
+            val height = value.nonnegativeInt("height")
+            require(width > 0 && height > 0 && width.toLong() * height <= 16_000_000) { "Image dimensions exceed preview limits." }
+            val encoded = value.string("base64")
+            require(encoded.length <= 14 * 1024 * 1024) { "Image exceeds preview byte limit." }
+            val bytes = java.util.Base64.getDecoder().decode(encoded)
+            require(bytes.size <= 10 * 1024 * 1024 && value.string("digest") == bodyDigest(bytes)) { "Invalid image digest/size." }
+            DocumentImage(bytes, width, height)
+        }
+
+    override suspend fun openDocumentLink(target: String): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            val uri = java.net.URI(target)
+            require(uri.scheme in listOf("https", "http", "mailto") &&
+                target.none { it.isWhitespace() || it.isISOControl() }) { "Unsupported external link." }
+            if (uri.scheme == "mailto") java.awt.Desktop.getDesktop().mail(uri)
+            else {
+                require(!uri.host.isNullOrBlank() && uri.userInfo == null) { "Invalid external link." }
+                java.awt.Desktop.getDesktop().browse(uri)
+            }
+            Result.success(Unit)
+        } catch (error: java.net.URISyntaxException) {
+            Result.failure(error)
+        } catch (error: IOException) {
+            Result.failure(error)
+        } catch (error: IllegalArgumentException) {
+            Result.failure(error)
+        } catch (error: UnsupportedOperationException) {
+            Result.failure(error)
+        } catch (error: SecurityException) {
+            Result.failure(error)
+        }
+    }
+
     override suspend fun transitionDocument(
         project: String, document: DocumentSnapshot, target: DocumentStatus,
     ): Result<DocumentSnapshot> =
@@ -162,7 +229,9 @@ internal class DesktopDocumentCapabilities(
         decode: (JsonElement) -> T,
     ): Result<T> = withContext(Dispatchers.IO) {
         try {
-            val argv = if (search) listOf("search", "--json", project) else listOf("document", command, "--json", project)
+            val argv = if (search) listOf("search", "--json", project)
+                else if (command == "render-buffer") listOf("document", command, "--json")
+                else listOf("document", command, "--json", project)
             val result = runInterruptible { executor.execute(executable, argv + arguments, input) }
             val response = Json.parseToJsonElement(result.output.trim()).jsonObject
             require(response.qmsSchemaVersion() == 2) { "qms returned an unsupported JSON schema version." }

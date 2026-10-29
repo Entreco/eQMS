@@ -80,7 +80,7 @@ fn open_workspace_file(root: &Path, relative: &Path, mode: WorkspaceFileMode) ->
     }
 
     let (flags, create_mode) = match mode {
-        WorkspaceFileMode::Read => (OFlags::RDONLY, Mode::empty()),
+        WorkspaceFileMode::Read => (OFlags::RDONLY | OFlags::NONBLOCK, Mode::empty()),
         WorkspaceFileMode::Write => (OFlags::WRONLY, Mode::empty()),
         WorkspaceFileMode::Append => (OFlags::WRONLY | OFlags::APPEND, Mode::empty()),
         WorkspaceFileMode::Create => (
@@ -712,6 +712,30 @@ impl Workspace {
 
     pub(crate) fn read_canonical_file(&self, relative: &str) -> Result<Vec<u8>, WorkspaceError> {
         read_workspace_file(&self.path, relative).map_err(Into::into)
+    }
+
+    #[cfg(unix)]
+    pub fn read_render_asset(&self, relative: &str) -> Result<Vec<u8>, WorkspaceError> {
+        if !crate::render::asset_path(relative) {
+            return Err(error("Only project-local assets/ paths are supported"));
+        }
+        let file = open_workspace_file(&self.path, Path::new(relative), WorkspaceFileMode::Read)?;
+        if !file.metadata()?.is_file() {
+            return Err(error("Asset is not a regular file"));
+        }
+        let mut bytes = Vec::new();
+        file.take(10 * 1024 * 1024 + 1).read_to_end(&mut bytes)?;
+        if bytes.len() > 10 * 1024 * 1024 {
+            return Err(error("Image exceeds the 10 MiB encoded limit"));
+        }
+        Ok(bytes)
+    }
+
+    #[cfg(not(unix))]
+    pub fn read_render_asset(&self, _relative: &str) -> Result<Vec<u8>, WorkspaceError> {
+        Err(error(
+            "Secure local image reads are currently supported only on Unix hosts",
+        ))
     }
 
     pub fn verify(&self) -> Result<Vec<JournalRecord>, WorkspaceError> {

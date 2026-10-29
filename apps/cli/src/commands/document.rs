@@ -6,6 +6,7 @@ pub(crate) fn command() -> Command {
     Command::new("document")
         .about("Create, save and inspect document drafts")
         .subcommand_required(true)
+        .subcommands(super::render::commands())
         .subcommand(
             operation("validate")
                 .about("Check exact canonical v1 Markdown (no workspace)")
@@ -74,6 +75,9 @@ pub(crate) fn run(
     let (operation, args) = matches.subcommand().expect("required document operation");
     if matches!(operation, "validate" | "format") {
         return super::markdown::run(operation, args, json, input);
+    }
+    if matches!(operation, "render" | "render-buffer" | "render-asset") {
+        return super::render::run(operation, args, json, input);
     }
     let value = |name: &str| {
         args.get_one::<String>(name)
@@ -185,6 +189,93 @@ mod tests {
     }
 
     struct FailingReader;
+
+    #[test]
+    fn saved_render_is_source_bound_read_only_and_assets_are_bounded() {
+        let fixture = Fixture::new();
+        let saved = fixture
+            .run(
+                &["create", "--title", "Rendered policy"],
+                &mut Cursor::new("# Purpose\n\n**Quality** work\n"),
+            )
+            .unwrap();
+        let id = saved["id"].as_str().unwrap();
+        let revision = saved["revision"].as_str().unwrap();
+        let refs = || {
+            ProcessCommand::new("git")
+                .arg("-C")
+                .arg(&fixture.0)
+                .args(["show-ref"])
+                .output()
+                .unwrap()
+                .stdout
+        };
+        let before = refs();
+        let model = fixture
+            .run(
+                &["render", id, "--revision", revision],
+                &mut Cursor::new(""),
+            )
+            .unwrap();
+        assert_eq!(model["source"]["revision"], revision);
+        assert_eq!(model["source"]["content_hash"], saved["content_hash"]);
+        assert_eq!(model["source"]["kind"], "saved");
+        let html = fixture
+            .run(&["render", id, "--output", "html"], &mut Cursor::new(""))
+            .unwrap();
+        assert!(
+            html["html"]
+                .as_str()
+                .unwrap()
+                .contains("<strong>Quality</strong>")
+        );
+        assert_eq!(before, refs());
+        assert_eq!(
+            fixture.run(&["show", id], &mut Cursor::new("")).unwrap(),
+            saved
+        );
+        assert!(
+            fixture
+                .run(&["render-asset", "../secret"], &mut Cursor::new(""))
+                .is_err()
+        );
+        #[cfg(unix)]
+        {
+            fs::create_dir(fixture.0.join("assets")).unwrap();
+            image::RgbImage::new(4, 3)
+                .save(fixture.0.join("assets/sample.png"))
+                .unwrap();
+            let image = fixture
+                .run(&["render-asset", "assets/sample.png"], &mut Cursor::new(""))
+                .unwrap();
+            assert_eq!(image["width"], 4);
+            assert_eq!(image["height"], 3);
+            std::os::unix::fs::symlink(
+                fixture.0.join("assets/sample.png"),
+                fixture.0.join("assets/link.png"),
+            )
+            .unwrap();
+            assert!(
+                fixture
+                    .run(&["render-asset", "assets/link.png"], &mut Cursor::new(""))
+                    .is_err()
+            );
+            fs::write(fixture.0.join("assets/bad.png"), b"not a PNG").unwrap();
+            assert!(
+                fixture
+                    .run(&["render-asset", "assets/bad.png"], &mut Cursor::new(""))
+                    .is_err()
+            );
+            let oversized = fs::File::create(fixture.0.join("assets/large.png")).unwrap();
+            oversized.set_len(10 * 1024 * 1024 + 1).unwrap();
+            assert!(
+                fixture
+                    .run(&["render-asset", "assets/large.png"], &mut Cursor::new(""))
+                    .unwrap_err()
+                    .contains("10 MiB")
+            );
+        }
+    }
 
     impl Read for FailingReader {
         fn read(&mut self, _: &mut [u8]) -> io::Result<usize> {

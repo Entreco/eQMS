@@ -29,6 +29,14 @@ data class DocumentSnapshot(
 )
 
 interface DocumentCapabilities : SearchCapabilities {
+    suspend fun renderBuffer(project: String, title: String, body: String): Result<RenderedDocument> =
+        Result.failure(UnsupportedOperationException("Document rendering is not configured. Source remains available."))
+    suspend fun renderSaved(project: String, document: DocumentSnapshot): Result<RenderedDocument> =
+        Result.failure(UnsupportedOperationException("Saved document rendering is not configured. Source remains available."))
+    suspend fun readDocumentImage(project: String, asset: String): Result<DocumentImage> =
+        Result.failure(UnsupportedOperationException("Local image loading is not configured."))
+    suspend fun openDocumentLink(target: String): Result<Unit> =
+        Result.failure(UnsupportedOperationException("External link opening is not configured."))
     suspend fun transitionDocument(project: String, document: DocumentSnapshot, target: DocumentStatus): Result<DocumentSnapshot>
     suspend fun documentLifecycleHistory(project: String, id: String): Result<List<DocumentLifecycleEvent>>
     suspend fun listDocuments(project: String): Result<List<DocumentSnapshot>>
