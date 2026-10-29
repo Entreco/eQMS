@@ -283,10 +283,13 @@ class DesktopJewelPreviewTest {
         selectMode("Preview")
         // Eight body blocks precede the image paragraph; the preview also has a provenance header.
         compose.onNodeWithContentDescription("Rendered document content").performScrollToIndex(9)
+        compose.waitUntil(10_000) { compose.onAllNodesWithContentDescription("Synthetic workflow").fetchSemanticsNodes().isNotEmpty() }
+        // Decoding replaces the shorter loading placeholder; position again with the real image dimensions.
+        compose.onNodeWithContentDescription("Rendered document content").performScrollToIndex(9)
         compose.waitUntil(10_000) {
-            val image = compose.onAllNodesWithContentDescription("Synthetic workflow").fetchSemanticsNodes().singleOrNull()?.boundsInRoot
-            val viewport = compose.onNodeWithContentDescription("Rendered document content").fetchSemanticsNode().boundsInRoot
-            image != null && image.top >= viewport.top && image.bottom <= viewport.bottom
+            val image = compose.onNodeWithContentDescription("Synthetic workflow").getUnclippedBoundsInRoot()
+            val viewport = compose.onNodeWithContentDescription("Rendered document content").getUnclippedBoundsInRoot()
+            image.top >= viewport.top && image.bottom <= viewport.bottom
         }
         capture("native-document-image-dark.png")
     }
