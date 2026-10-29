@@ -225,13 +225,14 @@ Kotlin UI modules live in `feature/`:
 | Module | Owns |
 |---|---|
 | `feature:scaffold` | Project shell, theme, navigation/close guards, directory chooser and project capability contracts |
-| `feature:document` | Draft contracts, document list/editor, save, history and comparison |
+| `feature:document` | Document/lifecycle contracts, multi-tab workspace, editor, save, review, history and comparison |
 | `feature:search` | Search contracts/state, query field, grouped results, pagination and layout timing |
 | `feature:ui` | Shared Jewel fields, dialogs, rows and focus styling |
 
 Dependencies are one-way: scaffold -> document -> search -> ui, with scaffold
-and document also using ui directly. Contracts/state use `commonMain`;
-Jewel presentation uses `jvmMain`. Each feature retains JVM and Wasm targets.
+and document also using ui directly. Capability contracts and reusable search
+state use `commonMain`; Jewel presentation and desktop editor-buffer state use
+`jvmMain`. Each feature retains JVM and Wasm targets.
 The desktop injects filesystem/native CLI adapters; web remains a bootstrap,
 not a browser implementation of these capabilities. The old `core:ui` Gradle
 project and package namespace have been removed.
@@ -245,18 +246,30 @@ artifact supplies component glyphs, including combo-box arrows.
 
 The shell defaults to IntelliJ New UI dark styling. **Light theme** / **Dark
 theme** switches the current session without reopening the project or resetting
-editor/search state. The native OS title bar is retained. Open a project to
-preview the document/search sidebar, single active editor, and **History**
-panel with **Compare** and **Close history**. Cancelling project selection or a
-failed open leaves the existing editor intact; successfully reopening refreshes
-the workspace, including when selecting the same directory.
+editor/search state. Existing unified macOS chrome is retained. Open a project
+to use left **Project** / **Search** tools, central document tabs and right
+**Review** / **History** tools. Click a selected tool again or its hide button
+to collapse it. Drag a divider or use the panel's minus/plus controls to resize.
+Widths, selected tools and open tabs last for the session only.
+
+Each latest-document tab keeps its own unsaved buffer. Switching tabs or tools
+does not discard edits; selecting an already-open document focuses its tab.
+Exact historical revisions open in separate read-only tabs. Closing dirty tabs
+offers **Save**, **Discard changes**, or **Cancel**. Project switching/closing
+and quit coordinate all dirty tabs with **Save all** / **Discard all** when
+needed. Failed or invalid saves retain text and stop navigation; earlier
+successful saves in Save all remain saved. Cancelling the directory chooser or
+failing workspace verification leaves the previous buffers intact. A successful
+target open still requires the dirty-buffer decision before replacing them.
 
 [Dark](../testing/evidence/EQMS-092-dark.png),
 [light](../testing/evidence/EQMS-092-light.png), and
 [history](../testing/evidence/EQMS-092-history.png), and
 [comparison](../testing/evidence/EQMS-092-diff.png) previews show synthetic
-drafts rendered with the real native adapters. No review/approval or release
-workflow is implied. See the [Jewel assessment/design](../architecture/EQMS-092.md).
+drafts rendered with the real native adapters at the earlier scaffold revision.
+Those are historical previews, not evidence for the lifecycle UI.
+See the [Jewel assessment/design](../architecture/EQMS-092.md) and
+[workspace follow-up evidence](../testing/evidence/EQMS-092-document-workspace.md).
 
 To regenerate captures without touching existing workspaces, choose an output
 directory outside the repository; the opt-in test creates a fresh workspace
@@ -278,11 +291,13 @@ evidence. Ordinary tests skip this capture when no output directory is supplied.
 
 After opening a project, select **New document**, enter a title and plain
 Markdown body, and select **Save**. Saved drafts appear in the document list
-and can be reopened after restarting. **History** shows saved working revisions,
-configured author and local timestamp claims; choose two revisions and
-**Compare** for a read-only diff. Unsaved navigation/closing asks before discard.
-Failed saves retain editor text. If another process saved first, copy your
-edits, refresh/reopen the latest draft, reconcile them, and save again.
+and can be reopened after restarting. The right **History** tool shows saved
+revisions and lifecycle events; choose two revisions and **Compare** for an
+exact read-only diff. Lifecycle-only revisions have no content difference.
+**Open saved revision** opens a separate read-only tab.
+Failed saves retain editor text. After an external update, preserve/reconcile
+your edits before using **Reload saved document**; dirty reload requires a
+Save/Discard/Cancel decision and never silently replaces text.
 
 Native equivalents (body is UTF-8 stdin, not a shell argument):
 
@@ -315,8 +330,20 @@ response is lost, inspect the document list before retrying creation. After a
 lost save response, reopen the latest revision rather than forcing an old
 revision token. No draft-specific repair/reset command is needed.
 
-Review, approval, signatures, publication and reference validation are not yet
-available. See the [draft document contract](../architecture/EQMS-023.md).
+The right **Review** tool exposes **Submit for review**, **Approve** and
+**Publish**, each with confirmation on a clean saved latest document. Submission
+makes content read-only; return to draft/rework is not available. **Publish**
+sets internal **Effective** status only: no controlled-baseline merge, immutable
+release record or external distribution. Effective documents can be marked
+**Obsolete** or **Superseded**; those states are terminal. Historical tabs
+cannot transition. Failed/stale transitions retain the observed state and
+require explicit reload/reconciliation, not a forced overwrite.
+
+Approval is a local lifecycle event, not signing or proof of reviewer authority.
+Configured identity/local time remain unauthenticated claims. Signatures,
+reference validation, comments and reviewer assignments remain unavailable.
+See the [draft contract](../architecture/EQMS-023.md) and
+[lifecycle usage](EQMS-021.md).
 
 Authoring checks:
 
@@ -400,9 +427,10 @@ outrank typo matches. Search accepts at most 512 characters/32 words.
 
 Only if all three groups have no current saved matches does search include
 older saved revisions. Historical hits are labeled and open read-only; **Return
-to latest draft** resumes editing the current version. Unsaved editor text is
-not searchable. Saved drafts are not approvals; configured author/local time
-are claims. Search preparation and failures are visible; **Refresh search**
+to latest document** focuses/opens the latest tab without replacing its unsaved
+buffer. Content is editable only if its observed state is Draft. Unsaved editor
+text is not searchable. Search hits do not prove approval; configured author/local
+time are claims. Search preparation and failures are visible; **Refresh search**
 reconciles external changes or retries a failed preparation.
 
 ```sh

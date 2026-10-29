@@ -2,6 +2,20 @@ package com.entreco.eqms.feature.document
 
 import com.entreco.eqms.feature.search.SearchCapabilities
 
+enum class DocumentStatus(val label: String) {
+    Draft("Draft"), InReview("In Review"), Approved("Approved"), Effective("Effective"),
+    Obsolete("Obsolete"), Superseded("Superseded");
+}
+
+data class DocumentLifecycleEvent(
+    val revision: String,
+    val eventHash: String,
+    val contentHash: String,
+    val from: DocumentStatus,
+    val to: DocumentStatus,
+    val localTimestamp: String,
+)
+
 data class DocumentSnapshot(
     val id: String,
     val title: String,
@@ -11,9 +25,12 @@ data class DocumentSnapshot(
     val eventHash: String,
     val configuredAuthor: String,
     val localTimestamp: String,
+    val status: DocumentStatus = DocumentStatus.Draft,
 )
 
 interface DocumentCapabilities : SearchCapabilities {
+    suspend fun transitionDocument(project: String, document: DocumentSnapshot, target: DocumentStatus): Result<DocumentSnapshot>
+    suspend fun documentLifecycleHistory(project: String, id: String): Result<List<DocumentLifecycleEvent>>
     suspend fun listDocuments(project: String): Result<List<DocumentSnapshot>>
     suspend fun createDocument(project: String, title: String, body: String): Result<DocumentSnapshot>
     suspend fun saveDocument(project: String, id: String, expected: String, title: String, body: String): Result<DocumentSnapshot>

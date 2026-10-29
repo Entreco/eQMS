@@ -23,3 +23,19 @@ Issue: #50.
 | R092-11 | Superseding R092-10's deferred UI split, move core:ui to feature:scaffold, feature:document, feature:search and shared feature:ui primitives. Move search presentation with state, maintain acyclic scaffold -> document -> search -> ui dependencies and feature-local tests, and leave tracked core/ Rust-only without changing Rust crates or runtime behavior. |
 
 Risk applicability and limitations: [design](../architecture/EQMS-092.md).
+
+## Approved document workspace increment
+
+These extend the existing IDs and supersede single-tab/draft-only clauses in
+R092-02, R092-05 and R092-08 only where specified. EQMS-093 chrome refinements
+and historical evidence remain unchanged.
+
+| ID | Requirement |
+|---|---|
+| R092-12 | Left Project/Search and right Review/History tools shall select, collapse and resize around central document tabs, with bounded widths and keyboard-accessible controls. Layout/tabs are session-only, initially Project/Review open. |
+| R092-13 | Independent editor buffers shall survive tab/panel/theme changes. Latest tabs deduplicate by ID, historical tabs by ID/revision; historical content remains read-only. Async results shall not overwrite another tab or dirty buffer. |
+| R092-14 | Dirty tab closing shall offer Save/Discard/Cancel; project closing/switching and quit shall coordinate all dirty buffers. Failed/invalid saves prevent navigation and retain text; cancelled/failed project opening preserves buffers. |
+| R092-15 | Native adaptation shall strictly decode all lifecycle states/events and validate response envelopes/identity. Expected-revision transitions and errors shall use native authority without success-shaped fallbacks. |
+| R092-16 | Confirmed Submit for review, Approve and Publish (Effective) shall require clean saved/latest content. Content becomes read-only after submission; Effective can become Obsolete/Superseded; historical/terminal tabs cannot transition. |
+| R092-17 | Status/history/search presentation shall reflect observed data, never hardcode Draft for non-Draft records, or imply signatures, authenticated authority, trusted time, external publication or controlled release baselines. |
+| R092-18 | Existing creation/open verification, native chrome, grouped search/pagination/timing, explicit saves/conflicts, exact history/diff, error/busy behavior and Wasm compilation shall remain compatible. |

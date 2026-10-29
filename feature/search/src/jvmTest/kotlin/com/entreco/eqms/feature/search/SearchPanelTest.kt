@@ -52,7 +52,7 @@ class SearchPanelTest {
             }
         }
         compose.onNodeWithText("Injected document list").assertExists()
-        compose.onNodeWithContentDescription("Search saved drafts").performTextReplacement("policy")
+        compose.onNodeWithContentDescription("Search saved documents").performTextReplacement("policy")
         compose.waitUntil(3000) { timings.isNotEmpty() }
         compose.onNodeWithText("Documents").assertExists()
         compose.onNodeWithText("Authors").assertExists()
@@ -62,15 +62,15 @@ class SearchPanelTest {
         compose.onNodeWithText("Show more Documents").performClick()
         compose.waitUntil(3000) { offsets.contains(1) }
         compose.onNodeWithText("Second policy").assertExists()
-        compose.onNodeWithContentDescription("Search saved drafts").performTextReplacement("older")
+        compose.onNodeWithContentDescription("Search saved documents").performTextReplacement("older")
         compose.waitUntil(3000) { timings.size == 2 }
-        compose.onNodeWithText("Policy (Draft/history)", substring = true).performClick()
+        compose.onNodeWithText("Policy (Saved revision)", substring = true).performClick()
         compose.runOnIdle {
             assertEquals(listOf(hit to false, hit to true), selections)
             assertEquals(listOf("policy", "older"), timings.map { it.query })
             assertEquals(listOf(0, 1, 0), offsets)
         }
-        compose.onNodeWithContentDescription("Search saved drafts").performTextClearance()
+        compose.onNodeWithContentDescription("Search saved documents").performTextClearance()
         compose.onNodeWithText("Injected document list").assertExists()
     }
 }

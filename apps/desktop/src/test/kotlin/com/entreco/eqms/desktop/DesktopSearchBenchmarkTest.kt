@@ -56,15 +56,16 @@ class DesktopSearchBenchmarkTest {
         compose.setContent {
             IntUiTheme(isDark = true) {
                 DocumentScreen(
-                    project!!, capabilities, { it() }, { _, _ -> },
+                    project!!, capabilities, { _, _ -> },
                     onSearchResultsLaidOut = { timings += it },
                 )
             }
         }
+        compose.onNodeWithContentDescription("Toggle Search panel").performClick()
         val queries = listOf("And", "risk", "managment", "trace")
         fun query(text: String): SearchRenderTiming {
             val previousGeneration = synchronized(timings) { timings.maxOfOrNull { it.generation } ?: -1 }
-            compose.onNodeWithContentDescription("Search saved drafts").performTextReplacement(text)
+            compose.onNodeWithContentDescription("Search saved documents").performTextReplacement(text)
             fun matches() = synchronized(timings) { timings.filter { it.query == text && it.generation > previousGeneration } }
             compose.waitUntil(30_000) { failure.get() != null || matches().isNotEmpty() }
             failure.get()?.let { throw AssertionError("Real native search failed", it) }
