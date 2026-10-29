@@ -1,8 +1,10 @@
 package com.entreco.eqms.desktop
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.runtime.*
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.toAwtImage
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -17,6 +19,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.io.File
+import javax.imageio.ImageIO
 import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.math.ceil
 import kotlin.test.*
@@ -38,13 +41,26 @@ class DesktopDocumentRenderingTest {
         val capabilities = DesktopDocumentCapabilities(requireNotNull(executable))
         val saved = runBlocking {
             DesktopProjectCapabilities(WorkspaceCli(executable = executable)).openProject(root.path, create = true).getOrThrow()
-            capabilities.createDocument(root.path, "Rendering fixture", "# Purpose\n\nSmall source.\n").getOrThrow()
+            val assets = File(root, "assets").apply { mkdir(); check(isDirectory) }
+            val image = java.awt.image.BufferedImage(640, 200, java.awt.image.BufferedImage.TYPE_INT_RGB)
+            image.createGraphics().apply {
+                color = java.awt.Color(35, 44, 64); fillRect(0, 0, 640, 200)
+                color = java.awt.Color(70, 125, 245); fillRoundRect(30, 50, 130, 100, 18, 18)
+                color = java.awt.Color.WHITE; font = java.awt.Font("SansSerif", java.awt.Font.PLAIN, 24)
+                drawString("Draft  >  Review  >  Effective", 185, 110); dispose()
+            }
+            check(ImageIO.write(image, "png", File(assets, "workflow.png")))
+            capabilities.createDocument(root.path, "Rendering fixture",
+                "# Purpose\n\nKeep quality work **clear**, traceable and easy to find.\n\n" +
+                    "## Responsibilities\n\n| Role | Activity |\n| --- | --- |\n| Author | Prepare content |\n| Reviewer | Inspect the saved revision |\n\n" +
+                    "![Synthetic workflow](assets/workflow.png)\n\n" +
+                    "See [purpose](#purpose) and the supporting note[^scope].\n\n[^scope]: Synthetic content only, not approved evidence.\n").getOrThrow()
         }
         runBlocking {
             val model = capabilities.renderSaved(root.path, saved).getOrThrow()
             assertEquals(saved.contentHash, model.source.contentHash)
             assertEquals(saved.revision, model.source.revision)
-            assertEquals("purpose", model.toc.single().anchor)
+            assertEquals("purpose", model.toc.first().anchor)
             val dirty = capabilities.renderBuffer(root.path, "Dirty", "## New\n\n**Changed**").getOrThrow()
             assertEquals("unsaved", dirty.source.kind)
             assertEquals("", dirty.source.contentHash)
@@ -54,9 +70,10 @@ class DesktopDocumentRenderingTest {
             assertTrue(capabilities.openDocumentLink("javascript:bad").isFailure)
         }
         val timings = CopyOnWriteArrayList<DocumentRenderTiming>()
+        var dark by mutableStateOf(true)
         compose.setContent {
-            IntUiTheme(isDark = true) {
-                Box(Modifier.requiredSize(1100.dp, 800.dp)) {
+            IntUiTheme(isDark = dark) {
+                Box(Modifier.requiredSize(1000.dp, 720.dp)) {
                     DocumentScreen(root.path, capabilities, { _, _ -> }, onDocumentRendered = timings::add)
                 }
             }
@@ -68,6 +85,31 @@ class DesktopDocumentRenderingTest {
         compose.onNodeWithText("Rendering fixture (Draft)").performClick()
         compose.waitUntil(30_000) { timings.isNotEmpty() }
         val coldOpenMillis = (System.nanoTime() - openStarted) / 1_000_000.0
+        System.getenv("EQMS_JEWEL_PREVIEW_DIR")?.let { destination ->
+            val directory = File(destination).apply { mkdirs(); check(isDirectory) }
+            compose.onNodeWithContentDescription("Toggle Project panel").performClick()
+            compose.onNodeWithContentDescription("Toggle Review panel").performClick()
+            fun capture(name: String) {
+                compose.waitForIdle()
+                val image = compose.onNodeWithContentDescription("Document editor panel").captureToImage()
+                check(ImageIO.write(image.toAwtImage(), "png", File(directory, name)))
+            }
+            for (theme in listOf(true, false)) {
+                compose.runOnIdle { dark = theme }
+                val suffix = if (theme) "dark" else "light"
+                for (mode in listOf("Preview", "Split", "Source")) {
+                    compose.onNodeWithContentDescription("View $mode").performClick()
+                    capture("document-${mode.lowercase()}-$suffix.png")
+                }
+            }
+            compose.onNodeWithContentDescription("View Preview").performClick()
+            compose.onNodeWithContentDescription("Rendered document content").performScrollToIndex(5)
+            compose.waitUntil(10_000) { compose.onAllNodesWithContentDescription("Synthetic workflow").fetchSemanticsNodes().isNotEmpty() }
+            compose.onNodeWithContentDescription("Synthetic workflow").performScrollTo()
+            capture("document-image-light.png")
+            compose.onNodeWithContentDescription("Rendered document content").performScrollToIndex(0)
+        }
+        compose.runOnIdle { dark = true }
         compose.onNodeWithContentDescription("View Split").performClick()
         val section = "## Working practices\n\n" +
             "Keep quality work traceable and readable. ".repeat(18) +

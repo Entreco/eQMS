@@ -271,15 +271,19 @@ private fun Block(node: RenderNode, project: String, historical: Boolean, capabi
                 }
             }
         }
-        "table" -> Column(modifier.horizontalScroll(rememberScrollState()).width(IntrinsicSize.Max)
-            .border(1.dp, colors.borders.normal)) {
+        "table" -> BoxWithConstraints(modifier) {
             val columns = node.children.maxOfOrNull { it.children.size } ?: 0
-            node.children.forEach { row ->
-                Row(Modifier.widthIn(min = (columns * 150).dp)) {
-                    row.children.forEach { cell ->
-                        BasicText(inlineText(cell.children, navigate),
-                            Modifier.width(150.dp).border(0.5.dp, colors.borders.normal).padding(10.dp),
-                            style = base.copy(fontWeight = if (row.kind == "table_header") FontWeight.SemiBold else FontWeight.Normal))
+            val cellWidth = maxOf(150.dp, maxWidth / columns.coerceAtLeast(1))
+            Column(Modifier.horizontalScroll(rememberScrollState())
+                .semantics { contentDescription = "Rendered table with $columns columns" }
+                .border(1.dp, colors.borders.normal)) {
+                node.children.forEach { row ->
+                    Row(Modifier.height(IntrinsicSize.Min)) {
+                        row.children.forEach { cell ->
+                            BasicText(inlineText(cell.children, navigate),
+                                Modifier.width(cellWidth).fillMaxHeight().border(0.5.dp, colors.borders.normal).padding(10.dp),
+                                style = base.copy(fontWeight = if (row.kind == "table_header") FontWeight.SemiBold else FontWeight.Normal))
+                        }
                     }
                 }
             }

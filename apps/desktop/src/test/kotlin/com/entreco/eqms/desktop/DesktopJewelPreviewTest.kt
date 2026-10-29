@@ -3,7 +3,6 @@ package com.entreco.eqms.desktop
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.awt.ComposeWindow
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.graphics.toAwtImage
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -135,7 +134,13 @@ class DesktopJewelPreviewTest {
             if (component is java.awt.Canvas) component
             else (component as? java.awt.Container)?.components?.firstNotNullOfOrNull(::findCanvas)
         val canvas = checkNotNull(findCanvas(host.contentPane))
-        javax.swing.SwingUtilities.invokeAndWait { host.toFront() }
+        javax.swing.SwingUtilities.invokeAndWait {
+            val desktop = java.awt.Desktop.getDesktop()
+            if (desktop.isSupported(java.awt.Desktop.Action.APP_REQUEST_FOREGROUND)) desktop.requestForeground(true)
+            host.isAlwaysOnTop = true
+            host.toFront()
+            host.requestFocus()
+        }
         fun nativeShortcut(digit: Int) {
             val requestFocus = sourceField("Markdown body")
                 .fetchSemanticsNode().config[SemanticsActions.RequestFocus].action
@@ -170,22 +175,10 @@ class DesktopJewelPreviewTest {
             compose.waitUntil(5_000) { canvas.cursor.type == java.awt.Cursor.E_RESIZE_CURSOR }
         }
         fun capture(name: String, awaitIdle: Boolean = true) {
+            compose.waitUntil(5_000) { java.awt.KeyboardFocusManager.getCurrentKeyboardFocusManager().activeWindow == host }
             if (awaitIdle) { compose.waitForIdle(); robot.delay(150) }
             check(ImageIO.write(robot.createScreenCapture(java.awt.Rectangle(host.locationOnScreen, host.size)),
                 "png", File(output, name)))
-        }
-        fun selectMode(name: String) {
-            compose.onNodeWithContentDescription("View $name").activate()
-            compose.waitUntil(5_000) {
-                compose.onAllNodes(hasContentDescription("View $name") and isSelected()).fetchSemanticsNodes().size == 1 &&
-                    (compose.onAllNodesWithContentDescription("Markdown body").fetchSemanticsNodes().isNotEmpty() == (name != "Preview"))
-            }
-            compose.waitForIdle()
-        }
-        fun captureDocument(name: String) {
-            compose.waitForIdle()
-            val image = compose.onNodeWithContentDescription("Document editor panel").captureToImage()
-            check(ImageIO.write(image.toAwtImage(), "png", File(output, name)))
         }
         fun captureTooltip(name: String, tool: String = "Project", number: Int = 1) {
             compose.mainClock.autoAdvance = false
@@ -270,23 +263,31 @@ class DesktopJewelPreviewTest {
         compose.waitUntil(5_000) {
             compose.onAllNodes(hasContentDescription("Document tab Quality policy (sample)") and isSelected()).fetchSemanticsNodes().size == 1
         }
+        fun selectMode(name: String) {
+            compose.onNodeWithContentDescription("View $name").activate()
+            compose.waitUntil(5_000) {
+                compose.onAllNodes(hasContentDescription("View $name") and isSelected()).fetchSemanticsNodes().size == 1 &&
+                    (compose.onAllNodesWithContentDescription("Markdown body").fetchSemanticsNodes().isNotEmpty() == (name != "Preview"))
+            }
+            if (name != "Source") compose.waitUntil(30_000) {
+                compose.onAllNodesWithContentDescription("Rendered document content").fetchSemanticsNodes().isNotEmpty()
+            }
+        }
         for (theme in listOf("light", "dark")) {
             if (theme == "dark") compose.onNodeWithText("Dark theme").activate()
-            selectMode("Preview")
-            compose.waitUntil(30_000) { compose.onAllNodesWithText("Table of contents").fetchSemanticsNodes().isNotEmpty() }
-            captureDocument("document-preview-$theme.png")
-            selectMode("Split")
-            captureDocument("document-split-$theme.png")
-            selectMode("Source")
-            captureDocument("document-source-$theme.png")
+            for (mode in listOf("Preview", "Split", "Source")) {
+                selectMode(mode)
+                capture("native-document-${mode.lowercase()}-$theme.png")
+            }
         }
         selectMode("Preview")
-        compose.onNodeWithText("Table of contents").activate()
-        compose.waitUntil(5_000) { compose.onAllNodesWithContentDescription("Go to Responsibilities").fetchSemanticsNodes().isNotEmpty() }
-        compose.onNodeWithContentDescription("Go to Responsibilities").activate()
-        compose.onNodeWithContentDescription("Rendered document content").performScrollToNode(hasText("[Image: Synthetic workflow]"))
-        compose.waitUntil(10_000) { compose.onAllNodesWithContentDescription("Synthetic workflow").fetchSemanticsNodes().isNotEmpty() }
-        compose.onNodeWithContentDescription("Synthetic workflow").performScrollTo()
-        captureDocument("document-image-dark.png")
+        // Eight body blocks precede the image paragraph; the preview also has a provenance header.
+        compose.onNodeWithContentDescription("Rendered document content").performScrollToIndex(9)
+        compose.waitUntil(10_000) {
+            val image = compose.onAllNodesWithContentDescription("Synthetic workflow").fetchSemanticsNodes().singleOrNull()?.boundsInRoot
+            val viewport = compose.onNodeWithContentDescription("Rendered document content").fetchSemanticsNode().boundsInRoot
+            image != null && image.top >= viewport.top && image.bottom <= viewport.bottom
+        }
+        capture("native-document-image-dark.png")
     }
 }

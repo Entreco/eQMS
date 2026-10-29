@@ -33,6 +33,38 @@ class DocumentScreenTest {
     }
 
     @Test
+    fun renderedTablesFillAvailableWidthAndKeepWrappedRowCellsAligned() {
+        fun cell(text: String) = RenderNode("table_cell", children = listOf(RenderNode("text", text)))
+        val capabilities = Capabilities().apply {
+            renderNodes = listOf(RenderNode("table", children = listOf(
+                RenderNode("table_header", children = listOf(cell("Role"), cell("Activity"))),
+                RenderNode("table_row", children = listOf(cell("Reviewer"),
+                    cell("Inspect the saved revision and all supporting documentation before approving this document."))),
+            )))
+        }
+        compose.setContent {
+            IntUiTheme(isDark = true) {
+                Box(Modifier.requiredSize(1000.dp, 720.dp)) {
+                    DocumentScreen("/project", capabilities, { _, _ -> })
+                }
+            }
+        }
+        compose.onNodeWithText("Policy (Draft)").performClick()
+        compose.onNodeWithContentDescription("Toggle Project panel").performClick()
+        compose.onNodeWithContentDescription("Toggle Review panel").performClick()
+        compose.waitUntil(5_000) { compose.onAllNodesWithText("Role").fetchSemanticsNodes().isNotEmpty() }
+        val table = compose.onNodeWithContentDescription("Rendered table with 2 columns").fetchSemanticsNode().boundsInRoot
+        val role = compose.onNodeWithText("Role").fetchSemanticsNode().boundsInRoot
+        val activity = compose.onNodeWithText("Activity").fetchSemanticsNode().boundsInRoot
+        assertTrue(role.width > 300f)
+        assertTrue(abs(role.width - activity.width) < 1f)
+        assertTrue(abs(activity.right - role.left + 20f - table.width) < 1f)
+        val reviewer = compose.onNodeWithText("Reviewer").fetchSemanticsNode().boundsInRoot
+        val wrapped = compose.onNodeWithText("Inspect the saved revision", substring = true).fetchSemanticsNode().boundsInRoot
+        assertTrue(abs(reviewer.height - wrapped.height) < 1f)
+    }
+
+    @Test
     fun roundedPanelCornersExposeShellAndFillsRemainVisiblyDistinctInBothThemes() {
         var dark by mutableStateOf(true)
         val capabilities = Capabilities()
