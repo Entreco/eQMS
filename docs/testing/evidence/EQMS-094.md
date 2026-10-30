@@ -103,3 +103,26 @@ controlled, so cold-cache latency is not claimed. The results do not guarantee
 latency on other storage or hardware. No human visual, input, accessibility, or
 manual project-switching review/testing was performed. Those checks remain
 unchecked pending review of the draft PR; the issue remains open.
+
+## CI lint follow-up
+
+The Rust CI run at `5cf84397662deb1f946f4d3f003f611ccd5e48c0`
+failed on `clippy::collapsible_if` in the history blob-selector loop. Revision
+`26f36447b11530360dc5a90d9b8f2752a0f06301` combines the nested conditions
+without changing verification behavior. The exact source committed in that
+revision passed the following commands locally on the macOS host described
+above, using rustc 1.99.1 and Clippy 0.1.99:
+
+```sh
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets --locked -- -D warnings
+cargo test --workspace --locked
+cargo build --workspace --release --locked
+git diff --check
+```
+
+All 72 core unit tests, 13 CLI unit tests, and 21 CLI integration tests passed;
+there were no doc tests. The responsiveness measurements above remain tied to
+`fcb8321`; benchmarks and Kotlin/Wasm checks were not repeated for this
+behavior-preserving lint fix. Remote CI results are separate from these local
+observations. Human review/testing remains pending.
