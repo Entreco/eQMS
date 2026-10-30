@@ -130,17 +130,6 @@ class DesktopResponsivenessBenchmarkTest {
             16 to 4 -> 1_900.0 to 1_100.0
             else -> null
         }
-        budgets?.let { (projectBudget, historyBudget) ->
-            assertTrue(
-                projectOpenP95 <= projectBudget,
-                "Project/list p95 $projectOpenP95 ms exceeds $projectBudget ms.",
-            )
-            assertTrue(
-                historyP95 <= historyBudget,
-                "History p95 $historyP95 ms exceeds $historyBudget ms.",
-            )
-        }
-
         fun samples(values: List<Double>) = buildJsonArray { values.forEach { add(it) } }
         fun stage(name: String, values: List<Double>) = buildJsonObject {
             put("name", name)
@@ -179,6 +168,16 @@ class DesktopResponsivenessBenchmarkTest {
         println("EQMS-094-BENCHMARK=${report}")
         val output = System.getenv("EQMS_RESPONSIVENESS_REPORT")
         if (!output.isNullOrBlank()) Path.of(output).toFile().writeText(report.toString())
+        budgets?.let { (projectBudget, historyBudget) ->
+            assertTrue(
+                projectOpenP95 <= projectBudget,
+                "Project/list p95 $projectOpenP95 ms exceeds $projectBudget ms.",
+            )
+            assertTrue(
+                historyP95 <= historyBudget,
+                "History p95 $historyP95 ms exceeds $historyBudget ms.",
+            )
+        }
     }
 
     private suspend fun <T> measured(
