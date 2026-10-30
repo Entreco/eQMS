@@ -704,7 +704,7 @@ class DocumentScreenTest {
         compose.onNodeWithText("Compare").performClick()
         compose.onNodeWithText("Comparison unavailable").assertExists()
         compose.onNodeWithText("New document").assertIsEnabled()
-        compose.onNodeWithContentDescription("Hide History panel").performClick()
+        compose.onNodeWithContentDescription("Toggle History panel").performClick()
         compose.onNodeWithText("New document").assertIsEnabled()
         sourceField("Markdown body").assertTextContains("original")
     }
@@ -763,11 +763,9 @@ class DocumentScreenTest {
         compose.onNodeWithContentDescription("Document tab Policy").performClick()
         sourceField("Markdown body").assertTextContains("keep policy edits")
         assertEquals(TextRange(6), sourceField("Markdown body").fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange])
-        compose.onNodeWithContentDescription("Widen Project panel").performClick()
-        compose.onNodeWithContentDescription("Narrow Project panel").performClick()
-        compose.onNodeWithContentDescription("Hide Project panel").performClick()
         compose.onNodeWithContentDescription("Toggle Project panel").performClick()
-        compose.onNodeWithContentDescription("Hide Review panel").performClick()
+        compose.onNodeWithContentDescription("Toggle Project panel").performClick()
+        compose.onNodeWithContentDescription("Toggle Review panel").performClick()
         compose.onNodeWithContentDescription("Toggle Review panel").performClick()
         sourceField("Markdown body").assertTextContains("keep policy edits")
         compose.onNodeWithContentDescription("Close tab Policy").performClick()
@@ -790,13 +788,11 @@ class DocumentScreenTest {
             }
         }
         compose.onNodeWithText("Policy (Draft)").performClick()
-        repeat(15) { compose.onNodeWithContentDescription("Widen Project panel").performClick() }
-        repeat(15) { compose.onNodeWithContentDescription("Widen Review panel").performClick() }
         sourceField("Markdown body").assertIsDisplayed()
         assertTrue(sourceField("Markdown body").fetchSemanticsNode().boundsInRoot.width >= 180f)
-        compose.onNodeWithContentDescription("Hide Project panel")
+        compose.onNodeWithContentDescription("Toggle Project panel")
             .performSemanticsAction(SemanticsActions.RequestFocus) { it() }
-        compose.onNodeWithContentDescription("Hide Project panel").performKeyInput { pressKey(Key.Enter) }
+        compose.onNodeWithContentDescription("Toggle Project panel").performKeyInput { pressKey(Key.Enter) }
         compose.onNodeWithText("New document").assertDoesNotExist()
         compose.onNodeWithContentDescription("Toggle Project panel")
             .performSemanticsAction(SemanticsActions.RequestFocus) { it() }
