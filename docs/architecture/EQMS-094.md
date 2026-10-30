@@ -37,14 +37,32 @@ workspace shell and its panels without waiting for document listing or search.
 Use panel-local loading and errors, and keep mutations/dirty navigation guarded
 without disabling unrelated reads or editor state.
 
-For History, expose a versioned native operation returning document revisions
-and lifecycle events from one lock-protected, verified history snapshot. Decode
-the complete envelope and validate all existing revision, event, hash, and
-state invariants before updating the selected tab. Avoid a cache: every History
-open remains freshly verified, so no cache freshness or invalidation policy is
-introduced. A response may update only the same tab and source revision that
-requested it; cancellation, disposal, tab/project changes, or a revision change
-must not publish late results. Preserve current buffers and editor selection.
+The pre-implementation release profile measured 97 Git process starts for the
+8-document list and 193 for the 16-document list. Each list currently
+enumerates ref names, then starts another Git process per document to resolve
+its head. Capture ref names and object IDs together and verify each chain at
+that captured object ID. `Documents::open` will perform workspace structural
+checks; every public document operation already performs full workspace
+verification under its operation lock, so remove only the redundant eager
+verification before `list`/History operations. Keep all integrity checks and
+failures in the locked operation.
+
+For History, add a versioned native operation returning document revisions
+and lifecycle events from one lock-protected, verified history snapshot. The
+baseline performed separate history and lifecycle-history operations, each
+with 26 Git process starts on the 8-document fixture and 42 on the larger one.
+Decode the complete envelope and validate all existing revision, event, hash,
+and state invariants before updating the selected tab. Avoid a cache: every
+History open remains freshly verified, so no cache freshness or invalidation
+policy is introduced. A response may update only the same tab and source
+revision that requested it; cancellation, disposal, tab/project changes, or a
+revision change must not publish late results. Preserve current buffers and
+editor selection.
+
+Search preparation for a blank query has no user-visible result. Do not start
+it on workspace open or when clearing the query; the first nonblank query
+prepares search on its existing independent job. Existing save/transition
+refresh behavior still re-prepares an active query.
 
 Use the measured list profile to select a focused native optimization. Any
 batching must reuse an already captured ref/snapshot only within the existing
