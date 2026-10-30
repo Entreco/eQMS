@@ -1,6 +1,6 @@
-# eQMS
+# DutchDoxx
 
-Modern eQMS supporting quality-management work for **ISO 13485**, **ISO 81001**, and **IEC 62304 Class C**.
+DutchDoxx is a modern eQMS supporting quality-management work for **ISO 13485**, **ISO 81001**, and **IEC 62304 Class C**.
 
 The target architecture is a **CLI-first, AI-first, offline-first** quality management system with a **Rust core and native CLI**, plus Kotlin desktop/web UI shells. Speed and usability are product requirements, with performance budgets based on measured workloads rather than language choice.
 
@@ -18,10 +18,10 @@ remains a scaffold. See [PLANNING.md](PLANNING.md) for the roadmap,
 
 Document authoring adds **New document**, a plain Markdown editor, explicit
 **Save**, and read-only history/comparison in desktop. Native
-`qms document create/list/show/save/history/diff` owns persistence. Each
-document's Draft history lives on an isolated Git ref; saving does not publish
-or change the controlled baseline. Review, signatures, publication, and
-reference validation remain follow-up work. See the
+`qms document create/list/show/save/history/history-snapshot/diff` owns
+persistence. Each document's Draft history lives on an isolated Git ref;
+saving does not publish or change the controlled baseline. Review, signatures,
+publication, and reference validation remain follow-up work. See the
 [EQMS-023 draft contract](docs/architecture/EQMS-023.md).
 
 Standalone `qms document validate <file|->` checks exact canonical v1 Markdown;

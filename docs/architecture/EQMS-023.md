@@ -93,6 +93,7 @@ All commands accept the project `path` first and global `--json`:
 | `qms document show <path> <id>` | Optional `--revision <full-commit>` |
 | `qms document save <path> <id>` | `--title <text> --expected <full-commit>`; body on stdin |
 | `qms document history <path> <id>` | None |
+| `qms document history-snapshot <path> <id>` | None; one verified snapshot of revisions and lifecycle events |
 | `qms document diff <path> <id> <from> <to>` | Two full saved commit IDs |
 
 JSON responses use the schema-version-2 envelope defined by
@@ -100,7 +101,9 @@ JSON responses use the schema-version-2 envelope defined by
 command payload under `data`. Documents return ID, title, body, Draft
 status, revision, content hash, event hash, configured author and local
 timestamp. List returns document snapshots; history returns newest-first
-snapshots; diff returns a read-only unified textual diff of canonical content.
+snapshots; history-snapshot returns newest-first snapshots and their matching
+lifecycle events from one lock-protected verification; diff returns a read-only
+unified textual diff of canonical content.
 Errors use the shared envelope and nonzero exit conventions
 (`INVALID_ARGUMENT`/2, `OPERATION_FAILED`/1). Human output remains readable.
 Git identity and local time are claims, not authenticated identity/trusted time.

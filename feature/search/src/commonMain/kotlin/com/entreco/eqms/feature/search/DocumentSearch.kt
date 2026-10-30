@@ -103,6 +103,10 @@ class DocumentSearch(
         val text = query
         job = scope.launch {
             if (debounce) delay(10)
+            if (text.isBlank()) {
+                loading = false
+                return@launch
+            }
             if (!prepared) {
                 preparing = true
                 val preparation = capabilities.prepareSearch(project)
@@ -115,7 +119,6 @@ class DocumentSearch(
                 }
                 prepared = true
             }
-            if (text.isBlank()) { loading = false; return@launch }
             var response = capabilities.searchDocuments(project, text)
             if (!current(request)) return@launch
             if (response.exceptionOrNull() is SearchIndexOutOfDateException) {

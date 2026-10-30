@@ -1,7 +1,7 @@
 use crate::markdown::{self, Markdown, hash};
 use crate::workspace::{
     JournalRecord, Workspace, WorkspaceError, ensure_git_identity, error, git, git_text,
-    parse_and_verify_journal, timestamp, with_hash,
+    parse_and_verify_journal, read_git_blobs, timestamp, with_hash,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -33,6 +33,21 @@ struct VerifiedHistory {
     journal: Vec<u8>,
     last: JournalRecord,
     lifecycle_events: Vec<LifecycleEvent>,
+}
+
+struct HistoryCommit {
+    revision: String,
+    parent: String,
+    author: String,
+    changes: BTreeMap<String, HistoryChange>,
+}
+
+struct HistoryChange {
+    old_mode: String,
+    new_mode: String,
+    old_oid: String,
+    new_oid: String,
+    status: String,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -93,6 +108,12 @@ pub struct LifecycleEvent {
     pub from_status: String,
     pub to_status: String,
     pub local_timestamp: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DocumentHistorySnapshot {
+    pub revisions: Vec<Document>,
+    pub lifecycle_events: Vec<LifecycleEvent>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -263,9 +284,9 @@ impl Documents {
     }
 
     pub fn open(path: impl AsRef<Path>) -> Result<Self, WorkspaceError> {
-        let workspace = Workspace::open(path)?;
-        workspace.verify()?;
-        Ok(Self { workspace })
+        Ok(Self {
+            workspace: Workspace::open(path)?,
+        })
     }
 
     fn root(&self) -> &Path {
@@ -298,15 +319,17 @@ impl Documents {
         self.verify_baseline()?;
         let refs = git_text(
             self.root(),
-            &["for-each-ref", "--format=%(refname)", PREFIX],
+            &["for-each-ref", "--format=%(refname) %(objectname)", PREFIX],
         )?;
         refs.lines()
-            .map(|name| {
+            .map(|line| {
+                let (name, revision) = line
+                    .split_once(' ')
+                    .ok_or_else(|| error("invalid draft ref"))?;
                 let id = name
                     .strip_prefix(PREFIX)
                     .ok_or_else(|| error("invalid draft ref"))?;
-                let revision = self.head(id)?;
-                self.history_at(id, &revision)?
+                self.history_at(id, revision)?
                     .into_iter()
                     .next()
                     .ok_or_else(|| error("empty history"))
@@ -324,6 +347,16 @@ impl Documents {
         let _lock = self.workspace.acquire_lock()?;
         self.verify_baseline()?;
         Ok(self.verified_history(id, &self.head(id)?)?.lifecycle_events)
+    }
+
+    pub fn history_snapshot(&self, id: &str) -> Result<DocumentHistorySnapshot, WorkspaceError> {
+        let _lock = self.workspace.acquire_lock()?;
+        self.verify_baseline()?;
+        let history = self.verified_history(id, &self.head(id)?)?;
+        Ok(DocumentHistorySnapshot {
+            revisions: history.documents,
+            lifecycle_events: history.lifecycle_events,
+        })
     }
 
     pub fn show(&self, id: &str, revision: Option<&str>) -> Result<Document, WorkspaceError> {
@@ -651,31 +684,268 @@ impl Documents {
             .enumerate()
             .filter_map(|(index, byte)| (*byte == b'\n').then_some(index + 1))
             .collect();
-        let mut event_index = records.len() - 1;
-        let mut revision = head.to_owned();
-        let mut history = Vec::new();
-        loop {
-            if event_index == 0 {
-                return Err(error("missing document creation event"));
-            }
-            let event = &records[event_index];
-            // Each parent must equal the head's verified prefix, so it needs no reparse.
-            let (document, parent, created) = self
-                .verify_revision(
-                    id,
-                    &revision,
-                    event,
-                    &journal[..boundaries[event_index - 1]],
-                )
-                .map_err(|cause| error(format!("draft revision {revision}: {cause}")))?;
-            history.push((document, event.clone()));
-            if created {
-                break;
-            }
-            revision = parent;
-            event_index -= 1;
+        let document_events: Vec<_> = records
+            .iter()
+            .enumerate()
+            .filter(|(_, event)| {
+                event
+                    .payload
+                    .get("document_id")
+                    .is_some_and(|value| value == id)
+            })
+            .collect();
+        if document_events.is_empty() || document_events[0].0 == 0 {
+            return Err(error("missing document creation event"));
         }
-        history.reverse();
+
+        let count = document_events.len().to_string();
+        let output = git_text(
+            self.root(),
+            &[
+                "log",
+                "--first-parent",
+                "--no-renames",
+                "--no-abbrev",
+                "--max-count",
+                &count,
+                "--format=%H%x00%P%x00%an <%ae>",
+                "--raw",
+                head,
+            ],
+        )?;
+        let mut commits = Vec::<HistoryCommit>::with_capacity(document_events.len());
+        for line in output.lines().filter(|line| !line.is_empty()) {
+            if line.starts_with(':') {
+                let (metadata, path) = line
+                    .split_once('\t')
+                    .ok_or_else(|| error("invalid raw Git history change"))?;
+                let fields: Vec<_> = metadata
+                    .strip_prefix(':')
+                    .ok_or_else(|| error("invalid raw Git history change"))?
+                    .split_whitespace()
+                    .collect();
+                if fields.len() != 5 || path.is_empty() {
+                    return Err(error("invalid raw Git history change"));
+                }
+                let change = HistoryChange {
+                    old_mode: fields[0].to_owned(),
+                    new_mode: fields[1].to_owned(),
+                    old_oid: fields[2].to_owned(),
+                    new_oid: fields[3].to_owned(),
+                    status: fields[4].to_owned(),
+                };
+                if !valid_hex(&change.old_oid, &[40, 64]) || !valid_hex(&change.new_oid, &[40, 64])
+                {
+                    return Err(error("invalid object ID in raw Git history"));
+                }
+                let commit = commits
+                    .last_mut()
+                    .ok_or_else(|| error("raw Git history change has no commit"))?;
+                if commit.changes.insert(path.to_owned(), change).is_some() {
+                    return Err(error("duplicate path in raw Git history"));
+                }
+            } else {
+                let fields: Vec<_> = line.split('\0').collect();
+                if fields.len() != 3 || !valid_hex(fields[0], &[40, 64]) {
+                    return Err(error("invalid raw Git history commit"));
+                }
+                let parents: Vec<_> = fields[1].split_whitespace().collect();
+                if parents.len() != 1 || !valid_hex(parents[0], &[40, 64]) {
+                    return Err(error("draft revisions require exactly one parent"));
+                }
+                commits.push(HistoryCommit {
+                    revision: fields[0].to_owned(),
+                    parent: parents[0].to_owned(),
+                    author: fields[2].trim().to_owned(),
+                    changes: BTreeMap::new(),
+                });
+            }
+        }
+        if commits.len() != document_events.len()
+            || commits.first().is_none_or(|commit| commit.revision != head)
+        {
+            return Err(error("Git history does not match the document event chain"));
+        }
+        commits.reverse();
+        for pair in commits.windows(2) {
+            if pair[1].parent != pair[0].revision {
+                return Err(error("document revisions are not a single parent chain"));
+            }
+        }
+
+        let document_path = format!("documents/{id}.md");
+        let mut blob_selectors = Vec::with_capacity(commits.len() * 2 + 1);
+        for ((_, event), commit) in document_events.iter().zip(&commits) {
+            let created = event.event_type == "document.created";
+            let saved = event.event_type == "document.saved";
+            let lifecycle = event.event_type == "document.lifecycle.transition";
+            if !created && !saved && !lifecycle {
+                return Err(error("invalid document event in draft history"));
+            }
+            blob_selectors.push(format!("{}:{JOURNAL}", commit.parent));
+            if (created || saved)
+                && let Some(document_change) = commit.changes.get(&document_path)
+            {
+                blob_selectors.push(document_change.new_oid.clone());
+            }
+        }
+        let head_journal_selector = format!("{head}:{JOURNAL}");
+        blob_selectors.push(head_journal_selector.clone());
+        let selectors: Vec<_> = blob_selectors.iter().map(String::as_str).collect();
+        let blobs = read_git_blobs(self.root(), None, &selectors)?;
+        if blobs.get(&head_journal_selector) != Some(&journal) {
+            return Err(error("head journal differs from the verified Git blob"));
+        }
+        for ((event_index, _), commit) in document_events.iter().zip(&commits) {
+            if *event_index == 0 || *event_index >= boundaries.len() {
+                return Err(error("invalid document event position in journal"));
+            }
+            let parent_journal_selector = format!("{}:{JOURNAL}", commit.parent);
+            let parent_journal = blobs
+                .get(&parent_journal_selector)
+                .ok_or_else(|| error("missing parent journal blob"))?;
+            if parent_journal != &journal[..boundaries[event_index - 1]] {
+                return Err(error("ancestor journal differs from verified head prefix"));
+            }
+        }
+
+        let mut history = Vec::with_capacity(commits.len());
+        let mut previous_journal_oid: Option<String> = None;
+        let mut previous_document_oid: Option<String> = None;
+        let mut previous_document_bytes: Option<Vec<u8>> = None;
+        for ((_, event), commit) in document_events.iter().zip(&commits) {
+            let created = event.event_type == "document.created";
+            let saved = event.event_type == "document.saved";
+            let lifecycle = event.event_type == "document.lifecycle.transition";
+            let expected_paths = if lifecycle {
+                vec![JOURNAL]
+            } else {
+                vec![JOURNAL, document_path.as_str()]
+            };
+            if commit.changes.len() != expected_paths.len()
+                || expected_paths
+                    .iter()
+                    .any(|path| !commit.changes.contains_key(*path))
+            {
+                return Err(error("invalid document revision or audit linkage"));
+            }
+            let journal_change = &commit.changes[JOURNAL];
+            if journal_change.old_mode != "100644"
+                || journal_change.new_mode != "100644"
+                || journal_change.status != "M"
+            {
+                return Err(error("document and journal must be regular Git blobs"));
+            }
+            if previous_journal_oid
+                .as_ref()
+                .is_some_and(|previous| previous != &journal_change.old_oid)
+            {
+                return Err(error("document revisions do not form a journal chain"));
+            }
+            let document = if created || saved {
+                let change = &commit.changes[&document_path];
+                if change.new_mode != "100644"
+                    || (created
+                        && (change.old_mode != "000000"
+                            || change.status != "A"
+                            || !change.old_oid.bytes().all(|byte| byte == b'0')))
+                    || (saved && (change.old_mode != "100644" || change.status != "M"))
+                {
+                    return Err(error("document and journal must be regular Git blobs"));
+                }
+                if saved && previous_document_oid.as_ref() != Some(&change.old_oid) {
+                    return Err(error("document revisions do not form a content chain"));
+                }
+                if created && previous_document_oid.is_some() {
+                    return Err(error("document creation overwrites an existing document"));
+                }
+                let bytes = blobs
+                    .get(&change.new_oid)
+                    .ok_or_else(|| error("missing document content blob"))?
+                    .clone();
+                let (title, body) = decode(&bytes, id)?;
+                let expected_payload = if created {
+                    BTreeMap::from([
+                        ("document_id".to_owned(), id.to_owned()),
+                        ("base_revision".to_owned(), commit.parent.clone()),
+                    ])
+                } else {
+                    BTreeMap::from([("document_id".to_owned(), id.to_owned())])
+                };
+                if event.payload != expected_payload {
+                    return Err(error("invalid document revision payload"));
+                }
+                if event.content_hashes != BTreeMap::from([(document_path.clone(), hash(&bytes))]) {
+                    return Err(error("invalid document content hash linkage"));
+                }
+                if saved
+                    && previous_document_bytes
+                        .as_ref()
+                        .is_some_and(|previous| previous == &bytes)
+                {
+                    return Err(error("invalid document revision or audit linkage"));
+                }
+                let document = Document {
+                    id: id.to_owned(),
+                    title,
+                    body,
+                    status: "Draft".to_owned(),
+                    revision: commit.revision.clone(),
+                    content_hash: hash(&bytes),
+                    event_hash: event.hash.clone(),
+                    configured_author: commit.author.clone(),
+                    local_timestamp: event.timestamp.clone(),
+                };
+                previous_document_oid = Some(change.new_oid.clone());
+                previous_document_bytes = Some(bytes);
+                document
+            } else if lifecycle {
+                let bytes = previous_document_bytes
+                    .as_ref()
+                    .ok_or_else(|| error("lifecycle event precedes document creation"))?;
+                if event.payload
+                    != BTreeMap::from([
+                        ("document_id".to_owned(), id.to_owned()),
+                        ("expected_revision".to_owned(), commit.parent.clone()),
+                        (
+                            "from_status".to_owned(),
+                            event
+                                .payload
+                                .get("from_status")
+                                .cloned()
+                                .unwrap_or_default(),
+                        ),
+                        (
+                            "to_status".to_owned(),
+                            event.payload.get("to_status").cloned().unwrap_or_default(),
+                        ),
+                    ])
+                    || event.content_hashes
+                        != BTreeMap::from([(document_path.clone(), hash(bytes))])
+                {
+                    return Err(error("invalid document revision or audit linkage"));
+                }
+                let (title, body) = decode(bytes, id)?;
+                Document {
+                    id: id.to_owned(),
+                    title,
+                    body,
+                    status: "Draft".to_owned(),
+                    revision: commit.revision.clone(),
+                    content_hash: hash(bytes),
+                    event_hash: event.hash.clone(),
+                    configured_author: commit.author.clone(),
+                    local_timestamp: event.timestamp.clone(),
+                }
+            } else {
+                return Err(error("invalid document event in draft history"));
+            };
+            history.push((document, (*event).clone()));
+            previous_journal_oid = Some(journal_change.new_oid.clone());
+        }
+        if previous_journal_oid.is_none() || blobs.get(&head_journal_selector) != Some(&journal) {
+            return Err(error("verified document history does not reach its head"));
+        }
         let mut state = LifecycleState::Draft;
         let mut lifecycle_events = Vec::new();
         for (document, event) in &mut history {
@@ -966,6 +1236,28 @@ mod tests {
     }
 
     #[test]
+    fn history_snapshot_returns_revisions_and_lifecycle_from_one_verified_chain() {
+        let f = Fixture::new();
+        let docs = f.docs();
+        let draft = docs.create("Policy", "content").unwrap();
+        docs.transition(&draft.id, &draft.revision, LifecycleState::InReview)
+            .unwrap();
+
+        VALIDATED_RECORDS.with(|count| count.set(0));
+        let snapshot = docs.history_snapshot(&draft.id).unwrap();
+        assert_eq!(snapshot.revisions.len(), 2);
+        assert_eq!(snapshot.lifecycle_events.len(), 1);
+        assert_eq!(
+            snapshot.lifecycle_events[0].revision,
+            snapshot.revisions[0].revision
+        );
+        assert_eq!(
+            VALIDATED_RECORDS.with(|count| count.get()),
+            snapshot.revisions.len() + 1
+        );
+    }
+
+    #[test]
     fn ancestor_journal_must_match_verified_head_prefix() {
         let f = Fixture::new();
         let first = f.docs().create("Policy", "original").unwrap();
@@ -1007,7 +1299,10 @@ mod tests {
         )
         .unwrap();
         let failure = f.docs().history(&first.id).unwrap_err();
-        assert!(failure.to_string().contains("ancestor journal differs"));
+        assert!(
+            failure.to_string().contains("ancestor journal differs"),
+            "{failure}"
+        );
     }
 
     #[test]
