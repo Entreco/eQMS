@@ -72,7 +72,8 @@ fun DocumentScreen(
         var linkBusy by remember { mutableStateOf(false) }
         val bitmapCache = remember { DocumentBitmapCache() }
         val tab = state.active
-        val interactive = !state.busy && !workspaceBusy && state.pendingClose == null && confirmation == null && externalLink == null && !linkBusy
+        val interactive =
+            !state.busy && !workspaceBusy && state.pendingClose == null && confirmation == null && externalLink == null && !linkBusy
         val isMac = remember { System.getProperty("os.name").startsWith("Mac") }
         val shortcuts = remember(isMac) { ToolShortcutHandler(isMac) }
         val railFocus = remember { WorkspaceTool.entries.associateWith { FocusRequester() } }
@@ -92,7 +93,8 @@ fun DocumentScreen(
         val windowFocused = LocalWindowInfo.current.isWindowFocused
         LaunchedEffect(windowFocused) { if (!windowFocused) shortcuts.reset() }
         val dirty = state.dirty
-        val working = state.busy || state.pendingClose != null || confirmation != null || externalLink != null || linkBusy
+        val working =
+            state.busy || state.pendingClose != null || confirmation != null || externalLink != null || linkBusy
         SideEffect { onStateChanged(dirty, working) }
         DisposableEffect(state, navigation) {
             navigation?.handler = { state.requestNavigation(it) }
@@ -107,7 +109,8 @@ fun DocumentScreen(
             if (right == WorkspaceTool.History && tab != null) state.loadHistory(tab)
         }
 
-        Column(modifier.fillMaxSize()
+        Column(
+            modifier.fillMaxSize()
             .onFocusChanged { if (!it.hasFocus) shortcuts.reset() }
             .focusGroup()
             .onPreviewKeyEvent { shortcuts.handle(it, interactive, toggle) }) {
@@ -117,15 +120,16 @@ fun DocumentScreen(
                 Row(Modifier.fillMaxSize().padding(vertical = 6.dp)) {
                     ToolRail(WorkspaceTool.entries.filter { it.isLeft }, left, interactive, isMac, railFocus, toggle)
                     if (left != null) {
-                        ToolPanel(left!!.name, leftWidth.coerceIn(140f, panelLimit), interactive,
-                            onNarrow = { leftWidth = (leftWidth - 24).coerceAtLeast(140f) },
-                            onWiden = { leftWidth = (leftWidth + 24).coerceAtMost(panelLimit) },
-                            onClose = { toggle(left!!) },
+                        ToolPanel(
+                            left!!.name, leftWidth.coerceIn(140f, panelLimit),
                             modifier = Modifier.onFocusChanged { leftFocused = it.hasFocus }) {
                             when (left) {
                                 WorkspaceTool.Project -> {
                                     Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                        DefaultButton(enabled = interactive, onClick = state::newDocument) { Text("New document") }
+                                        DefaultButton(
+                                            enabled = interactive,
+                                            onClick = state::newDocument
+                                        ) { Text("New document") }
                                     }
                                     OutlinedButton(
                                         enabled = interactive && !state.documentsLoading,
@@ -134,19 +138,26 @@ fun DocumentScreen(
                                     LazyColumn(Modifier.weight(1f)) {
                                         if (state.documentsLoading) item { Text("Loading documents...") }
                                         state.documentsError?.let { message ->
-                                            item { Text("Could not refresh documents: $message", color = JewelTheme.globalColors.text.error) }
+                                            item {
+                                                Text(
+                                                    "Could not refresh documents: $message",
+                                                    color = JewelTheme.globalColors.text.error
+                                                )
+                                            }
                                         }
                                         if (state.documents.isEmpty() && !state.documentsLoading && state.documentsError == null) {
                                             item { Text("No saved documents yet.") }
                                         }
                                         items(state.documents, key = { it.id }) { document ->
-                                            WorkspaceItem("${document.title} (${document.status.label})",
+                                            WorkspaceItem(
+                                                "${document.title} (${document.status.label})",
                                                 selected = tab?.snapshot?.id == document.id,
                                                 enabled = interactive && !state.documentsLoading,
                                                 onClick = { scope.launch { state.open(document.id) } })
                                         }
                                     }
                                 }
+
                                 WorkspaceTool.Search -> SearchPanel(
                                     state.search, interactive,
                                     onSelect = { hit, historical ->
@@ -154,11 +165,12 @@ fun DocumentScreen(
                                     },
                                     isSelected = { hit, historical ->
                                         tab?.snapshot?.id == hit.id && tab.historical == historical &&
-                                            (!historical || tab.snapshot?.revision == hit.revision)
+                                                (!historical || tab.snapshot?.revision == hit.revision)
                                     },
                                     onResultsLaidOut = onSearchResultsLaidOut,
                                     modifier = Modifier.weight(1f),
                                 ) {}
+
                                 else -> Unit
                             }
                         }
@@ -166,10 +178,13 @@ fun DocumentScreen(
                             leftWidth = (leftWidth + delta).coerceIn(140f, panelLimit)
                         }
                     }
-                    Column(Modifier.weight(1f).fillMaxHeight().workspacePanel()
-                        .semantics { contentDescription = "Document editor panel" }) {
-                        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(6.dp),
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Column(
+                        Modifier.weight(1f).fillMaxHeight().workspacePanel()
+                            .semantics { contentDescription = "Document editor panel" }) {
+                        Row(
+                            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(6.dp),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
                             state.tabs.forEach { open ->
                                 key(open.key) {
                                     WorkspaceEditorTab(
@@ -191,21 +206,37 @@ fun DocumentScreen(
                                 Text("Select a document or create a new draft.")
                             }
                         } else editorStates.SaveableStateProvider(tab.key) {
-                            Column(Modifier.weight(1f).fillMaxWidth().padding(12.dp),
-                                verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Column(
+                                Modifier.weight(1f).fillMaxWidth().padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
                                 Text(tab.snapshot?.status?.label ?: "New draft", fontWeight = FontWeight.SemiBold)
                                 if (tab.dirty) Text("Draft - unsaved changes")
                                 if (tab.historical) Text("Saved revision - read-only")
                                 tab.error?.let { Text(it, color = JewelTheme.globalColors.text.error) }
                                 tab.message?.let { Text(it) }
-                                DocumentPresentation(project, tab, capabilities, interactive, bitmapCache,
-                                    onExternalLink = { if (interactive) externalLink = it }, modifier = Modifier.weight(1f).fillMaxWidth(),
-                                    onRendered = onDocumentRendered)
-                                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    DefaultButton(enabled = interactive && tab.editable && tab.title.isNotBlank(),
+                                DocumentPresentation(
+                                    project,
+                                    tab,
+                                    capabilities,
+                                    interactive,
+                                    bitmapCache,
+                                    onExternalLink = { if (interactive) externalLink = it },
+                                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                                    onRendered = onDocumentRendered
+                                )
+                                FlowRow(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    DefaultButton(
+                                        enabled = interactive && tab.editable && tab.title.isNotBlank(),
                                         onClick = { scope.launch { state.save(tab) } }) { Text("Save") }
-                                    OutlinedButton(enabled = interactive && tab.snapshot != null,
-                                        onClick = { right = WorkspaceTool.History; scope.launch { state.loadHistory(tab) } }) { Text("Show history") }
+                                    OutlinedButton(
+                                        enabled = interactive && tab.snapshot != null,
+                                        onClick = {
+                                            right = WorkspaceTool.History; scope.launch { state.loadHistory(tab) }
+                                        }) { Text("Show history") }
                                     OutlinedButton(enabled = interactive && tab.snapshot != null, onClick = {
                                         val source = tab.snapshot ?: return@OutlinedButton
                                         if (tab.historical) scope.launch { state.open(source.id) }
@@ -213,8 +244,10 @@ fun DocumentScreen(
                                     }) { Text(if (tab.historical) "Return to latest document" else "Reload saved document") }
                                 }
                                 if (!tab.editable) Text("Read-only. Rework is not available in this version.")
-                                Text("Configured identity and local timestamps are claims, not authenticated identity or trusted time.",
-                                    color = JewelTheme.globalColors.text.info)
+                                Text(
+                                    "Configured identity and local timestamps are claims, not authenticated identity or trusted time.",
+                                    color = JewelTheme.globalColors.text.info
+                                )
                             }
                         }
                     }
@@ -222,17 +255,17 @@ fun DocumentScreen(
                         PanelDivider("Resize right panel", interactive) { delta ->
                             rightWidth = (rightWidth - delta).coerceIn(140f, panelLimit)
                         }
-                        ToolPanel(right!!.name, rightWidth.coerceIn(140f, panelLimit), interactive,
-                            onNarrow = { rightWidth = (rightWidth - 24).coerceAtLeast(140f) },
-                            onWiden = { rightWidth = (rightWidth + 24).coerceAtMost(panelLimit) },
-                            onClose = { toggle(right!!) },
+                        ToolPanel(
+                            right!!.name, rightWidth.coerceIn(140f, panelLimit),
                             modifier = Modifier.onFocusChanged { rightFocused = it.hasFocus }) {
                             if (tab == null) Text("Select a document.") else when (right) {
                                 WorkspaceTool.Review -> ReviewPanel(tab, interactive) { confirmation = tab to it }
-                                WorkspaceTool.History -> DocumentHistoryPanel(tab, interactive,
+                                WorkspaceTool.History -> DocumentHistoryPanel(
+                                    tab, interactive,
                                     onRefresh = { scope.launch { state.loadHistory(tab) } },
                                     onCompare = { scope.launch { state.compare(tab) } },
                                     onOpen = { state.openSnapshot(it, historical = true) })
+
                                 else -> Unit
                             }
                         }
@@ -255,11 +288,17 @@ fun DocumentScreen(
                                     tab?.error = it.message ?: "Could not open external link."
                                 }
                                 externalLink = null
-                            } finally { linkBusy = false }
+                            } finally {
+                                linkBusy = false
+                            }
                         }
                     }) { Text("Open link") }
                 },
-                dismissButton = { OutlinedButton(enabled = !linkBusy, onClick = { externalLink = null }) { Text("Cancel") } },
+                dismissButton = {
+                    OutlinedButton(
+                        enabled = !linkBusy,
+                        onClick = { externalLink = null }) { Text("Cancel") }
+                },
             )
         }
         confirmation?.let { (source, target) ->
@@ -275,10 +314,12 @@ fun DocumentScreen(
                         if (target == DocumentStatus.Effective) Text("Internal Effective state only. No baseline merge, release record or external distribution.")
                     }
                 },
-                confirmButton = { DefaultButton(onClick = {
-                    confirmation = null
-                    scope.launch { state.transition(source, target) }
-                }) { Text("Confirm") } },
+                confirmButton = {
+                    DefaultButton(onClick = {
+                        confirmation = null
+                        scope.launch { state.transition(source, target) }
+                    }) { Text("Confirm") }
+                },
                 dismissButton = { OutlinedButton(onClick = { confirmation = null }) { Text("Cancel") } },
             )
         }
@@ -310,29 +351,24 @@ private fun ToolRail(
 ) {
     Column(Modifier.width(44.dp).fillMaxHeight().padding(4.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         tools.forEach { tool ->
-            WorkspaceToolButton(tool, selected == tool, enabled, isMac, { select(tool) },
-                Modifier.focusRequester(focus.getValue(tool)))
+            WorkspaceToolButton(
+                tool, selected == tool, enabled, isMac, { select(tool) },
+                Modifier.focusRequester(focus.getValue(tool))
+            )
         }
     }
 }
 
 @Composable
 private fun ToolPanel(
-    title: String, width: Float, enabled: Boolean, onNarrow: () -> Unit, onWiden: () -> Unit,
-    onClose: () -> Unit, modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit,
+    title: String, width: Float, modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit,
 ) {
-    Column(modifier.focusGroup().width(width.dp).fillMaxHeight().workspacePanel()
-        .semantics { contentDescription = "$title panel" }.padding(8.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(
+        modifier.focusGroup().width(width.dp).fillMaxHeight().workspacePanel()
+            .semantics { contentDescription = "$title panel" }.padding(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
         Text(title, fontWeight = FontWeight.SemiBold)
-        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            IconButton(enabled = enabled, onClick = onNarrow,
-                modifier = Modifier.semantics { contentDescription = "Narrow $title panel" }) { Text("-") }
-            IconButton(enabled = enabled, onClick = onWiden,
-                modifier = Modifier.semantics { contentDescription = "Widen $title panel" }) { Text("+") }
-            IconButton(enabled = enabled, onClick = onClose,
-                modifier = Modifier.semantics { contentDescription = "Hide $title panel" }) { Text("x") }
-        }
         content()
     }
 }
@@ -340,10 +376,12 @@ private fun ToolPanel(
 @Composable
 private fun PanelDivider(label: String, enabled: Boolean, resize: (Float) -> Unit) {
     val density = LocalDensity.current.density
-    Box(Modifier.width(8.dp).fillMaxHeight()
+    Box(
+        Modifier.width(8.dp).fillMaxHeight()
         .pointerHoverIcon(if (enabled) PointerIcon(java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.E_RESIZE_CURSOR)) else PointerIcon.Default)
         .semantics { contentDescription = label }
-        .draggable(rememberDraggableState { resize(it / density) }, Orientation.Horizontal, enabled = enabled))
+        .draggable(rememberDraggableState { resize(it / density) }, Orientation.Horizontal, enabled = enabled)
+    )
 }
 
 @Composable
@@ -363,7 +401,10 @@ internal fun actionLabel(target: DocumentStatus): String = when (target) {
 
 @Composable
 private fun ReviewPanel(tab: DocumentTab, enabled: Boolean, transition: (DocumentStatus) -> Unit) {
-    Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    Column(
+        Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
         val document = tab.snapshot
         Text(document?.status?.label ?: "Save this draft before submitting it.", fontWeight = FontWeight.SemiBold)
         document?.let {
@@ -397,7 +438,10 @@ private fun DocumentHistoryPanel(
     tab: DocumentTab, enabled: Boolean, onRefresh: () -> Unit, onCompare: () -> Unit,
     onOpen: (DocumentSnapshot) -> Unit,
 ) {
-    Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(
+        Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
         OutlinedButton(
             enabled = enabled && tab.snapshot != null && !tab.historyLoading,
             onClick = onRefresh,
