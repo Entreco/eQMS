@@ -783,10 +783,10 @@ impl Documents {
                 return Err(error("invalid document event in draft history"));
             }
             blob_selectors.push(format!("{}:{JOURNAL}", commit.parent));
-            if created || saved {
-                if let Some(document_change) = commit.changes.get(&document_path) {
-                    blob_selectors.push(document_change.new_oid.clone());
-                }
+            if (created || saved)
+                && let Some(document_change) = commit.changes.get(&document_path)
+            {
+                blob_selectors.push(document_change.new_oid.clone());
             }
         }
         let head_journal_selector = format!("{head}:{JOURNAL}");
