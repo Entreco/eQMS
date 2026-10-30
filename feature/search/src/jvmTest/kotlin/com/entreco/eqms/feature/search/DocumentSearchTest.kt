@@ -73,7 +73,7 @@ class DocumentSearchTest {
     }
 
     @Test
-    fun preparationIsVisibleAndRefreshRepreparesWithoutSearchingUnsavedText() = runBlocking {
+    fun blankRefreshDoesNotPrepareAndNonblankRefreshReprepares() = runBlocking {
         val preparation = CompletableDeferred<Result<SearchPreparation>>()
         var prepares = 0
         var searches = 0
@@ -89,14 +89,16 @@ class DocumentSearchTest {
         }
         val search = DocumentSearch("project", capabilities, this)
         search.refresh()
+        await { !search.loading }
+        assertFalse(search.preparing)
+        assertEquals(0, prepares)
+        search.updateQuery("saved")
         await { search.preparing }
         assertNull(search.results)
         preparation.complete(Result.success(SearchPreparation("snapshot", 2)))
-        await { !search.preparing }
-        assertEquals(0, searches)
-        search.updateQuery("saved")
         await { search.results != null }
         assertEquals(1, prepares)
+        assertEquals(1, searches)
         search.refresh()
         await { prepares == 2 && search.results != null }
         search.dispose()

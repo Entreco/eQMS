@@ -1,6 +1,7 @@
 package com.entreco.eqms.desktop
 
 import com.entreco.eqms.feature.document.DocumentCapabilities
+import com.entreco.eqms.feature.document.DocumentHistorySnapshot
 import com.entreco.eqms.feature.document.DocumentSnapshot
 import com.entreco.eqms.feature.document.DocumentStatus
 import com.entreco.eqms.feature.document.DocumentLifecycleEvent
@@ -108,34 +109,35 @@ internal class DesktopDocumentCapabilities(
 
     override suspend fun documentLifecycleHistory(project: String, id: String): Result<List<DocumentLifecycleEvent>> =
         operation("lifecycle-history", project, listOf(id)) { data ->
-            data.jsonArray.map { element ->
-                val value = element.jsonObject
-                val revision = value.string("revision")
-                val eventHash = value.string("event_hash")
-                val contentHash = value.string("content_hash")
-                validateHashes(revision, contentHash, eventHash)
-                DocumentLifecycleEvent(
-                    revision, eventHash, contentHash, status(value.string("from_status")),
-                    status(value.string("to_status")), value.nonemptyString("local_timestamp"),
-                )
-            }.also { events ->
-                require(events.map { it.revision }.distinct().size == events.size) { "Duplicate lifecycle revisions." }
-                require(events.map { it.eventHash }.distinct().size == events.size) { "Duplicate lifecycle events." }
-                events.zipWithNext().forEach { (previous, next) ->
-                    require(previous.to == next.from && previous.contentHash == next.contentHash) { "Invalid lifecycle event chain." }
-                }
-                var previous = DocumentStatus.Draft
-                events.forEach { event ->
-                    require(event.from == previous && event.to in when (previous) {
-                        DocumentStatus.Draft -> listOf(DocumentStatus.InReview)
-                        DocumentStatus.InReview -> listOf(DocumentStatus.Approved)
-                        DocumentStatus.Approved -> listOf(DocumentStatus.Effective)
-                        DocumentStatus.Effective -> listOf(DocumentStatus.Obsolete, DocumentStatus.Superseded)
-                        else -> emptyList()
-                    }) { "Invalid lifecycle transition history." }
-                    previous = event.to
-                }
+            lifecycleEvents(data)
+        }
+
+    override suspend fun documentHistorySnapshot(project: String, id: String): Result<DocumentHistorySnapshot> =
+        operation("history-snapshot", project, listOf(id)) { data ->
+            val value = data.jsonObject
+            val revisions = value.getValue("revisions").jsonArray.map(::snapshot)
+            require(revisions.isNotEmpty() && revisions.all { it.id == id }) {
+                "qms returned invalid document history."
             }
+            require(revisions.map { it.revision }.distinct().size == revisions.size) {
+                "qms returned duplicate document revisions."
+            }
+            val events = lifecycleEvents(value.getValue("lifecycle_events"))
+            val revisionsById = revisions.associateBy { it.revision }
+            events.forEach { event ->
+                val revision = revisionsById[event.revision]
+                    ?: throw IllegalArgumentException("Lifecycle event is not part of the returned document history.")
+                require(
+                    revision.eventHash == event.eventHash &&
+                        revision.contentHash == event.contentHash &&
+                        revision.status == event.to,
+                ) { "Lifecycle event differs from its document revision." }
+            }
+            require(events.map { it.revision }.toSet() ==
+                revisions.filter { it.status != DocumentStatus.Draft }.map { it.revision }.toSet()) {
+                "Lifecycle events do not match document revision statuses."
+            }
+            DocumentHistorySnapshot(revisions, events)
         }
 
     override suspend fun prepareSearch(project: String): Result<SearchPreparation> =
@@ -319,6 +321,42 @@ private fun snapshot(data: JsonElement): DocumentSnapshot {
         value.string("configured_author"), value.string("local_timestamp"), status(value.string("status")),
     )
 }
+
+private fun lifecycleEvents(data: JsonElement): List<DocumentLifecycleEvent> =
+    data.jsonArray.map { element ->
+        val value = element.jsonObject
+        val revision = value.string("revision")
+        val eventHash = value.string("event_hash")
+        val contentHash = value.string("content_hash")
+        validateHashes(revision, contentHash, eventHash)
+        DocumentLifecycleEvent(
+            revision, eventHash, contentHash, status(value.string("from_status")),
+            status(value.string("to_status")), value.nonemptyString("local_timestamp"),
+        )
+    }.also { events ->
+        require(events.map { it.revision }.distinct().size == events.size) {
+            "Duplicate lifecycle revisions."
+        }
+        require(events.map { it.eventHash }.distinct().size == events.size) {
+            "Duplicate lifecycle events."
+        }
+        events.zipWithNext().forEach { (previous, next) ->
+            require(previous.to == next.from && previous.contentHash == next.contentHash) {
+                "Invalid lifecycle event chain."
+            }
+        }
+        var previous = DocumentStatus.Draft
+        events.forEach { event ->
+            require(event.from == previous && event.to in when (previous) {
+                DocumentStatus.Draft -> listOf(DocumentStatus.InReview)
+                DocumentStatus.InReview -> listOf(DocumentStatus.Approved)
+                DocumentStatus.Approved -> listOf(DocumentStatus.Effective)
+                DocumentStatus.Effective -> listOf(DocumentStatus.Obsolete, DocumentStatus.Superseded)
+                else -> emptyList()
+            }) { "Invalid lifecycle transition history." }
+            previous = event.to
+        }
+    }
 
 private fun status(value: String): DocumentStatus =
     DocumentStatus.entries.firstOrNull { it.label == value }

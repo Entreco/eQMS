@@ -47,6 +47,7 @@ pub(crate) fn command() -> Command {
         )
         .subcommand(operation("status").arg(Arg::new("id").required(true)))
         .subcommand(operation("lifecycle-history").arg(Arg::new("id").required(true)))
+        .subcommand(operation("history-snapshot").arg(Arg::new("id").required(true)))
         .subcommand(operation("history").arg(Arg::new("id").required(true)))
         .subcommand(
             operation("diff")
@@ -120,6 +121,10 @@ pub(crate) fn run(
         }
         "lifecycle-history" => serde_json::to_value(
             docs.lifecycle_history(value("id"))
+                .map_err(|e| e.to_string())?,
+        ),
+        "history-snapshot" => serde_json::to_value(
+            docs.history_snapshot(value("id"))
                 .map_err(|e| e.to_string())?,
         ),
         "history" => serde_json::to_value(docs.history(value("id")).map_err(|e| e.to_string())?),

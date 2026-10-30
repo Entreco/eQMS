@@ -13,7 +13,9 @@ class DocumentWorkspaceStateTest {
         var failTransition = false
         var transitionCalls = 0
         var pending: CompletableDeferred<Result<DocumentSnapshot>>? = null
-        override suspend fun listDocuments(project: String) = Result.success(saved.values.toList())
+        var pendingList: CompletableDeferred<Result<List<DocumentSnapshot>>>? = null
+        var pendingHistory: CompletableDeferred<Result<DocumentHistorySnapshot>>? = null
+        override suspend fun listDocuments(project: String) = pendingList?.await() ?: Result.success(saved.values.toList())
         override suspend fun createDocument(project: String, title: String, body: String) =
             Result.success(first.copy(id = "new", title = title, body = body))
         override suspend fun saveDocument(project: String, id: String, expected: String, title: String, body: String): Result<DocumentSnapshot> {
@@ -22,6 +24,8 @@ class DocumentWorkspaceStateTest {
         }
         override suspend fun showLatestDocument(project: String, id: String) = pending?.await() ?: Result.success(saved.getValue(id))
         override suspend fun documentHistory(project: String, id: String) = Result.success(listOf(saved.getValue(id)))
+        override suspend fun documentHistorySnapshot(project: String, id: String) =
+            pendingHistory?.await() ?: Result.success(DocumentHistorySnapshot(listOf(saved.getValue(id)), emptyList()))
         override suspend fun documentDiff(project: String, id: String, from: String, to: String) = Result.success("")
         override suspend fun documentLifecycleHistory(project: String, id: String) = Result.success(emptyList<DocumentLifecycleEvent>())
         override suspend fun transitionDocument(project: String, document: DocumentSnapshot, target: DocumentStatus): Result<DocumentSnapshot> {
@@ -173,6 +177,85 @@ class DocumentWorkspaceStateTest {
             state.reload(tab)
             assertEquals("external", tab.body)
             assertEquals(DocumentStatus.InReview, tab.snapshot!!.status)
+        } finally { state.dispose() }
+    }
+
+    @Test
+    fun listRefreshIsPanelLocalAndCannotOverwriteANewerMutation() = runBlocking {
+        val capabilities = Capabilities()
+        val pending = CompletableDeferred<Result<List<DocumentSnapshot>>>()
+        capabilities.pendingList = pending
+        val state = DocumentWorkspaceState("project", capabilities, this)
+        try {
+            val refresh = launch(start = CoroutineStart.UNDISPATCHED) { state.refresh() }
+            assertTrue(state.documentsLoading)
+            assertFalse(state.busy)
+            state.newDocument()
+            val created = state.active!!
+            created.title = "Created during refresh"
+            assertTrue(state.save(created))
+            assertFalse(state.busy)
+            pending.complete(Result.success(listOf(capabilities.first, capabilities.second)))
+            refresh.join()
+            assertFalse(state.documentsLoading)
+            assertTrue(state.documents.any { it.id == "new" })
+        } finally { state.dispose() }
+    }
+
+    @Test
+    fun listRefreshFailureRemainsLocalAndVisible() = runBlocking {
+        val capabilities = Capabilities()
+        capabilities.pendingList = CompletableDeferred<Result<List<DocumentSnapshot>>>().also {
+            it.complete(Result.failure(IllegalStateException("List unavailable")))
+        }
+        val state = DocumentWorkspaceState("project", capabilities, this)
+        try {
+            state.refresh()
+            assertEquals("List unavailable", state.documentsError)
+            assertNull(state.error)
+            assertFalse(state.documentsLoading)
+            assertFalse(state.busy)
+        } finally { state.dispose() }
+    }
+
+    @Test
+    fun historySnapshotLoadsLocallyWithoutBlockingWorkspaceMutations() = runBlocking {
+        val capabilities = Capabilities()
+        val pending = CompletableDeferred<Result<DocumentHistorySnapshot>>()
+        capabilities.pendingHistory = pending
+        val state = DocumentWorkspaceState("project", capabilities, this)
+        try {
+            val tab = state.openSnapshot(capabilities.first)
+            val loading = launch(start = CoroutineStart.UNDISPATCHED) { state.loadHistory(tab) }
+            assertTrue(tab.historyLoading)
+            assertFalse(state.busy)
+            pending.complete(Result.success(DocumentHistorySnapshot(listOf(capabilities.first), emptyList())))
+            loading.join()
+            assertTrue(tab.historyLoaded)
+            assertFalse(tab.historyLoading)
+            assertEquals(capabilities.first, tab.newer)
+        } finally { state.dispose() }
+    }
+
+    @Test
+    fun lateHistoryForAnOlderRevisionIsNotAppliedAfterReload() = runBlocking {
+        val capabilities = Capabilities()
+        val history = CompletableDeferred<Result<DocumentHistorySnapshot>>()
+        val latest = CompletableDeferred<Result<DocumentSnapshot>>()
+        capabilities.pendingHistory = history
+        capabilities.pending = latest
+        val state = DocumentWorkspaceState("project", capabilities, this)
+        try {
+            val tab = state.openSnapshot(capabilities.first)
+            val loading = launch(start = CoroutineStart.UNDISPATCHED) { state.loadHistory(tab) }
+            latest.complete(Result.success(capabilities.first.copy(revision = "r2", body = "external")))
+            state.reload(tab)
+            history.complete(Result.success(DocumentHistorySnapshot(listOf(capabilities.first), emptyList())))
+            loading.join()
+            assertEquals("r2", tab.snapshot!!.revision)
+            assertFalse(tab.historyLoaded)
+            assertNull(tab.historyError)
+            assertTrue(tab.history.isEmpty())
         } finally { state.dispose() }
     }
 }

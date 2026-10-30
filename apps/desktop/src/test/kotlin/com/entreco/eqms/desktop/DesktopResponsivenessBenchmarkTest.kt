@@ -4,6 +4,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import com.entreco.eqms.feature.document.DocumentCapabilities
+import com.entreco.eqms.feature.document.DocumentHistorySnapshot
 import com.entreco.eqms.feature.document.DocumentScreen
 import com.entreco.eqms.feature.document.DocumentSnapshot
 import com.entreco.eqms.feature.search.SearchPreparation
@@ -34,6 +35,7 @@ class DesktopResponsivenessBenchmarkTest {
         require(!executable.isNullOrBlank()) { "Set EQMS_QMS_PATH to the release qms executable." }
         val fixture = Json.parseToJsonElement(File(project, ".eqms/search-benchmark.json").readText()).jsonObject
         val expectedDocuments = fixture.getValue("documents").jsonPrimitive.int
+        val expectedRevisions = fixture.getValue("revisions_for_first_document").jsonPrimitive.int
         val processSamples = Collections.synchronizedMap(mutableMapOf<String, MutableList<Double>>())
         val documentExecutor = DocumentExecutor { command, arguments, input ->
             val started = System.nanoTime()
@@ -49,12 +51,12 @@ class DesktopResponsivenessBenchmarkTest {
             override suspend fun listDocuments(project: String): Result<List<DocumentSnapshot>> =
                 measured("list", adapterSamples) { native.listDocuments(project) }
 
-            override suspend fun documentHistory(project: String, id: String): Result<List<DocumentSnapshot>> =
-                measured("history", adapterSamples) { native.documentHistory(project, id) }
-
-            override suspend fun documentLifecycleHistory(project: String, id: String) =
-                measured("lifecycle-history", adapterSamples) {
-                    native.documentLifecycleHistory(project, id)
+            override suspend fun documentHistorySnapshot(
+                project: String,
+                id: String,
+            ): Result<DocumentHistorySnapshot> =
+                measured("history-snapshot", adapterSamples) {
+                    native.documentHistorySnapshot(project, id)
                 }
 
             override suspend fun prepareSearch(project: String): Result<SearchPreparation> =
@@ -101,22 +103,43 @@ class DesktopResponsivenessBenchmarkTest {
             compose.waitUntil(30_000) {
                 compose.onAllNodesWithText("Show history").fetchSemanticsNodes().isNotEmpty()
             }
-            val lifecycleSample = adapterSamples["lifecycle-history"]?.size ?: 0
+            val historySample = adapterSamples["history-snapshot"]?.size ?: 0
             val historyStarted = System.nanoTime()
             compose.onNodeWithText("Show history").performClick()
             compose.waitUntil(30_000) {
                 compose.onAllNodesWithText("Older revision").fetchSemanticsNodes().isNotEmpty() &&
-                    (adapterSamples["lifecycle-history"]?.size ?: 0) > lifecycleSample
+                    compose.onAllNodesWithText("No lifecycle events recorded.").fetchSemanticsNodes().isNotEmpty() &&
+                    (adapterSamples["history-snapshot"]?.size ?: 0) > historySample
             }
             compose.waitForIdle()
             historyReady += (System.nanoTime() - historyStarted) / 1_000_000.0
         }
         assertTrue(openToList.size == runs && historyReady.size == runs)
         assertTrue(adapterSamples["list"]?.size == runs)
+        assertTrue(adapterSamples["history-snapshot"]?.size == runs)
+        assertTrue(adapterSamples["search-prepare"].isNullOrEmpty())
         assertTrue(expectedDocuments > 0)
 
         fun percentile(values: List<Double>, percentile: Double): Double =
             values.sorted()[ceil(values.size * percentile).toInt() - 1]
+
+        val projectOpenP95 = percentile(openToList, 0.95)
+        val historyP95 = percentile(historyReady, 0.95)
+        val budgets = when (expectedDocuments to expectedRevisions) {
+            8 to 2 -> 1_050.0 to 700.0
+            16 to 4 -> 1_900.0 to 1_100.0
+            else -> null
+        }
+        budgets?.let { (projectBudget, historyBudget) ->
+            assertTrue(
+                projectOpenP95 <= projectBudget,
+                "Project/list p95 $projectOpenP95 ms exceeds $projectBudget ms.",
+            )
+            assertTrue(
+                historyP95 <= historyBudget,
+                "History p95 $historyP95 ms exceeds $historyBudget ms.",
+            )
+        }
 
         fun samples(values: List<Double>) = buildJsonArray { values.forEach { add(it) } }
         fun stage(name: String, values: List<Double>) = buildJsonObject {

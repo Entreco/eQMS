@@ -159,6 +159,23 @@ fn document_commands_persist_drafts_and_report_conflicts() {
     assert_eq!(lifecycle["data"].as_array().unwrap().len(), 3);
     assert_eq!(lifecycle["data"][0]["from_status"], "Draft");
     assert_eq!(lifecycle["data"][2]["to_status"], "Effective");
+    let history = invoke(&["history-snapshot", id], "");
+    assert!(history.status.success());
+    let history: serde_json::Value = serde_json::from_slice(&history.stdout).unwrap();
+    assert_cli_envelope(&history, "ok");
+    assert_eq!(history["command"], "document.history-snapshot");
+    assert_eq!(history["data"]["revisions"].as_array().unwrap().len(), 5);
+    assert_eq!(
+        history["data"]["lifecycle_events"]
+            .as_array()
+            .unwrap()
+            .len(),
+        3
+    );
+    assert_eq!(
+        history["data"]["lifecycle_events"][2]["revision"],
+        history["data"]["revisions"][0]["revision"]
+    );
     let stale = invoke(
         &["transition", id, "--expected", second, "--to", "In Review"],
         "",

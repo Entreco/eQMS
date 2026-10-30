@@ -234,6 +234,7 @@ class DocumentScreenTest {
 
     private class Capabilities : DocumentCapabilities {
         var renderPending: CompletableDeferred<Result<RenderedDocument>>? = null
+        var historyPending: CompletableDeferred<Result<DocumentHistorySnapshot>>? = null
         var renderFailure: String? = null
         var renderNodes: List<RenderNode>? = null
         var renderToc: List<RenderHeading> = emptyList()
@@ -284,9 +285,10 @@ class DocumentScreenTest {
         val latestReads = mutableListOf<String>()
         var lists = 0
         var pending: CompletableDeferred<Result<DocumentSnapshot>>? = null
+        var listPending: CompletableDeferred<Result<List<DocumentSnapshot>>>? = null
         override suspend fun listDocuments(project: String): Result<List<DocumentSnapshot>> {
             lists++
-            return Result.success(listOf(saved))
+            return listPending?.await() ?: Result.success(listOf(saved))
         }
         override suspend fun createDocument(project: String, title: String, body: String): Result<DocumentSnapshot> {
             saves++
@@ -303,6 +305,8 @@ class DocumentScreenTest {
             return Result.success(saved)
         }
         override suspend fun documentHistory(project: String, id: String) = Result.success(listOf(saved, first))
+        override suspend fun documentHistorySnapshot(project: String, id: String) =
+            historyPending?.await() ?: Result.success(DocumentHistorySnapshot(listOf(saved, first), emptyList()))
         override suspend fun documentDiff(project: String, id: String, from: String, to: String): Result<String> =
             if (diffFails) Result.failure(IllegalArgumentException("Comparison unavailable"))
             else Result.success("-original\n+edited")
@@ -482,6 +486,52 @@ class DocumentScreenTest {
     }
 
     @Test
+    fun historyLoadingKeepsEditorResponsiveAndRetainsEdits() {
+        val capabilities = Capabilities()
+        val pending = CompletableDeferred<Result<DocumentHistorySnapshot>>()
+        capabilities.historyPending = pending
+        compose.setContent {
+            IntUiTheme(isDark = true) {
+                DocumentScreen("/project", capabilities, { _, _ -> })
+            }
+        }
+        compose.onNodeWithText("Policy (Draft)").performClick()
+        compose.onNodeWithText("Show history").performClick()
+        compose.onNodeWithText("Loading verified history...").assertExists()
+        sourceField("Markdown body").performTextReplacement("edited while history loads")
+        compose.onNodeWithText("Save").assertIsEnabled()
+        sourceField("Markdown body").assertTextContains("edited while history loads")
+
+        compose.runOnIdle {
+            pending.complete(Result.success(DocumentHistorySnapshot(listOf(capabilities.first), emptyList())))
+        }
+        compose.onNodeWithText("No lifecycle events recorded.").assertExists()
+        sourceField("Markdown body").assertTextContains("edited while history loads")
+    }
+
+    @Test
+    fun documentListLoadingDoesNotBlockDraftEditing() {
+        val capabilities = Capabilities()
+        val pending = CompletableDeferred<Result<List<DocumentSnapshot>>>()
+        capabilities.listPending = pending
+        compose.setContent {
+            IntUiTheme(isDark = true) {
+                DocumentScreen("/project", capabilities, { _, _ -> })
+            }
+        }
+        compose.onNodeWithText("Loading documents...").assertExists()
+        compose.onNodeWithText("New document").assertIsEnabled().performClick()
+        sourceField("Document title").performTextReplacement("Draft during list load")
+        sourceField("Markdown body").performTextReplacement("unsaved")
+        compose.runOnIdle {
+            pending.complete(Result.success(listOf(capabilities.first)))
+        }
+        compose.onNodeWithText("Policy (Draft)").assertExists()
+        sourceField("Document title").assertTextContains("Draft during list load")
+        sourceField("Markdown body").assertTextContains("unsaved")
+    }
+
+    @Test
     fun newDocumentDoesNotWriteBeforeSaveAndBusySaveCannotRepeat() {
         val capabilities = Capabilities()
         val pending = CompletableDeferred<Result<DocumentSnapshot>>()
@@ -499,9 +549,9 @@ class DocumentScreenTest {
         compose.onNodeWithContentDescription("Toggle Review panel").assertIsSelected()
         compose.runOnIdle { assertEquals(1, capabilities.saves); pending.complete(Result.success(capabilities.first)) }
         compose.onNodeWithText("Draft saved.").assertExists()
-        compose.waitUntil(3000) { capabilities.prepares == 2 }
+        compose.waitUntil(3000) { capabilities.prepares == 0 }
         compose.onNodeWithText("Refresh documents").performClick()
-        compose.waitUntil(3000) { capabilities.prepares == 3 }
+        compose.runOnIdle { assertEquals(0, capabilities.prepares) }
     }
 
     @Test

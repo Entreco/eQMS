@@ -8,29 +8,30 @@ related: [EQMS-092, EQMS-102]
 
 Issue: #65. Risk Management and Security Risk Management both apply.
 
-## Scope and current path
+## Scope and measured baseline
 
 Keep the native `qms` CLI authoritative and Rust domain code independent of
 Kotlin/UI frameworks. Desktop project opening continues to run `qms verify`.
 Project document listing and History remain native-verified operations; do not
 weaken journal, Git, revision, or provenance checks to reduce latency.
 
-The initial source trace shows three measurable work paths:
+The initial source trace and pre-implementation profile showed three measurable
+work paths:
 
 1. Selecting a project awaits `qms verify` before composing `DocumentScreen`.
 2. The screen's first refresh calls `document list`; the current Rust list path
    verifies the workspace and then asks Git for each ref head and verified
    revision chain.
-3. Opening History sequentially calls document-history and lifecycle-history.
-   Both native requests verify the workspace and traverse the same captured
-   draft chain independently. Both are also wrapped in the screen-wide busy
+3. Opening History sequentially called document-history and lifecycle-history.
+   Both native requests verified the workspace and traversed the same captured
+   draft chain independently. Both were also wrapped in the screen-wide busy
    operation.
 
-These are investigation leads. Record baseline measurements and subprocess
-counts before choosing an optimization. First feedback, first document-list
-content, and first usable History content are separate outcomes.
+The benchmark measured first feedback, first document-list content, and first
+usable History content separately. Baseline values and subprocess counts are
+recorded in [EQMS-094 tests](../testing/EQMS-094.md).
 
-## Design
+## Implemented design
 
 Retain an explicit project verification gate. Once it succeeds, show the
 workspace shell and its panels without waiting for document listing or search.
@@ -38,19 +39,20 @@ Use panel-local loading and errors, and keep mutations/dirty navigation guarded
 without disabling unrelated reads or editor state.
 
 The pre-implementation release profile measured 97 Git process starts for the
-8-document list and 193 for the 16-document list. Each list currently
-enumerates ref names, then starts another Git process per document to resolve
+8-document list and 193 for the 16-document list. Each list previously
+enumerated ref names, then started another Git process per document to resolve
 its head. Capture ref names and object IDs together and verify each chain at
-that captured object ID. `Documents::open` will perform workspace structural
-checks; every public document operation already performs full workspace
+that captured object ID. `Documents::open` performs workspace structural
+checks; every public document operation performs full workspace
 verification under its operation lock, so remove only the redundant eager
 verification before `list`/History operations. Keep all integrity checks and
 failures in the locked operation.
 
-For History, add a versioned native operation returning document revisions
-and lifecycle events from one lock-protected, verified history snapshot. The
-baseline performed separate history and lifecycle-history operations, each
-with 26 Git process starts on the 8-document fixture and 42 on the larger one.
+For History, the versioned native `history-snapshot` operation returns document
+revisions and lifecycle events from one lock-protected, verified history
+snapshot. The baseline performed separate history and lifecycle-history
+operations, each with 26 Git process starts on the 8-document fixture and 42
+on the larger one.
 Decode the complete envelope and validate all existing revision, event, hash,
 and state invariants before updating the selected tab. Avoid a cache: every
 History open remains freshly verified, so no cache freshness or invalidation
@@ -59,17 +61,16 @@ revision that requested it; cancellation, disposal, tab/project changes, or a
 revision change must not publish late results. Preserve current buffers and
 editor selection.
 
-Search preparation for a blank query has no user-visible result. Do not start
-it on workspace open or when clearing the query; the first nonblank query
-prepares search on its existing independent job. Existing save/transition
-refresh behavior still re-prepares an active query.
+Document-list and History loading do not set the workspace mutation-busy state.
+List results are generation-checked against mutations and older refreshes;
+History results are bound to the requesting tab and source revision. Search
+preparation for a blank query has no user-visible result: it is skipped on
+workspace open and when clearing the query; the first nonblank query prepares
+search on its existing independent job. Existing save/transition refresh
+behavior still re-prepares an active query.
 
-Use the measured list profile to select a focused native optimization. Any
-batching must reuse an already captured ref/snapshot only within the existing
-workspace lock and verification boundary. Keep explicit errors and exact
-provenance. Do not introduce a Git library, persistent process, or unbounded
-cache unless the observed profile demonstrates the need and the design/risk
-trade-offs are reviewed first.
+Keep explicit errors and exact provenance. No Git library, persistent process,
+or unbounded cache was introduced.
 
 ## Risk assessment
 

@@ -393,6 +393,7 @@ Use the returned document ID and full revision in the command syntax below:
 qms document show <project> <id> [--revision <full-revision>]
 qms document save <project> <id> --title <title> --expected <full-revision>
 qms document history <project> <id>
+qms document history-snapshot <project> <id>
 qms document diff <project> <id> <from-full-revision> <to-full-revision>
 ```
 

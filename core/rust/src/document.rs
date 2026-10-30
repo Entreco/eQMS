@@ -96,6 +96,12 @@ pub struct LifecycleEvent {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DocumentHistorySnapshot {
+    pub revisions: Vec<Document>,
+    pub lifecycle_events: Vec<LifecycleEvent>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Document {
     pub id: String,
     pub title: String,
@@ -263,9 +269,9 @@ impl Documents {
     }
 
     pub fn open(path: impl AsRef<Path>) -> Result<Self, WorkspaceError> {
-        let workspace = Workspace::open(path)?;
-        workspace.verify()?;
-        Ok(Self { workspace })
+        Ok(Self {
+            workspace: Workspace::open(path)?,
+        })
     }
 
     fn root(&self) -> &Path {
@@ -298,15 +304,17 @@ impl Documents {
         self.verify_baseline()?;
         let refs = git_text(
             self.root(),
-            &["for-each-ref", "--format=%(refname)", PREFIX],
+            &["for-each-ref", "--format=%(refname) %(objectname)", PREFIX],
         )?;
         refs.lines()
-            .map(|name| {
+            .map(|line| {
+                let (name, revision) = line
+                    .split_once(' ')
+                    .ok_or_else(|| error("invalid draft ref"))?;
                 let id = name
                     .strip_prefix(PREFIX)
                     .ok_or_else(|| error("invalid draft ref"))?;
-                let revision = self.head(id)?;
-                self.history_at(id, &revision)?
+                self.history_at(id, revision)?
                     .into_iter()
                     .next()
                     .ok_or_else(|| error("empty history"))
@@ -324,6 +332,16 @@ impl Documents {
         let _lock = self.workspace.acquire_lock()?;
         self.verify_baseline()?;
         Ok(self.verified_history(id, &self.head(id)?)?.lifecycle_events)
+    }
+
+    pub fn history_snapshot(&self, id: &str) -> Result<DocumentHistorySnapshot, WorkspaceError> {
+        let _lock = self.workspace.acquire_lock()?;
+        self.verify_baseline()?;
+        let history = self.verified_history(id, &self.head(id)?)?;
+        Ok(DocumentHistorySnapshot {
+            revisions: history.documents,
+            lifecycle_events: history.lifecycle_events,
+        })
     }
 
     pub fn show(&self, id: &str, revision: Option<&str>) -> Result<Document, WorkspaceError> {
@@ -963,6 +981,28 @@ mod tests {
         VALIDATED_RECORDS.with(|count| count.set(0));
         assert_eq!(f.docs().list().unwrap(), vec![latest]);
         assert_eq!(VALIDATED_RECORDS.with(|count| count.get()), 10);
+    }
+
+    #[test]
+    fn history_snapshot_returns_revisions_and_lifecycle_from_one_verified_chain() {
+        let f = Fixture::new();
+        let docs = f.docs();
+        let draft = docs.create("Policy", "content").unwrap();
+        docs.transition(&draft.id, &draft.revision, LifecycleState::InReview)
+            .unwrap();
+
+        VALIDATED_RECORDS.with(|count| count.set(0));
+        let snapshot = docs.history_snapshot(&draft.id).unwrap();
+        assert_eq!(snapshot.revisions.len(), 2);
+        assert_eq!(snapshot.lifecycle_events.len(), 1);
+        assert_eq!(
+            snapshot.lifecycle_events[0].revision,
+            snapshot.revisions[0].revision
+        );
+        assert_eq!(
+            VALIDATED_RECORDS.with(|count| count.get()),
+            snapshot.revisions.len() + 1
+        );
     }
 
     #[test]

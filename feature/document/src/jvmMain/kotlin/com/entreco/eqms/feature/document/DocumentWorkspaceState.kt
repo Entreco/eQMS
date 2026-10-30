@@ -40,6 +40,10 @@ internal class DocumentTab(
     var message by mutableStateOf<String?>(null)
     var history by mutableStateOf<List<DocumentSnapshot>>(emptyList())
     var events by mutableStateOf<List<DocumentLifecycleEvent>>(emptyList())
+    var historyLoading by mutableStateOf(false)
+    var historyLoaded by mutableStateOf(false)
+    var historyError by mutableStateOf<String?>(null)
+    var historyGeneration = 0
     var difference by mutableStateOf<String?>(null)
     var older by mutableStateOf<DocumentSnapshot?>(null)
     var newer by mutableStateOf<DocumentSnapshot?>(null)
@@ -55,6 +59,10 @@ internal class DocumentWorkspaceState(
     var activeKey by mutableStateOf<Int?>(null)
     val active get() = tabs.firstOrNull { it.key == activeKey }
     var documents by mutableStateOf<List<DocumentSnapshot>>(emptyList())
+    var documentsLoading by mutableStateOf(true)
+        private set
+    var documentsError by mutableStateOf<String?>(null)
+        private set
     var busy by mutableStateOf(false)
         private set
     var error by mutableStateOf<String?>(null)
@@ -63,6 +71,8 @@ internal class DocumentWorkspaceState(
     private var afterClose: (() -> Unit)? = null
     private var nextKey = 0
     private var disposed = false
+    private var documentsGeneration = 0
+    private var refreshGeneration = 0
     val dirty get() = tabs.any { it.dirty }
 
     fun dispose() { disposed = true; search.dispose() }
@@ -107,10 +117,15 @@ internal class DocumentWorkspaceState(
     }
 
     suspend fun refresh() {
-        operation {
+        if (busy || disposed) return
+        documentsLoading = true
+        documentsError = null
+        val request = ++refreshGeneration
+        val generation = documentsGeneration
+        try {
             capabilities.listDocuments(project).fold(
                 onSuccess = { updated ->
-                    if (!disposed) {
+                    if (!disposed && request == refreshGeneration && generation == documentsGeneration) {
                         documents = updated
                         tabs.filter { !it.historical }.forEach { tab ->
                             updated.firstOrNull { it.id == tab.snapshot?.id }?.let {
@@ -122,10 +137,16 @@ internal class DocumentWorkspaceState(
                         }
                     }
                 },
-                onFailure = { if (!disposed) error = it.message ?: "Could not list documents." },
+                onFailure = {
+                    if (!disposed && request == refreshGeneration && generation == documentsGeneration) {
+                        documentsError = it.message ?: "Could not list documents."
+                    }
+                },
             )
-            if (!disposed) search.refresh()
+        } finally {
+            if (request == refreshGeneration) documentsLoading = false
         }
+        if (!disposed) search.refresh()
     }
 
     suspend fun save(tab: DocumentTab): Boolean {
@@ -176,24 +197,41 @@ internal class DocumentWorkspaceState(
 
     suspend fun loadHistory(tab: DocumentTab) {
         val document = tab.snapshot ?: return
-        if (busy) return
-        operation {
-            tab.error = null
-            capabilities.documentHistory(project, document.id).fold(
-                onSuccess = { revisions ->
-                    if (!disposed && tab in tabs) {
-                        tab.history = revisions
-                        tab.older = revisions.lastOrNull()
-                        tab.newer = revisions.firstOrNull()
-                        tab.difference = null
+        if (busy || disposed || tab !in tabs || tab.historyLoading) return
+        tab.historyLoading = true
+        tab.historyError = null
+        tab.historyLoaded = false
+        val request = ++tab.historyGeneration
+        tab.history = emptyList()
+        tab.events = emptyList()
+        tab.difference = null
+        tab.older = null
+        tab.newer = null
+        try {
+            capabilities.documentHistorySnapshot(project, document.id).fold(
+                onSuccess = { history ->
+                    if (!disposed && tab in tabs && request == tab.historyGeneration) {
+                        if (tab.snapshot?.revision != document.revision) {
+                            tab.historyError = "Document changed while history was loading. Refresh history."
+                        } else if (history.revisions.none { it.revision == document.revision }) {
+                            tab.historyError = "The selected revision is no longer in verified history. Refresh the document."
+                        } else {
+                            tab.history = history.revisions
+                            tab.events = history.lifecycleEvents
+                            tab.older = history.revisions.lastOrNull()
+                            tab.newer = history.revisions.firstOrNull()
+                            tab.historyLoaded = true
+                        }
                     }
                 },
-                onFailure = { if (!disposed) tab.error = it.message ?: "Could not load history." },
+                onFailure = {
+                    if (!disposed && tab in tabs && request == tab.historyGeneration) {
+                        tab.historyError = it.message ?: "Could not load history."
+                    }
+                },
             )
-            capabilities.documentLifecycleHistory(project, document.id).fold(
-                onSuccess = { if (!disposed && tab in tabs) tab.events = it },
-                onFailure = { if (!disposed) tab.error = it.message ?: "Could not load lifecycle history." },
-            )
+        } finally {
+            if (request == tab.historyGeneration) tab.historyLoading = false
         }
     }
 
@@ -266,10 +304,16 @@ internal class DocumentWorkspaceState(
         if (tab.body != document.body) tab.body = document.body
         tab.history = emptyList()
         tab.events = emptyList()
+        tab.historyGeneration++
+        tab.historyLoading = false
+        tab.historyLoaded = false
+        tab.historyError = null
         tab.difference = null
     }
 
     private fun updateList(document: DocumentSnapshot) {
+        documentsGeneration++
+        documentsError = null
         documents = (documents.filterNot { it.id == document.id } + document).sortedBy { it.id }
     }
 

@@ -1,7 +1,12 @@
 package com.entreco.eqms.desktop
 
 import java.io.IOException
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import kotlin.test.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.runBlocking
 import com.entreco.eqms.feature.document.DocumentStatus
 
@@ -41,6 +46,47 @@ class DesktopDocumentCapabilitiesTest {
     }
 
     @Test
+    fun historySnapshotUsesOneRequestAndRejectsInconsistentRevisionAndLifecycleData() = runBlocking {
+        val reviewedRevision = "d".repeat(40)
+        val reviewedDocument = document
+            .replace("\"revision\":\"$revision\"", "\"revision\":\"$reviewedRevision\"")
+            .replace("\"event_hash\":\"${"c".repeat(64)}\"", "\"event_hash\":\"${"d".repeat(64)}\"")
+            .replace("\"status\":\"Draft\"", "\"status\":\"In Review\"")
+        val event = """{"revision":"$reviewedRevision","event_hash":"${"d".repeat(64)}","content_hash":"sha256:${"b".repeat(64)}","from_status":"Draft","to_status":"In Review","local_timestamp":"2"}"""
+        val valid = """{"revisions":[$reviewedDocument,$document],"lifecycle_events":[$event]}"""
+        val calls = mutableListOf<List<String>>()
+        val capabilities = DesktopDocumentCapabilities("qms", DocumentExecutor { _, args, _ ->
+            calls += args
+            ProcessResult(0, response("history-snapshot", valid))
+        })
+        val snapshot = capabilities.documentHistorySnapshot("project", id).getOrThrow()
+        assertEquals(1, calls.size)
+        assertEquals(listOf("document", "history-snapshot", "--json", "project", id), calls.single())
+        assertEquals(listOf(reviewedRevision, revision), snapshot.revisions.map { it.revision })
+        assertEquals(reviewedRevision, snapshot.lifecycleEvents.single().revision)
+
+        val inconsistent = listOf(
+            """{"revisions":[$reviewedDocument,$document],"lifecycle_events":[]}""",
+            """{"revisions":[$reviewedDocument,$document],"lifecycle_events":[$event,$event]}""",
+            valid.replace(event, event.replace(reviewedRevision, "e".repeat(40))),
+            valid.replace(
+                event,
+                event.replace(
+                    "\"content_hash\":\"sha256:${"b".repeat(64)}\"",
+                    "\"content_hash\":\"sha256:${"e".repeat(64)}\"",
+                ),
+            ),
+            """{"revisions":[],"lifecycle_events":[]}""",
+        )
+        inconsistent.forEach { data ->
+            val malformed = DesktopDocumentCapabilities("qms", DocumentExecutor { _, _, _ ->
+                ProcessResult(0, response("history-snapshot", data))
+            })
+            assertTrue(malformed.documentHistorySnapshot("project", id).isFailure, data)
+        }
+    }
+
+    @Test
     fun malformedProtocolAndWrongDocumentCannotLookSuccessful() = runBlocking {
         val invalid = listOf(
             "not JSON",
@@ -67,6 +113,27 @@ class DesktopDocumentCapabilitiesTest {
         assertEquals("stale save", failed.createDocument("project", "Policy", "").exceptionOrNull()?.message)
         val missing = DesktopDocumentCapabilities("missing", DocumentExecutor { _, _, _ -> throw IOException("not found") })
         assertEquals("not found", missing.listDocuments("project").exceptionOrNull()?.message)
+    }
+
+    @Test
+    fun cancellingHistorySnapshotCancelsAndInterruptsNativeExecution() = runBlocking {
+        val started = CountDownLatch(1)
+        val interrupted = CountDownLatch(1)
+        val capabilities = DesktopDocumentCapabilities("qms", DocumentExecutor { _, _, _ ->
+            started.countDown()
+            try {
+                CountDownLatch(1).await()
+            } catch (error: InterruptedException) {
+                interrupted.countDown()
+                throw error
+            }
+            error("Native execution should be interrupted.")
+        })
+        val request = async(Dispatchers.IO) { capabilities.documentHistorySnapshot("project", id) }
+        assertTrue(started.await(5, TimeUnit.SECONDS))
+        request.cancelAndJoin()
+        assertTrue(request.isCancelled)
+        assertTrue(interrupted.await(5, TimeUnit.SECONDS))
     }
 
     @Test

@@ -527,6 +527,21 @@ requirements and tests; targets are not claims of observed results.
 
 ---
 
+### EQMS-094: Improve desktop project-open and History responsiveness
+**Type:** Performance improvement
+**Priority:** P1
+**Dependencies:** EQMS-092 (#50), EQMS-023 (#15), EQMS-021 (#16); EQMS-102 (#41) is related but not a hard dependency.
+**Description:** Reduce measured project-list and History latency without weakening native verification; see #65 and [design/risk assessment](docs/architecture/EQMS-094.md).
+**Acceptance criteria:**
+- Establish versioned synthetic baselines and p95 budgets for project/list and History before optimization; record release build, hardware/platform, counts, process work and UI readiness.
+- Batch History revisions/lifecycle events from one verified snapshot and remove measured redundant native/Git work.
+- Show local loading/errors without blocking unrelated workspace/editor activity; preserve tabs, edits, conflict behavior, lifecycle read-only state, and exact provenance.
+- Meet the mapped latency budgets, run affected Rust/JVM/native/Wasm regressions, and record exact-revision reproducible evidence in `docs/testing/evidence/`.
+- Deliver a verified draft PR; manual visual/input/accessibility review and testing remain pending until human completion.
+**Risk and Security Risk Management:** Both apply proportionately; retain integrity and audit checks, bind asynchronous results to their project/tab/revision, preserve explicit errors and mutation guards. Local verification and synthetic performance results do not prove identity or guarantee host-dependent latency.
+
+---
+
 ## Cross-cutting tickets
 
 ### EQMS-100: Compliance mapping matrix

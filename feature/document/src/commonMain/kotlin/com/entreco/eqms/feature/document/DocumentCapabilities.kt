@@ -16,6 +16,11 @@ data class DocumentLifecycleEvent(
     val localTimestamp: String,
 )
 
+data class DocumentHistorySnapshot(
+    val revisions: List<DocumentSnapshot>,
+    val lifecycleEvents: List<DocumentLifecycleEvent>,
+)
+
 data class DocumentSnapshot(
     val id: String,
     val title: String,
@@ -43,6 +48,19 @@ interface DocumentCapabilities : SearchCapabilities {
     suspend fun createDocument(project: String, title: String, body: String): Result<DocumentSnapshot>
     suspend fun saveDocument(project: String, id: String, expected: String, title: String, body: String): Result<DocumentSnapshot>
     suspend fun documentHistory(project: String, id: String): Result<List<DocumentSnapshot>>
+    suspend fun documentHistorySnapshot(project: String, id: String): Result<DocumentHistorySnapshot> {
+        val revisions = documentHistory(project, id)
+        if (revisions.isFailure) {
+            return Result.failure(requireNotNull(revisions.exceptionOrNull()))
+        }
+        val lifecycleEvents = documentLifecycleHistory(project, id)
+        if (lifecycleEvents.isFailure) {
+            return Result.failure(requireNotNull(lifecycleEvents.exceptionOrNull()))
+        }
+        return Result.success(
+            DocumentHistorySnapshot(revisions.getOrThrow(), lifecycleEvents.getOrThrow()),
+        )
+    }
     suspend fun documentDiff(project: String, id: String, from: String, to: String): Result<String>
     suspend fun showLatestDocument(project: String, id: String): Result<DocumentSnapshot> =
         documentHistory(project, id).mapCatching { history ->

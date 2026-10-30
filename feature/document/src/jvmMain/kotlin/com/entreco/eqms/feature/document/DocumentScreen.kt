@@ -127,13 +127,22 @@ fun DocumentScreen(
                                     Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                                         DefaultButton(enabled = interactive, onClick = state::newDocument) { Text("New document") }
                                     }
-                                    OutlinedButton(enabled = interactive, onClick = { scope.launch { state.refresh() } }) { Text("Refresh documents") }
+                                    OutlinedButton(
+                                        enabled = interactive && !state.documentsLoading,
+                                        onClick = { scope.launch { state.refresh() } },
+                                    ) { Text("Refresh documents") }
                                     LazyColumn(Modifier.weight(1f)) {
-                                        if (state.documents.isEmpty()) item { Text("No saved documents yet.") }
+                                        if (state.documentsLoading) item { Text("Loading documents...") }
+                                        state.documentsError?.let { message ->
+                                            item { Text("Could not refresh documents: $message", color = JewelTheme.globalColors.text.error) }
+                                        }
+                                        if (state.documents.isEmpty() && !state.documentsLoading && state.documentsError == null) {
+                                            item { Text("No saved documents yet.") }
+                                        }
                                         items(state.documents, key = { it.id }) { document ->
                                             WorkspaceItem("${document.title} (${document.status.label})",
                                                 selected = tab?.snapshot?.id == document.id,
-                                                enabled = interactive,
+                                                enabled = interactive && !state.documentsLoading,
                                                 onClick = { scope.launch { state.open(document.id) } })
                                         }
                                     }
@@ -389,20 +398,39 @@ private fun DocumentHistoryPanel(
     onOpen: (DocumentSnapshot) -> Unit,
 ) {
     Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        OutlinedButton(enabled = enabled && tab.snapshot != null, onClick = onRefresh) { Text("Refresh history") }
+        OutlinedButton(
+            enabled = enabled && tab.snapshot != null && !tab.historyLoading,
+            onClick = onRefresh,
+        ) { Text("Refresh history") }
         Text("Saved revisions and local lifecycle events. Configured identity/time are not trusted attestations.")
-        if (tab.history.isNotEmpty()) {
-            RevisionPicker("Older revision", tab.history, tab.older, enabled) { tab.older = it; tab.difference = null }
-            RevisionPicker("Newer revision", tab.history, tab.newer, enabled) { tab.newer = it; tab.difference = null }
-            DefaultButton(enabled = enabled && tab.older != null && tab.newer != null, onClick = onCompare) { Text("Compare") }
-            tab.newer?.let { selected ->
-                OutlinedButton(enabled = enabled, onClick = { onOpen(selected) }) { Text("Open saved revision") }
+        if (tab.historyLoading) Text("Loading verified history...")
+        tab.historyError?.let { Text(it, color = JewelTheme.globalColors.text.error) }
+        if (tab.historyLoaded) {
+            if (tab.history.isEmpty()) {
+                Text("No saved revisions are available.")
+            } else {
+                RevisionPicker("Older revision", tab.history, tab.older, enabled && !tab.historyLoading) {
+                    tab.older = it; tab.difference = null
+                }
+                RevisionPicker("Newer revision", tab.history, tab.newer, enabled && !tab.historyLoading) {
+                    tab.newer = it; tab.difference = null
+                }
+                DefaultButton(
+                    enabled = enabled && !tab.historyLoading && tab.older != null && tab.newer != null,
+                    onClick = onCompare,
+                ) { Text("Compare") }
+                tab.newer?.let { selected ->
+                    OutlinedButton(enabled = enabled && !tab.historyLoading, onClick = { onOpen(selected) }) {
+                        Text("Open saved revision")
+                    }
+                }
+            }
+            if (tab.events.isEmpty()) Text("No lifecycle events recorded.")
+            tab.events.forEach {
+                Text("${it.from.label} -> ${it.to.label}\nRevision: ${it.revision}\nLocal timestamp: ${it.localTimestamp}")
             }
         }
         tab.difference?.let { Text(it) }
-        tab.events.forEach {
-            Text("${it.from.label} -> ${it.to.label}\nRevision: ${it.revision}\nLocal timestamp: ${it.localTimestamp}")
-        }
     }
 }
 
