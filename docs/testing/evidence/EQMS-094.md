@@ -2,7 +2,7 @@
 title: EQMS-094 desktop responsiveness evidence
 status: generated
 related: [EQMS-094, EQMS-092, EQMS-102]
-tested_revision: e0ca06b5f57ae4b3548fb2afef3a3d9a1955d461
+tested_revision: fcb832131865337775b311fd4bd2edc30fb2ba8c
 ---
 
 # EQMS-094 automated evidence
@@ -11,7 +11,7 @@ Issue: #65. This generated record is not human approval.
 
 ## Tested source and environment
 
-- Source revision: `e0ca06b5f57ae4b3548fb2afef3a3d9a1955d461`
+- Source revision: `fcb832131865337775b311fd4bd2edc30fb2ba8c`
 - Worktree: clean for all recorded runs
 - Native build: release `qms`, SHA-256
   `db05fb87c90fcb8bd916ee53f6d28662d8cf5984d9fa8caab1ad64ca2f734956`
@@ -31,10 +31,10 @@ Issue: #65. This generated record is not human approval.
 
 | Dataset / operation | Baseline p95 | Target p95 | Measured p95 | Outcome |
 |---|---:|---:|---:|---|
-| 8 docs: project open to first list content | 1,133.42 ms | 1,050 ms | 520.55 ms | Pass |
-| 8 docs: History toggle to usable content | 845.10 ms | 700 ms | 146.58 ms | Pass |
-| 16 docs: project open to first list content | 2,126.68 ms | 1,900 ms | 895.86 ms | Pass |
-| 16 docs: History toggle to usable content | 1,304.89 ms | 1,100 ms | 118.94 ms | Pass |
+| 8 docs: project open to first list content | 1,133.42 ms | 1,050 ms | 563.58 ms | Pass |
+| 8 docs: History toggle to usable content | 845.10 ms | 700 ms | 114.87 ms | Pass |
+| 16 docs: project open to first list content | 2,126.68 ms | 1,900 ms | 745.08 ms | Pass |
+| 16 docs: History toggle to usable content | 1,304.89 ms | 1,100 ms | 122.32 ms | Pass |
 
 Separate `GIT_TRACE2_EVENT` counts per CLI operation:
 
@@ -63,10 +63,14 @@ cargo build --release -p eqms-cli
 ./gradlew :feature:search:compileKotlinWasmJs :feature:document:compileKotlinWasmJs :feature:scaffold:compileKotlinWasmJs --rerun-tasks --no-daemon
 ```
 
-All commands above passed. Rust workspace results: 72 core unit tests, 13 CLI
-unit tests, 21 CLI integration tests, and doc tests passed. The affected search,
+All commands above passed on the recorded source revision. Rust workspace
+results: 72 core unit tests, 13 CLI unit tests, 21 CLI integration tests, and
+doc tests passed. The affected search,
 document, scaffold, and desktop JVM suites passed. Release `qms` built
-successfully. A final `git diff --check` also passed.
+successfully. A final `git diff --check` also passed. The included panel-control
+simplification removes redundant resize/hide buttons while retaining rail
+toggles; its document-screen expectations were updated and the affected JVM
+suites passed.
 
 The Wasm UI-test configuration was separately checked with:
 
