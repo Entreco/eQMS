@@ -10,7 +10,7 @@ Issue: #65.
 
 | ID | Requirement |
 |---|---|
-| R094-01 | Project-selection-to-first-document-list and History-toggle-to-first-usable-history shall be measured end-to-end, with verification, native/list/history work, process counts, decoding, and UI readiness reported separately where observable. |
+| R094-01 | Project-selection-to-first-document-list and History-toggle-to-first-usable-history shall be measured end-to-end. Report workspace verification, native/list/history adapter and process/Git work, and UI-ready latency separately where instrumented; include JSON decoding and composition in their enclosing samples when they are not isolated. |
 | R094-02 | Measurements shall identify versioned synthetic dataset shape, document/revision counts, cold/warm condition, release binary/revision, platform, hardware, sample count, p50/p95, and excluded work. Explicit p95 budgets and regression thresholds shall be fixed from the baseline before optimization. |
 | R094-03 | Project verification, document listing, and History shall retain native authority and existing integrity, audit, revision, lifecycle, and provenance validation. |
 | R094-04 | History revisions and lifecycle events shall be decoded from one consistent native verified snapshot, without duplicate full-chain verification in the normal desktop path. |

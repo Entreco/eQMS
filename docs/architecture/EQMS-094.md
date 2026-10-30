@@ -61,6 +61,15 @@ revision that requested it; cancellation, disposal, tab/project changes, or a
 revision change must not publish late results. Preserve current buffers and
 editor selection.
 
+The native history verifier batches each captured first-parent chain through
+one `git log --raw --no-renames --no-abbrev` read, then retrieves parent
+journals and canonical content blobs in one `git cat-file --batch` request.
+It still verifies the exact journal prefix at every parent, commit-parent
+continuity, changed paths and regular-file modes, event payloads and content
+hashes, no-op-save rejection, immutable lifecycle content, author metadata,
+and lifecycle state transitions. Write-path candidate validation continues to
+use `verify_revision`; this read-path optimization does not weaken its checks.
+
 Document-list and History loading do not set the workspace mutation-busy state.
 List results are generation-checked against mutations and older refreshes;
 History results are bound to the requesting tab and source revision. Search

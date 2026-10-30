@@ -20,9 +20,12 @@ Issue: #65. This generated record is not human approval.
 - Dataset: `EQMS-094 synthetic v1`, 128-byte initial bodies; 8 documents / 2
   revisions on the first document and 16 documents / 4 revisions on the first
   document. Each fixture was authoritatively verified before measurement.
-- Each UI timing is 30 Compose samples. Samples include native process time,
-  JSON decoding, and UI readiness; standalone Git trace runs were used for
-  counts because tracing perturbs timing.
+- Each UI timing is 30 Compose samples. Adapter samples include CLI execution
+  and JSON decoding; project/list and History readiness samples include Compose
+  readiness. Native child-process durations and Git start counts are sampled
+  separately where available. JSON decoding and individual composition/layout
+  costs are not isolated. Standalone Git trace runs were used for counts because
+  tracing perturbs timing.
 
 ## Latency and subprocess outcomes
 
