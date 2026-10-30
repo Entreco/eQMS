@@ -27,13 +27,13 @@ History observations as measurements or acceptance evidence.
 
 | Dataset / outcome | Cold/warm | Baseline p95 | Target p95 | Regression threshold |
 |---|---|---:|---:|---:|
-| 8 documents; 128-byte bodies; one document has two revisions; project selection to first list content | 30 repeated runs after fixture preparation; OS cache uncontrolled | 1,189.64 ms | <=1,100 ms | <=1,308.61 ms (baseline +10%) |
-| Same dataset; History toggle through revisions and lifecycle completion | Same | 976.38 ms | <=800 ms | <=1,074.02 ms (baseline +10%) |
-| 16 documents; 128-byte bodies; first document has four revisions; project/list | Same | 2,098.11 ms | <=1,900 ms | <=2,307.92 ms (baseline +10%) |
-| Same larger dataset; History toggle through revisions and lifecycle completion | Same | 1,515.93 ms | <=1,200 ms | <=1,667.53 ms (baseline +10%) |
+| 8 documents; 128-byte bodies; one document has two revisions; project selection to first list content | 30 repeated runs after fixture preparation; OS cache uncontrolled | 1,133.42 ms | <=1,050 ms | <=1,246.77 ms (baseline +10%) |
+| Same dataset; History toggle through revisions and lifecycle completion | Same | 845.10 ms | <=700 ms | <=929.61 ms (baseline +10%) |
+| 16 documents; 128-byte bodies; first document has four revisions; project/list | Same | 2,126.68 ms | <=1,900 ms | <=2,339.34 ms (baseline +10%) |
+| Same larger dataset; History toggle through revisions and lifecycle completion | Same | 1,304.89 ms | <=1,100 ms | <=1,435.38 ms (baseline +10%) |
 
 Baseline values use a release qms on macOS 26.6.2 arm64 / Apple M5 Pro, JBR
-25.0.3, source `0af5f92714aa1045ab761129aae2d736d334500e`, and 30 Compose
+25.0.3, source `5b6b134d68437789f27dc0e1577df094f549f364`, and 30 Compose
 samples. JSON decoding and composition are included in UI readiness; standalone
 Git trace runs are used only for subprocess counts because tracing perturbs
 latency. The first measured pass followed fixture verification, so cold OS-cache
