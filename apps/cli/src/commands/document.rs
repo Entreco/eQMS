@@ -21,19 +21,19 @@ pub(crate) fn command() -> Command {
                     arg.help("v1 Markdown file, or - for UTF-8 stdin")
                 }),
         )
-        .subcommand(operation("create").arg(title_argument()))
+        .subcommand(page_arguments(operation("create").arg(title_argument())))
         .subcommand(operation("list"))
         .subcommand(
             operation("show")
                 .arg(Arg::new("id").required(true))
                 .arg(Arg::new("revision").long("revision")),
         )
-        .subcommand(
+        .subcommand(page_arguments(
             operation("save")
                 .arg(Arg::new("id").required(true))
                 .arg(title_argument())
                 .arg(Arg::new("expected").long("expected").required(true)),
-        )
+        ))
         .subcommand(
             operation("transition")
                 .about("Apply an allowed lifecycle transition to a document")
@@ -62,6 +62,99 @@ fn title_argument() -> Arg {
         .long("title")
         .required(true)
         .allow_hyphen_values(true)
+}
+
+const PAGE_OPTIONS: [&str; 8] = [
+    "page-size",
+    "orientation",
+    "margin-top",
+    "margin-right",
+    "margin-bottom",
+    "margin-left",
+    "header",
+    "footer",
+];
+
+fn page_arguments(command: Command) -> Command {
+    command
+        .arg(
+            Arg::new("page-size")
+                .long("page-size")
+                .value_parser(["A4", "Letter"])
+                .help("Page size; defaults to A4 (create) or the previous revision (save)"),
+        )
+        .arg(
+            Arg::new("orientation")
+                .long("orientation")
+                .value_parser(["portrait", "landscape"]),
+        )
+        .arg(margin_argument("margin-top"))
+        .arg(margin_argument("margin-right"))
+        .arg(margin_argument("margin-bottom"))
+        .arg(margin_argument("margin-left"))
+        .arg(
+            Arg::new("header")
+                .long("header")
+                .allow_hyphen_values(true)
+                .help("Header template using {title}, {page}, {total}"),
+        )
+        .arg(
+            Arg::new("footer")
+                .long("footer")
+                .allow_hyphen_values(true)
+                .help("Footer template using {title}, {page}, {total}"),
+        )
+}
+
+fn margin_argument(name: &'static str) -> Arg {
+    Arg::new(name)
+        .long(name)
+        .value_parser(clap::value_parser!(f64))
+        .allow_hyphen_values(true)
+        .help("Margin in millimetres (5.0-50.0, 0.1 steps)")
+}
+
+/// Apply explicitly supplied page options over `base`; `None` when none were supplied.
+fn page_override(
+    args: &ArgMatches,
+    base: eqms_core::markdown::PageSetup,
+) -> Option<eqms_core::markdown::PageSetup> {
+    use eqms_core::markdown::{Orientation, PageSize};
+    if !PAGE_OPTIONS.iter().any(|name| args.contains_id(name)) {
+        return None;
+    }
+    let mut page = base;
+    if let Some(size) = args.get_one::<String>("page-size") {
+        page.size = if size == "A4" {
+            PageSize::A4
+        } else {
+            PageSize::Letter
+        };
+    }
+    if let Some(orientation) = args.get_one::<String>("orientation") {
+        page.orientation = if orientation == "portrait" {
+            Orientation::Portrait
+        } else {
+            Orientation::Landscape
+        };
+    }
+    for (name, slot) in [
+        ("margin-top", &mut page.margin_top_mm),
+        ("margin-right", &mut page.margin_right_mm),
+        ("margin-bottom", &mut page.margin_bottom_mm),
+        ("margin-left", &mut page.margin_left_mm),
+    ] {
+        if let Some(value) = args.get_one::<f64>(name) {
+            *slot = *value;
+        }
+    }
+    if let Some(header) = args.get_one::<String>("header") {
+        page.header = header.clone();
+    }
+    if let Some(footer) = args.get_one::<String>("footer") {
+        page.footer = footer.clone();
+    }
+    Some(page)
 }
 
 fn operation(name: &'static str) -> Command {
@@ -93,9 +186,24 @@ pub(crate) fn run(
                 .read_to_string(&mut body)
                 .map_err(|e| format!("cannot read UTF-8 document body: {e}"))?;
             let document = if operation == "create" {
-                docs.create(value("title"), &body)
+                match page_override(args, Default::default()) {
+                    Some(page) => docs.create_with_page(value("title"), &body, &page),
+                    None => docs.create(value("title"), &body),
+                }
             } else {
-                docs.save(value("id"), value("expected"), value("title"), &body)
+                let id = value("id");
+                let has_page = PAGE_OPTIONS.iter().any(|name| args.contains_id(name));
+                let current = if has_page {
+                    docs.show(id, None).map_err(|e| e.to_string())?.page
+                } else {
+                    Default::default()
+                };
+                match page_override(args, current) {
+                    Some(page) => {
+                        docs.save_with_page(id, value("expected"), value("title"), &body, &page)
+                    }
+                    None => docs.save(id, value("expected"), value("title"), &body),
+                }
             }
             .map_err(|e| e.to_string())?;
             serde_json::to_value(document)
@@ -298,6 +406,91 @@ mod tests {
         fn read(&mut self, _: &mut [u8]) -> io::Result<usize> {
             Err(io::Error::other("injected input failure"))
         }
+    }
+
+    #[test]
+    fn page_options_are_validated_and_omitted_options_keep_previous_values() {
+        let fixture = Fixture::new();
+        let created = fixture
+            .run(&["create", "--title", "Policy"], &mut Cursor::new("body"))
+            .unwrap();
+        assert_eq!(created["page"]["size"], "A4");
+        assert_eq!(created["page"]["margin_top_mm"], 25.4);
+        let id = created["id"].as_str().unwrap();
+        let revision = created["revision"].as_str().unwrap();
+        let saved = fixture
+            .run(
+                &[
+                    "save",
+                    id,
+                    "--title",
+                    "Policy",
+                    "--expected",
+                    revision,
+                    "--page-size",
+                    "Letter",
+                    "--orientation",
+                    "landscape",
+                    "--margin-top",
+                    "10",
+                    "--header",
+                    "Doc {title}",
+                ],
+                &mut Cursor::new("body"),
+            )
+            .unwrap();
+        assert_ne!(saved["revision"], created["revision"]);
+        assert_ne!(saved["content_hash"], created["content_hash"]);
+        assert_eq!(saved["page"]["size"], "Letter");
+        assert_eq!(saved["page"]["orientation"], "landscape");
+        assert_eq!(saved["page"]["margin_top_mm"], 10.0);
+        assert_eq!(saved["page"]["margin_left_mm"], 25.4);
+        assert_eq!(saved["page"]["header"], "Doc {title}");
+        let next = saved["revision"].as_str().unwrap();
+        let kept = fixture
+            .run(
+                &["save", id, "--title", "Policy", "--expected", next],
+                &mut Cursor::new("body two"),
+            )
+            .unwrap();
+        assert_eq!(kept["page"], saved["page"]);
+        let kept_revision = kept["revision"].as_str().unwrap();
+        for bad in [
+            ["--margin-left", "4"],
+            ["--margin-left", "50.05"],
+            ["--header", "{nope}"],
+            ["--footer", "}"],
+        ] {
+            let mut args = vec!["save", id, "--title", "Policy", "--expected", kept_revision];
+            args.extend(bad);
+            assert!(fixture.run(&args, &mut Cursor::new("body two")).is_err());
+        }
+        assert!(
+            command()
+                .try_get_matches_from(["document", "save", "ws", "x", "--page-size", "A5"])
+                .is_err()
+        );
+        assert_eq!(
+            fixture.run(&["show", id], &mut Cursor::new("")).unwrap(),
+            kept
+        );
+        assert!(
+            fixture
+                .run(
+                    &["create", "--title", "Bad", "--margin-top", "99"],
+                    &mut Cursor::new("x"),
+                )
+                .is_err()
+        );
+        assert_eq!(
+            fixture
+                .run(&["list"], &mut Cursor::new(""))
+                .unwrap()
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
     }
 
     #[test]

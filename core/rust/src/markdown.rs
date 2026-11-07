@@ -3,7 +3,8 @@ use sha2::{Digest, Sha256};
 use std::error::Error;
 use std::fmt::{self, Display, Formatter};
 
-pub const SCHEMA_VERSION: u32 = 1;
+pub const SCHEMA_VERSION: u32 = 2;
+pub const MAX_TEMPLATE_CHARS: usize = 120;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MarkdownError(String);
@@ -20,20 +21,141 @@ fn error(message: impl Into<String>) -> MarkdownError {
     MarkdownError(message.into())
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub enum PageSize {
+    A4,
+    Letter,
+}
+
+impl PageSize {
+    /// Page width and height in tenths of a millimetre, portrait.
+    fn tenths_mm(self) -> (i64, i64) {
+        match self {
+            PageSize::A4 => (2100, 2970),
+            PageSize::Letter => (2159, 2794),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum Orientation {
+    Portrait,
+    Landscape,
+}
+
+/// Validated document page setup; part of the hashed canonical document.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct PageSetup {
+    pub size: PageSize,
+    pub orientation: Orientation,
+    pub margin_top_mm: f64,
+    pub margin_right_mm: f64,
+    pub margin_bottom_mm: f64,
+    pub margin_left_mm: f64,
+    pub header: String,
+    pub footer: String,
+}
+
+impl Eq for PageSetup {}
+
+impl Default for PageSetup {
+    fn default() -> Self {
+        Self {
+            size: PageSize::A4,
+            orientation: Orientation::Portrait,
+            margin_top_mm: 25.4,
+            margin_right_mm: 25.4,
+            margin_bottom_mm: 25.4,
+            margin_left_mm: 25.4,
+            header: "{title}".to_owned(),
+            footer: "Page {page} of {total}".to_owned(),
+        }
+    }
+}
+
+fn margin_tenths(name: &str, value: f64) -> Result<i64, MarkdownError> {
+    let tenths = value * 10.0;
+    if !value.is_finite()
+        || !(50.0..=500.0).contains(&tenths.round())
+        || (tenths - tenths.round()).abs() > 1e-6
+    {
+        return Err(error(format!(
+            "{name} must be between 5.0 mm and 50.0 mm in 0.1 mm steps"
+        )));
+    }
+    Ok(tenths.round() as i64)
+}
+
+fn validate_template(name: &str, value: &str) -> Result<(), MarkdownError> {
+    if value.chars().count() > MAX_TEMPLATE_CHARS || value.chars().any(char::is_control) {
+        return Err(error(format!(
+            "{name} must be at most {MAX_TEMPLATE_CHARS} characters without control characters"
+        )));
+    }
+    let remainder = value
+        .replace("{title}", "")
+        .replace("{page}", "")
+        .replace("{total}", "");
+    if remainder.contains(['{', '}']) {
+        return Err(error(format!(
+            "{name} may only use the {{title}}, {{page}} and {{total}} placeholders"
+        )));
+    }
+    Ok(())
+}
+
+impl PageSetup {
+    /// Validate bounds and normalize margins to exact 0.1 mm values.
+    pub fn validated(mut self) -> Result<Self, MarkdownError> {
+        let top = margin_tenths("top margin", self.margin_top_mm)?;
+        let right = margin_tenths("right margin", self.margin_right_mm)?;
+        let bottom = margin_tenths("bottom margin", self.margin_bottom_mm)?;
+        let left = margin_tenths("left margin", self.margin_left_mm)?;
+        let (width, height) = self.size.tenths_mm();
+        let (width, height) = match self.orientation {
+            Orientation::Portrait => (width, height),
+            Orientation::Landscape => (height, width),
+        };
+        if left + right > width - 400 {
+            return Err(error("horizontal margins leave no editable area"));
+        }
+        if top + bottom > height - 600 {
+            return Err(error("vertical margins leave no editable area"));
+        }
+        validate_template("header", &self.header)?;
+        validate_template("footer", &self.footer)?;
+        self.margin_top_mm = top as f64 / 10.0;
+        self.margin_right_mm = right as f64 / 10.0;
+        self.margin_bottom_mm = bottom as f64 / 10.0;
+        self.margin_left_mm = left as f64 / 10.0;
+        Ok(self)
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 struct Metadata {
     schema_version: u32,
     id: String,
     title: String,
+    page_size: PageSize,
+    orientation: Orientation,
+    margin_top_mm: f64,
+    margin_right_mm: f64,
+    margin_bottom_mm: f64,
+    margin_left_mm: f64,
+    header: String,
+    footer: String,
     status: String,
 }
 
-/// Supported v1 Draft content, independent of saved revisions and audit history.
-#[derive(Clone, Debug, PartialEq, Eq)]
+/// Supported v2 Draft content, independent of saved revisions and audit history.
+#[derive(Clone, Debug, PartialEq)]
 pub struct Markdown {
     id: String,
     title: String,
+    page: PageSetup,
     body: String,
 }
 
@@ -51,6 +173,15 @@ pub fn validate_id(id: &str) -> Result<(), MarkdownError> {
 
 impl Markdown {
     pub fn new(id: &str, title: &str, body: &str) -> Result<Self, MarkdownError> {
+        Self::with_page(id, title, body, PageSetup::default())
+    }
+
+    pub fn with_page(
+        id: &str,
+        title: &str,
+        body: &str,
+        page: PageSetup,
+    ) -> Result<Self, MarkdownError> {
         validate_id(id)?;
         let title = title.trim();
         if title.is_empty() || title.chars().any(char::is_control) {
@@ -59,6 +190,7 @@ impl Markdown {
         Ok(Self {
             id: id.to_owned(),
             title: title.to_owned(),
+            page: page.validated()?,
             body: body.replace("\r\n", "\n").replace('\r', "\n"),
         })
     }
@@ -72,18 +204,37 @@ impl Markdown {
             .strip_prefix("---\n")
             .and_then(|value| value.split_once("\n---\n"))
             .ok_or_else(|| error("invalid canonical document header"))?;
-        let metadata: Metadata = serde_json::from_str(metadata)
-            .map_err(|cause| error(format!("invalid document metadata: {cause}")))?;
-        if metadata.schema_version != SCHEMA_VERSION {
+        // Check the version first so older schemas get a precise message.
+        let version = serde_json::from_str::<serde_json::Value>(metadata)
+            .ok()
+            .and_then(|value| value.get("schema_version").cloned());
+        if let Some(version) = version
+            && version != serde_json::json!(SCHEMA_VERSION)
+        {
             return Err(error(format!(
-                "unsupported document schema version {}",
-                metadata.schema_version
+                "unsupported document schema version {version}; only version {SCHEMA_VERSION} is supported"
             )));
         }
+        let metadata: Metadata = serde_json::from_str(metadata)
+            .map_err(|cause| error(format!("invalid document metadata: {cause}")))?;
         if metadata.status != "Draft" {
             return Err(error("unsupported document status; expected Draft"));
         }
-        Self::new(&metadata.id, &metadata.title, body)
+        Self::with_page(
+            &metadata.id,
+            &metadata.title,
+            body,
+            PageSetup {
+                size: metadata.page_size,
+                orientation: metadata.orientation,
+                margin_top_mm: metadata.margin_top_mm,
+                margin_right_mm: metadata.margin_right_mm,
+                margin_bottom_mm: metadata.margin_bottom_mm,
+                margin_left_mm: metadata.margin_left_mm,
+                header: metadata.header,
+                footer: metadata.footer,
+            },
+        )
     }
 
     /// Validate exact canonical bytes, without checking any saved history.
@@ -105,6 +256,10 @@ impl Markdown {
         &self.title
     }
 
+    pub fn page(&self) -> &PageSetup {
+        &self.page
+    }
+
     pub fn body(&self) -> &str {
         &self.body
     }
@@ -114,6 +269,14 @@ impl Markdown {
             schema_version: SCHEMA_VERSION,
             id: self.id.clone(),
             title: self.title.clone(),
+            page_size: self.page.size,
+            orientation: self.page.orientation,
+            margin_top_mm: self.page.margin_top_mm,
+            margin_right_mm: self.page.margin_right_mm,
+            margin_bottom_mm: self.page.margin_bottom_mm,
+            margin_left_mm: self.page.margin_left_mm,
+            header: self.page.header.clone(),
+            footer: self.page.footer.clone(),
             status: "Draft".to_owned(),
         };
         let line = serde_json::to_string(&metadata).map_err(|cause| error(cause.to_string()))?;
@@ -134,15 +297,15 @@ mod tests {
     use super::*;
 
     const ID: &str = "DOC-0123456789abcdef0123456789abcdef";
-    const GOLDEN: &str = "---\n{\"schema_version\":1,\"id\":\"DOC-0123456789abcdef0123456789abcdef\",\"title\":\"Policy\",\"status\":\"Draft\"}\n---\nBody";
+    const GOLDEN: &str = "---\n{\"schema_version\":2,\"id\":\"DOC-0123456789abcdef0123456789abcdef\",\"title\":\"Policy\",\"page_size\":\"A4\",\"orientation\":\"portrait\",\"margin_top_mm\":25.4,\"margin_right_mm\":25.4,\"margin_bottom_mm\":25.4,\"margin_left_mm\":25.4,\"header\":\"{title}\",\"footer\":\"Page {page} of {total}\",\"status\":\"Draft\"}\n---\nBody";
 
     #[test]
-    fn legacy_bytes_and_independent_sha256_are_stable() {
+    fn v2_bytes_and_independent_sha256_are_stable() {
         let document = Markdown::new(ID, "Policy", "Body").unwrap();
         assert_eq!(document.canonical_bytes().unwrap(), GOLDEN.as_bytes());
         assert_eq!(
             document.content_hash().unwrap(),
-            "sha256:2866a39ccb18a2d807569fbbadb98f7b17a2cfc15e4155bc60efc4fc5bc44ccf"
+            "sha256:5a5609835b73533faf1922b52b9290f45a3ddd74f615a1cdd3410d7ac4b1668d"
         );
         assert_eq!(Markdown::validate(GOLDEN.as_bytes()).unwrap(), document);
         assert_ne!(
@@ -157,7 +320,7 @@ mod tests {
     #[test]
     fn formatting_normalizes_supported_encodings_but_validation_is_strict() {
         let reordered = format!(
-            "---\n{{\n \"status\": \"Draft\", \"title\": \" Policy \",\n \"id\": \"{ID}\", \"schema_version\": 1\n}}\n---\nBody"
+            "---\n{{\n \"status\": \"Draft\", \"title\": \" Policy \",\n \"id\": \"{ID}\", \"schema_version\": 2,\n \"page_size\": \"A4\", \"orientation\": \"portrait\", \"margin_top_mm\": 25.40,\n \"margin_right_mm\": 25.4, \"margin_bottom_mm\": 25.4, \"margin_left_mm\": 25.4,\n \"header\": \"{{title}}\", \"footer\": \"Page {{page}} of {{total}}\"\n}}\n---\nBody"
         );
         for input in [
             reordered.clone(),
@@ -204,9 +367,21 @@ mod tests {
     #[test]
     fn invalid_or_ambiguous_metadata_is_rejected_without_lossy_fallbacks() {
         for input in [
-            GOLDEN.replace("\"schema_version\":1", "\"schema_version\":2"),
-            GOLDEN.replace("\"schema_version\":1", "\"schema_version\":1.0"),
-            GOLDEN.replace("\"schema_version\":1,", ""),
+            GOLDEN.replace("\"schema_version\":2", "\"schema_version\":1"),
+            GOLDEN.replace("\"schema_version\":2", "\"schema_version\":3"),
+            GOLDEN.replace("\"schema_version\":2", "\"schema_version\":2.0"),
+            GOLDEN.replace("\"schema_version\":2,", ""),
+            GOLDEN.replace("\"page_size\":\"A4\",", ""),
+            GOLDEN.replace("\"A4\"", "\"A5\""),
+            GOLDEN.replace("\"portrait\"", "\"sideways\""),
+            GOLDEN.replace("\"margin_top_mm\":25.4", "\"margin_top_mm\":4.9"),
+            GOLDEN.replace("\"margin_top_mm\":25.4", "\"margin_top_mm\":50.1"),
+            GOLDEN.replace("\"margin_top_mm\":25.4", "\"margin_top_mm\":25.45"),
+            GOLDEN.replace("\"margin_top_mm\":25.4", "\"margin_top_mm\":\"25.4\""),
+            GOLDEN.replace("\"{title}\"", "\"{unknown}\""),
+            GOLDEN.replace("\"{title}\"", "\"{title\""),
+            GOLDEN.replace("\"{title}\"", "\"a\\nb\""),
+            GOLDEN.replace("\"{title}\"", &format!("\"{}\"", "x".repeat(121))),
             GOLDEN.replace("\"title\":\"Policy\"", "\"title\":\"Policy\",\"extra\":0"),
             GOLDEN.replace(
                 "\"title\":\"Policy\"",
@@ -233,5 +408,165 @@ mod tests {
         assert!(Markdown::new(ID, " \n ", "").is_err());
         assert!(Markdown::new(ID, "Control\0character", "").is_err());
         assert!(Markdown::new("../escape", "Policy", "").is_err());
+    }
+
+    fn page(size: PageSize, orientation: Orientation, margin: f64) -> PageSetup {
+        PageSetup {
+            size,
+            orientation,
+            margin_top_mm: margin,
+            margin_right_mm: margin,
+            margin_bottom_mm: margin,
+            margin_left_mm: margin,
+            header: "H {title}".to_owned(),
+            footer: "{page}/{total}".to_owned(),
+        }
+    }
+
+    #[test]
+    fn metadata_changes_alter_bytes_and_hash_and_roundtrip() {
+        let base = Markdown::new(ID, "Policy", "Body").unwrap();
+        let landscape = Markdown::with_page(
+            ID,
+            "Policy",
+            "Body",
+            page(PageSize::Letter, Orientation::Landscape, 10.0),
+        )
+        .unwrap();
+        assert_ne!(
+            base.content_hash().unwrap(),
+            landscape.content_hash().unwrap()
+        );
+        let bytes = landscape.canonical_bytes().unwrap();
+        assert!(String::from_utf8_lossy(&bytes).contains("\"page_size\":\"Letter\""));
+        assert_eq!(Markdown::validate(&bytes).unwrap(), landscape);
+        assert_eq!(landscape.page().margin_left_mm, 10.0);
+    }
+
+    #[test]
+    fn page_setup_bounds_and_templates_are_enforced() {
+        let ok = |setup: PageSetup| PageSetup::validated(setup).is_ok();
+        assert!(ok(page(PageSize::A4, Orientation::Portrait, 5.0)));
+        assert!(ok(page(PageSize::A4, Orientation::Portrait, 50.0)));
+        assert!(!ok(page(PageSize::A4, Orientation::Portrait, 4.9)));
+        assert!(!ok(page(PageSize::A4, Orientation::Portrait, 50.1)));
+        assert!(!ok(page(PageSize::A4, Orientation::Portrait, f64::NAN)));
+        assert!(!ok(page(
+            PageSize::A4,
+            Orientation::Portrait,
+            f64::INFINITY
+        )));
+        assert!(!ok(page(PageSize::A4, Orientation::Portrait, 10.05)));
+        let mut wide = page(PageSize::A4, Orientation::Portrait, 20.0);
+        wide.margin_left_mm = 50.0;
+        wide.margin_right_mm = 50.0;
+        wide.margin_top_mm = 50.0;
+        wide.margin_bottom_mm = 50.0;
+        assert!(ok(wide.clone()));
+        let mut landscape = page(PageSize::A4, Orientation::Landscape, 50.0);
+        assert!(ok(landscape.clone()));
+        landscape.size = PageSize::Letter;
+        assert!(ok(landscape));
+        for bad in [
+            "{",
+            "}",
+            "{x}",
+            "{{title}}",
+            "{Title}",
+            "a\tb",
+            &"x".repeat(121),
+        ] {
+            let setup = PageSetup {
+                header: bad.to_owned(),
+                ..PageSetup::default()
+            };
+            assert!(!ok(setup), "{bad:?}");
+            let setup = PageSetup {
+                footer: bad.to_owned(),
+                ..PageSetup::default()
+            };
+            assert!(!ok(setup), "{bad:?}");
+        }
+        let setup = PageSetup {
+            header: "\u{03bb}".repeat(120),
+            ..PageSetup::default()
+        };
+        assert!(ok(setup));
+    }
+
+    #[test]
+    fn near_tenth_margins_normalize_to_exact_values() {
+        let setup = PageSetup {
+            margin_top_mm: 25.400000000000002,
+            ..PageSetup::default()
+        };
+        let document = Markdown::with_page(ID, "Policy", "", setup).unwrap();
+        assert_eq!(document.page().margin_top_mm, 25.4);
+        assert_eq!(document.canonical_bytes().unwrap(), {
+            Markdown::new(ID, "Policy", "")
+                .unwrap()
+                .canonical_bytes()
+                .unwrap()
+        });
+    }
+
+    mod properties {
+        use super::*;
+        use proptest::prelude::*;
+
+        fn template() -> impl Strategy<Value = String> {
+            proptest::collection::vec(
+                prop_oneof![
+                    Just("{title}".to_owned()),
+                    Just("{page}".to_owned()),
+                    Just("{total}".to_owned()),
+                    "[ -z\u{00e9}\u{03bb}]{0,6}".prop_map(|text| text.replace(['{', '}'], "")),
+                ],
+                0..6,
+            )
+            .prop_map(|parts| parts.concat())
+            .prop_filter("template length", |text| text.chars().count() <= 120)
+        }
+
+        proptest! {
+            #[test]
+            fn valid_setups_encode_deterministically_and_roundtrip(
+                landscape in any::<bool>(),
+                letter in any::<bool>(),
+                margins in proptest::array::uniform4(50i64..=500),
+                header in template(),
+                footer in template(),
+                title in "[A-Za-z0-9 ]{1,20}[A-Za-z0-9]",
+                body in "\\PC{0,40}",
+            ) {
+                let setup = PageSetup {
+                    size: if letter { PageSize::Letter } else { PageSize::A4 },
+                    orientation: if landscape { Orientation::Landscape } else { Orientation::Portrait },
+                    margin_top_mm: margins[0] as f64 / 10.0,
+                    margin_right_mm: margins[1] as f64 / 10.0,
+                    margin_bottom_mm: margins[2] as f64 / 10.0,
+                    margin_left_mm: margins[3] as f64 / 10.0,
+                    header,
+                    footer,
+                };
+                if let Ok(document) = Markdown::with_page(ID, &title, &body, setup) {
+                    let bytes = document.canonical_bytes().unwrap();
+                    prop_assert_eq!(&bytes, &document.canonical_bytes().unwrap());
+                    let parsed = Markdown::validate(&bytes).unwrap();
+                    prop_assert_eq!(&parsed, &document);
+                    prop_assert_eq!(parsed.content_hash().unwrap(), document.content_hash().unwrap());
+                }
+            }
+
+            #[test]
+            fn arbitrary_input_never_panics_and_valid_output_revalidates(
+                bytes in proptest::collection::vec(any::<u8>(), 0..200),
+            ) {
+                if let Ok(document) = Markdown::parse(&bytes) {
+                    let canonical = document.canonical_bytes().unwrap();
+                    prop_assert!(Markdown::validate(&canonical).is_ok());
+                }
+            }
+        }
     }
 }
