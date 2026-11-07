@@ -15,7 +15,11 @@ related:
 
 ## Document reading and source modes (EQMS-083)
 
-Documents open in **Preview**. Choose **Source** to edit compact Markdown, or
+Documents open in **Canvas** with page boundaries, repeating header/footer
+templates, and automatic page numbering. Use **Page setup** in the Project
+panel to configure page size (A4/US Letter), orientation and margins for the
+current project; defaults are A4 portrait with 25.4 mm margins. Choose
+**Preview** for read-only rendering, **Source** to edit compact Markdown, or
 **Split** to see source beside the rendered document. The split grip supports
 horizontal dragging and left/right arrow keys when focused. Modes, source
 caret and independent scroll positions are retained per open tab for the session.
@@ -60,6 +64,9 @@ local images use explicit unversioned/unavailable placeholders, not remote
 resource URLs. Native JSON uses outer schema 2 and semantic schema 1.
 PDF pagination, page numbers/repeated page headers/footers and DOCX are separate
 roadmap work (#35/#33), not supported by this continuous on-screen preview.
+
+Canvas pagination is deterministic UI presentation, not canonical document
+metadata. Changing page setup alone does not create a new document revision.
 
 Design/risk, requirements and test mapping: `docs/architecture/EQMS-083.md`,
 `docs/requirements/EQMS-083.md`, `docs/testing/EQMS-083.md`.

@@ -77,6 +77,7 @@ internal class DocumentBitmapCache {
 internal fun DocumentPresentation(
     project: String,
     tab: DocumentTab,
+    pageSetup: DocumentPageSetup,
     capabilities: DocumentCapabilities,
     interactive: Boolean,
     cache: DocumentBitmapCache,
@@ -97,6 +98,8 @@ internal fun DocumentPresentation(
         }
         if (tab.viewMode == DocumentViewMode.Source) {
             Source(tab, interactive, Modifier.weight(1f).fillMaxWidth())
+        } else if (tab.viewMode == DocumentViewMode.Canvas) {
+            Canvas(tab, pageSetup, interactive, Modifier.weight(1f).fillMaxWidth())
         } else {
             BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
                 val availableWidth = constraints.maxWidth.toFloat().coerceAtLeast(1f)
@@ -125,6 +128,66 @@ internal fun DocumentPresentation(
             }
         }
     }
+}
+
+@Composable
+private fun Canvas(tab: DocumentTab, setup: DocumentPageSetup, interactive: Boolean, modifier: Modifier) {
+    val validated = runCatching { setup.validate() }.getOrElse { DocumentPageSetup() }
+    val pages = remember(tab.body, tab.title, validated) { paginateBody(tab.body, validated) }
+    val header = remember(tab.title, validated, pages.size) {
+        renderTemplate(validated.headerTemplate, tab.title, 1, pages.size)
+    }
+    Column(modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(18.dp)) {
+        pages.forEachIndexed { index, pageText ->
+            val pageNumber = index + 1
+            val footer = renderTemplate(validated.footerTemplate, tab.title, pageNumber, pages.size)
+            Column(
+                Modifier.fillMaxWidth().background(JewelTheme.globalColors.panelBackground)
+                    .border(1.dp, JewelTheme.globalColors.borders.normal)
+                    .padding(horizontal = 28.dp, vertical = 24.dp)
+                    .semantics { contentDescription = "Canvas page $pageNumber" },
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text(header, color = JewelTheme.globalColors.text.info)
+                if (pageNumber == 1) {
+                    Source(tab, interactive, Modifier.fillMaxWidth().height(560.dp))
+                } else {
+                    SelectionContainer {
+                        BasicText(
+                            pageText,
+                            style = JewelTheme.defaultTextStyle.copy(color = JewelTheme.globalColors.text.normal),
+                        )
+                    }
+                }
+                Text(footer, color = JewelTheme.globalColors.text.info)
+            }
+        }
+    }
+}
+
+private fun renderTemplate(template: String, title: String, page: Int, total: Int): String =
+    template.replace("{title}", title.ifBlank { "Untitled document" })
+        .replace("{page}", "$page")
+        .replace("{total}", "$total")
+
+private fun paginateBody(body: String, setup: DocumentPageSetup): List<String> {
+    val contentWidthMm = (setup.pageWidthMm - setup.marginLeftMm - setup.marginRightMm).coerceAtLeast(40.0)
+    val contentHeightMm = (setup.pageHeightMm - setup.marginTopMm - setup.marginBottomMm - 16.0).coerceAtLeast(60.0)
+    val maxLines = (contentHeightMm / 5.0).toInt().coerceAtLeast(8)
+    val charsPerLine = (contentWidthMm / 2.2).toInt().coerceAtLeast(30)
+    val maxChars = (maxLines * charsPerLine).coerceAtLeast(240)
+    if (body.isBlank()) return listOf("")
+    val pages = mutableListOf<String>()
+    var cursor = 0
+    while (cursor < body.length) {
+        val limit = (cursor + maxChars).coerceAtMost(body.length)
+        var next = body.lastIndexOf('\n', startIndex = limit)
+        if (next <= cursor + maxChars / 2) next = limit
+        pages += body.substring(cursor, next).trimEnd('\n')
+        cursor = next.coerceAtLeast(cursor + 1)
+        while (cursor < body.length && body[cursor] == '\n') cursor++
+    }
+    return pages.ifEmpty { listOf("") }
 }
 
 @Composable
@@ -161,6 +224,7 @@ private fun Preview(
         tab.renderedTitle == title && tab.renderedBody == body && tab.renderedRevision == revision &&
             (it.source.kind == "unsaved") == dirty
     }
+
     LaunchedEffect(tab, title, body, revision, dirty) {
         if (current != null) return@LaunchedEffect
         loading = true

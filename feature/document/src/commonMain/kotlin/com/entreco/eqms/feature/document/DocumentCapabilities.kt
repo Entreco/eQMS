@@ -34,6 +34,10 @@ data class DocumentSnapshot(
 )
 
 interface DocumentCapabilities : SearchCapabilities {
+    suspend fun loadPageSetup(project: String): Result<DocumentPageSetup> =
+        Result.success(DocumentPageSetup())
+    suspend fun savePageSetup(project: String, setup: DocumentPageSetup): Result<DocumentPageSetup> =
+        Result.success(setup.validate())
     suspend fun renderBuffer(project: String, title: String, body: String): Result<RenderedDocument> =
         Result.failure(UnsupportedOperationException("Document rendering is not configured. Source remains available."))
     suspend fun renderSaved(project: String, document: DocumentSnapshot): Result<RenderedDocument> =

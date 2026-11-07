@@ -27,7 +27,8 @@ is bound to the exact tab/buffer. Target warm input-to-layout p95: 150 ms for
 
 ## Presentation and resources
 
-Preview/Source/Split default to Preview per tab. Independent source/preview
+Preview/Source/Split preserve independent per-tab state. (Default view selection
+is refined by EQMS-104.) Independent source/preview
 scroll, TextFieldValue and mode survive tab switches. Source is always reachable
 after a rendering error. Split has bounded keyboard/pointer resizing.
 Use Jewel typography/colors, visible focus, readable width, themed tables/code,

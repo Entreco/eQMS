@@ -27,7 +27,7 @@ internal class DocumentTab(
     val dirty get() = !historical && (title != snapshot?.title.orEmpty() || body != snapshot?.body.orEmpty())
     val editable get() = !historical && (snapshot == null || snapshot?.status == DocumentStatus.Draft)
     val scroll = ScrollState(0)
-    var viewMode by mutableStateOf(DocumentViewMode.Preview)
+    var viewMode by mutableStateOf(DocumentViewMode.Canvas)
     val previewScroll = androidx.compose.foundation.lazy.LazyListState()
     var splitFraction by mutableFloatStateOf(0.5f)
     var rendered by mutableStateOf<RenderedDocument?>(null)
@@ -66,6 +66,14 @@ internal class DocumentWorkspaceState(
     var busy by mutableStateOf(false)
         private set
     var error by mutableStateOf<String?>(null)
+    var pageSetup by mutableStateOf(DocumentPageSetup())
+        private set
+    var pageSetupLoading by mutableStateOf(true)
+        private set
+    var pageSetupSaving by mutableStateOf(false)
+        private set
+    var pageSetupError by mutableStateOf<String?>(null)
+        private set
     var pendingClose by mutableStateOf<List<DocumentTab>?>(null)
         private set
     private var afterClose: (() -> Unit)? = null
@@ -118,6 +126,7 @@ internal class DocumentWorkspaceState(
 
     suspend fun refresh() {
         if (busy || disposed) return
+        loadPageSetup()
         documentsLoading = true
         documentsError = null
         val request = ++refreshGeneration
@@ -147,6 +156,37 @@ internal class DocumentWorkspaceState(
             if (request == refreshGeneration) documentsLoading = false
         }
         if (!disposed) search.refresh()
+    }
+
+    suspend fun loadPageSetup() {
+        if (disposed) return
+        pageSetupLoading = true
+        pageSetupError = null
+        capabilities.loadPageSetup(project).fold(
+            onSuccess = { setup -> if (!disposed) pageSetup = setup.validate() },
+            onFailure = {
+                if (!disposed) {
+                    pageSetupError = it.message ?: "Could not load page setup."
+                    pageSetup = DocumentPageSetup()
+                }
+            },
+        )
+        pageSetupLoading = false
+    }
+
+    suspend fun savePageSetup(setup: DocumentPageSetup) {
+        if (disposed || pageSetupSaving) return
+        pageSetupSaving = true
+        pageSetupError = null
+        capabilities.savePageSetup(project, setup).fold(
+            onSuccess = { saved -> if (!disposed) pageSetup = saved.validate() },
+            onFailure = { if (!disposed) pageSetupError = it.message ?: "Could not save page setup." },
+        )
+        pageSetupSaving = false
+    }
+
+    fun reportPageSetupError(message: String) {
+        pageSetupError = message
     }
 
     suspend fun save(tab: DocumentTab): Boolean {
