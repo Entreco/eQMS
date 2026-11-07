@@ -6,12 +6,18 @@ Canonical Markdown, Git history, content hashes and lifecycle rules do not chang
 
 ## Contract
 
-Semantic schema 1 and renderer `eqms-markdown-1` sit inside the existing native
+Semantic schema 2 and renderer `eqms-markdown-2` sit inside the existing native
 schema-2 envelope. Nodes carry kind, optional text/target/anchor/level and children.
 Supported syntax: CommonMark plus tables, strikethrough and footnotes. Heading
 anchors use deterministic readable slugs with collision suffixes, including
 duplicate/empty/Unicode headings. TOC derives from those same nodes. Raw HTML is literal text, never
 executed. Unresolved references retain the parser's literal source behavior.
+
+A standalone, exact top-level `<!-- pagebreak -->` line is an eQMS `page_break`
+node. Recognition uses Markdown parser events and source offsets; the same text
+inside prose, code, lists, quotes, or other HTML remains literal. Leading,
+trailing, and repeated markers are normalized so they do not create blank pages.
+The original canonical Markdown and its input digest are unchanged.
 
 Saved rendering resolves exact native snapshots and includes ID/revision/hash.
 Buffer rendering accepts at most 8 MiB JSON stdin and labels its separate

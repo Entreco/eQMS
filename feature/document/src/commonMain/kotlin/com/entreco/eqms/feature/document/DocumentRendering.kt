@@ -22,7 +22,9 @@ data class RenderedDocument(
 )
 data class DocumentImage(val bytes: ByteArray, val width: Int, val height: Int)
 
-enum class DocumentViewMode { Canvas, Preview, Source, Split }
+enum class DocumentViewMode(val label: String) {
+    Source("Markdown"), Split("Markdown + Preview"), Preview("Preview"),
+}
 
 enum class PageSize(val label: String, val widthMm: Double, val heightMm: Double) {
     A4("A4", 210.0, 297.0),

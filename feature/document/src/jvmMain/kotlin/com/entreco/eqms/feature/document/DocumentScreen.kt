@@ -160,7 +160,7 @@ fun DocumentScreen(
                                     state.pageSetupError?.let {
                                         Text("Could not load page setup: $it", color = JewelTheme.globalColors.text.error)
                                     }
-                                    LazyColumn(Modifier.weight(1f)) {
+                                    LazyColumn(Modifier.weight(1f).fillMaxWidth()) {
                                         if (state.documentsLoading) item { Text("Loading documents...") }
                                         state.documentsError?.let { message ->
                                             item {

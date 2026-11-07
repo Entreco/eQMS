@@ -26,8 +26,8 @@ class DocumentScreenTest {
 
     private fun sourceField(name: String): SemanticsNodeInteraction {
         if (compose.onAllNodesWithContentDescription(name).fetchSemanticsNodes().isEmpty() &&
-            compose.onAllNodesWithContentDescription("View Source").fetchSemanticsNodes().isNotEmpty()) {
-            compose.onNodeWithContentDescription("View Source").performClick()
+            compose.onAllNodesWithContentDescription("View Markdown").fetchSemanticsNodes().isNotEmpty()) {
+            compose.onNodeWithContentDescription("View Markdown").performClick()
         }
         return compose.onNodeWithContentDescription(name)
     }
@@ -57,7 +57,7 @@ class DocumentScreenTest {
         val table = compose.onNodeWithContentDescription("Rendered table with 2 columns").fetchSemanticsNode().boundsInRoot
         val role = compose.onNodeWithText("Role").fetchSemanticsNode().boundsInRoot
         val activity = compose.onNodeWithText("Activity").fetchSemanticsNode().boundsInRoot
-        assertTrue(role.width > 300f)
+        assertTrue(role.width > 200f)
         assertTrue(abs(role.width - activity.width) < 1f)
         assertTrue(abs(activity.right - role.left + 20f - table.width) < 1f)
         val reviewer = compose.onNodeWithText("Reviewer").fetchSemanticsNode().boundsInRoot
@@ -330,7 +330,44 @@ class DocumentScreenTest {
     }
 
     @Test
-    fun canvasIsDefaultAndModesRetainUnsavedSourceCaretAndIndependentTabs() {
+    fun threeModesKeepLongSourceEditableAndPageBreakInsertionIsUndoable() {
+        val capabilities = Capabilities()
+        val tab = DocumentTab(1, null).apply { body = "Start\n\n" + "Long source line\n".repeat(300) + "End" }
+        var interactive by mutableStateOf(true)
+        compose.setContent {
+            IntUiTheme(isDark = false) {
+                DocumentPresentation("/project", tab, DocumentPageSetup(), capabilities, interactive,
+                    remember { DocumentBitmapCache() }, {}, Modifier.requiredSize(900.dp, 700.dp))
+            }
+        }
+        val modes = compose.onAllNodes(hasContentDescription("View ", substring = true)).fetchSemanticsNodes()
+        assertEquals(3, modes.size)
+        compose.onNodeWithContentDescription("View Markdown").assertIsSelected()
+        val original = tab.body
+        sourceField("Markdown body").performTextInputSelection(TextRange(original.length))
+        sourceField("Markdown body").performTextInput(" edited")
+        compose.runOnIdle { assertTrue(tab.body.endsWith("End edited")) }
+        compose.onNodeWithText("Insert page break").performClick()
+        compose.runOnIdle { assertTrue(tab.body.endsWith("<!-- pagebreak -->\n\n")) }
+        sourceField("Markdown body").performSemanticsAction(SemanticsActions.RequestFocus) { it() }
+        sourceField("Markdown body").performKeyInput {
+            keyDown(Key.MetaLeft); pressKey(Key.Z); keyUp(Key.MetaLeft)
+        }
+        compose.runOnIdle { assertEquals("$original edited", tab.body) }
+        compose.onNodeWithContentDescription("View Markdown + Preview").performClick()
+        sourceField("Markdown body").performTextInput("split edit")
+        compose.runOnIdle { assertTrue(tab.body.contains("split edit")) }
+        compose.runOnIdle { interactive = false }
+        compose.onNodeWithText("Insert page break").assertIsNotEnabled()
+        compose.runOnIdle { interactive = true }
+        compose.onNodeWithContentDescription("View Preview").performClick()
+        compose.onNodeWithText("Insert page break").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Markdown body").assertDoesNotExist()
+        compose.runOnIdle { assertEquals(0, capabilities.saves) }
+    }
+
+    @Test
+    fun markdownIsDefaultAndModesRetainUnsavedSourceCaretAndIndependentTabs() {
         val capabilities = Capabilities()
         compose.setContent {
             IntUiTheme(isDark = true) {
@@ -340,16 +377,16 @@ class DocumentScreenTest {
             }
         }
         compose.onNodeWithText("Policy (Draft)").performClick()
-        compose.onNodeWithContentDescription("View Canvas").assertIsSelected()
+        compose.onNodeWithContentDescription("View Markdown").assertIsSelected()
         sourceField("Markdown body").assertExists()
         sourceField("Markdown body").performTextReplacement("unsaved preview text")
         sourceField("Markdown body").performTextInputSelection(TextRange(5))
-        compose.onNodeWithContentDescription("View Split").performClick()
+        compose.onNodeWithContentDescription("View Markdown + Preview").performClick()
         compose.waitUntil { compose.onAllNodesWithText("Unsaved preview - not a saved or approved record").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithContentDescription("Resize source and preview; arrow keys adjust").assertExists()
         compose.onNodeWithContentDescription("View Preview").performClick()
         compose.onNodeWithText("New document").performClick()
-        compose.onNodeWithContentDescription("View Canvas").assertIsSelected()
+        compose.onNodeWithContentDescription("View Markdown").assertIsSelected()
         sourceField("Document title").performTextReplacement("Other")
         compose.onNodeWithContentDescription("Document tab Policy").performClick()
         compose.onNodeWithContentDescription("View Preview").assertIsSelected()

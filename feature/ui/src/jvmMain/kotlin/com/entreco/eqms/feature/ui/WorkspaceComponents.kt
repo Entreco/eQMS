@@ -51,11 +51,13 @@ fun WorkspaceTextField(
     readOnly: Boolean = false,
     singleLine: Boolean = false,
     textState: MutableState<TextFieldValue>? = null,
+    onEdit: (TextFieldValue, TextFieldValue) -> Unit = { _, _ -> },
 ) {
     val localField = remember { mutableStateOf(TextFieldValue(value)) }
     var field by (textState ?: localField)
     val displayed = if (field.text == value) field else field.copy(text = value, selection = TextRange(value.length))
     val change: (TextFieldValue) -> Unit = {
+        if (it.text != value) onEdit(displayed, it)
         field = it
         if (it.text != value) onValueChange(it.text)
     }

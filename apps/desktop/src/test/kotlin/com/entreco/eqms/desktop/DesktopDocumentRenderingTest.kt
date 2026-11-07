@@ -57,6 +57,7 @@ class DesktopDocumentRenderingTest {
                     "See [purpose](#purpose) and the supporting note[^scope].\n\n[^scope]: Synthetic content only, not approved evidence.\n").getOrThrow()
         }
         runBlocking {
+            val head = executeProcess("git", listOf("-C", root.path, "rev-parse", "HEAD")).output
             val model = capabilities.renderSaved(root.path, saved).getOrThrow()
             assertEquals(saved.contentHash, model.source.contentHash)
             assertEquals(saved.revision, model.source.revision)
@@ -68,6 +69,15 @@ class DesktopDocumentRenderingTest {
             assertTrue(capabilities.renderBuffer(root.path, "", "x".repeat(1024 * 1024 + 1)).isFailure)
             assertTrue(capabilities.readDocumentImage(root.path, "../secret").isFailure)
             assertTrue(capabilities.openDocumentLink("javascript:bad").isFailure)
+            val markerBody = saved.body + "\n\n<!-- pagebreak -->\n\n## Second page\n\nSource is preserved."
+            val markerPreview = capabilities.renderBuffer(root.path, saved.title, markerBody).getOrThrow()
+            assertTrue(markerPreview.nodes.any { it.kind == "page_break" })
+            assertEquals(head, executeProcess("git", listOf("-C", root.path, "rev-parse", "HEAD")).output)
+            assertEquals(saved.body, capabilities.showLatestDocument(root.path, saved.id).getOrThrow().body)
+            val changed = capabilities.saveDocument(root.path, saved.id, saved.revision, saved.title, markerBody).getOrThrow()
+            assertNotEquals(saved.revision, changed.revision)
+            assertEquals(markerBody, capabilities.showLatestDocument(root.path, saved.id).getOrThrow().body)
+            assertTrue(capabilities.renderSaved(root.path, changed).getOrThrow().nodes.any { it.kind == "page_break" })
         }
         val timings = CopyOnWriteArrayList<DocumentRenderTiming>()
         var dark by mutableStateOf(true)
@@ -83,6 +93,8 @@ class DesktopDocumentRenderingTest {
         }
         val openStarted = System.nanoTime()
         compose.onNodeWithText("Rendering fixture (Draft)").performClick()
+        compose.waitUntil(30_000) { compose.onAllNodesWithContentDescription("View Preview").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithContentDescription("View Preview").performClick()
         compose.waitUntil(30_000) { timings.isNotEmpty() }
         val coldOpenMillis = (System.nanoTime() - openStarted) / 1_000_000.0
         System.getenv("EQMS_JEWEL_PREVIEW_DIR")?.let { destination ->
@@ -97,20 +109,20 @@ class DesktopDocumentRenderingTest {
             for (theme in listOf(true, false)) {
                 compose.runOnIdle { dark = theme }
                 val suffix = if (theme) "dark" else "light"
-                for (mode in listOf("Preview", "Split", "Source")) {
+                for (mode in listOf("Preview", "Markdown + Preview", "Markdown")) {
                     compose.onNodeWithContentDescription("View $mode").performClick()
-                    capture("document-${mode.lowercase()}-$suffix.png")
+                    capture("document-${mode.lowercase().replace(" + ", "-")}-$suffix.png")
                 }
             }
             compose.onNodeWithContentDescription("View Preview").performClick()
-            compose.onNodeWithContentDescription("Rendered document content").performScrollToIndex(5)
+            compose.onNodeWithContentDescription("Rendered document content").performScrollToNode(hasContentDescription("Synthetic workflow"))
             compose.waitUntil(10_000) { compose.onAllNodesWithContentDescription("Synthetic workflow").fetchSemanticsNodes().isNotEmpty() }
             compose.onNodeWithContentDescription("Synthetic workflow").performScrollTo()
             capture("document-image-light.png")
             compose.onNodeWithContentDescription("Rendered document content").performScrollToIndex(0)
         }
         compose.runOnIdle { dark = true }
-        compose.onNodeWithContentDescription("View Split").performClick()
+        compose.onNodeWithContentDescription("View Markdown + Preview").performClick()
         val section = "## Working practices\n\n" +
             "Keep quality work traceable and readable. ".repeat(18) +
             "\n\nA **strong** statement, a [reference](https://example.invalid), and `code`.\n\n" +

@@ -136,7 +136,7 @@ fn escape(text: &str) -> String {
 
 fn html(document: &Document) -> Result<String, String> {
     let mut out = String::from(
-        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; style-src 'unsafe-inline'\"><meta name=\"viewport\" content=\"width=device-width\"><style>body{font:16px/1.6 system-ui;max-width:76ch;margin:3rem auto;padding:1rem;color:#242628}pre,table{overflow:auto}td,th{padding:.5rem;border:1px solid #ccc}blockquote{border-left:3px solid #888;padding-left:1rem}</style><title>",
+        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; style-src 'unsafe-inline'\"><meta name=\"viewport\" content=\"width=device-width\"><style>body{font:16px/1.6 system-ui;max-width:76ch;margin:3rem auto;padding:1rem;color:#242628}pre,table{overflow:auto}td,th{padding:.5rem;border:1px solid #ccc}blockquote{border-left:3px solid #888;padding-left:1rem}@media print{.page-break{break-before:page;page-break-before:always}}</style><title>",
     );
     out.push_str(&escape(&document.title));
     out.push_str("</title></head><body><header><h1>");
@@ -222,6 +222,10 @@ fn node_html(node: &Node, out: &mut String) -> Result<(), String> {
         }
         "rule" => ("<hr>".into(), ""),
         "break" => ("<br>".into(), ""),
+        "page_break" => (
+            "<div class=\"page-break\" aria-hidden=\"true\">".into(),
+            "</div>",
+        ),
         _ => return Err(format!("Unsupported semantic node: {}", node.kind)),
     };
     out.push_str(&open);
@@ -265,6 +269,13 @@ mod tests {
             value["input_digest"],
             eqms_core::markdown::hash(b"# Purpose")
         );
+        assert_eq!(value["semantic_schema"], 2);
+        assert_eq!(value["renderer"], "eqms-markdown-2");
+        let envelope =
+            crate::output::Response::from_result(Ok(result), true, "document.render-buffer");
+        let envelope: serde_json::Value = serde_json::from_str(&envelope.text).unwrap();
+        assert_eq!(envelope["schema_version"], 2);
+        assert_eq!(envelope["data"]["semantic_schema"], 2);
         for input in [
             r#"{"title":"A"}"#,
             r#"{"title":"A","body":"","approved":true}"#,
@@ -275,13 +286,40 @@ mod tests {
     }
     #[test]
     fn html_is_deterministic_escaped_and_network_free() {
-        let doc = render::parse("A <title>", "# Heading\n\n<script>bad()</script>\n\n[x](javascript:bad)\n\n![secret](https://bad.invalid/x)\n").unwrap();
+        let doc = render::parse("A <title>", "# Heading\n\n<script>bad()</script>\n\n<!-- pagebreak -->\n\n[x](javascript:bad)\n\n![secret](https://bad.invalid/x)\n").unwrap();
         let output = html(&doc).unwrap();
         assert_eq!(output, html(&doc).unwrap());
         assert!(!output.contains("<script>"));
         assert!(!output.contains("href=\"javascript:"));
         assert!(!output.contains("<img"));
+        assert_eq!(
+            output
+                .matches("<div class=\"page-break\" aria-hidden=\"true\"></div>")
+                .count(),
+            1
+        );
+        assert!(
+            output
+                .contains("@media print{.page-break{break-before:page;page-break-before:always}}")
+        );
         assert!(output.contains("&lt;script&gt;"));
         assert!(output.contains("id=\"heading\""));
+    }
+
+    #[test]
+    fn render_model_uses_versioned_semantics() {
+        let result = render::parse("A", "Before\n\n<!-- pagebreak -->\n\nAfter").unwrap();
+        let value = serde_json::to_value(result).unwrap();
+        assert_eq!(value["semantic_schema"], 2);
+        assert_eq!(value["renderer"], "eqms-markdown-2");
+        assert_eq!(
+            value["nodes"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|node| node["kind"] == "page_break")
+                .count(),
+            1
+        );
     }
 }

@@ -28,8 +28,8 @@ class DesktopJewelPreviewTest {
 
     private fun sourceField(name: String): SemanticsNodeInteraction {
         if (compose.onAllNodesWithContentDescription(name).fetchSemanticsNodes().isEmpty() &&
-            compose.onAllNodesWithContentDescription("View Source").fetchSemanticsNodes().isNotEmpty()) {
-            compose.onNodeWithContentDescription("View Source").activate()
+            compose.onAllNodesWithContentDescription("View Markdown").fetchSemanticsNodes().isNotEmpty()) {
+            compose.onNodeWithContentDescription("View Markdown").activate()
             compose.waitUntil(5_000) {
                 compose.onAllNodesWithContentDescription(name).fetchSemanticsNodes().isNotEmpty()
             }
@@ -119,7 +119,7 @@ class DesktopJewelPreviewTest {
         }
         compose.onNodeWithText("Quality policy (sample) (Draft)").activate()
         compose.waitUntil(30_000) {
-            compose.onAllNodesWithContentDescription("View Source").fetchSemanticsNodes().size == 1
+            compose.onAllNodesWithContentDescription("View Markdown").fetchSemanticsNodes().size == 1
         }
         sourceField("Markdown body").assertTextContains("## Working practices", substring = true)
         compose.onNodeWithText("Risk management plan (sample) (Draft)").activate()
@@ -269,23 +269,22 @@ class DesktopJewelPreviewTest {
                 compose.onAllNodes(hasContentDescription("View $name") and isSelected()).fetchSemanticsNodes().size == 1 &&
                     (compose.onAllNodesWithContentDescription("Markdown body").fetchSemanticsNodes().isNotEmpty() == (name != "Preview"))
             }
-            if (name != "Source") compose.waitUntil(30_000) {
+            if (name != "Markdown") compose.waitUntil(30_000) {
                 compose.onAllNodesWithContentDescription("Rendered document content").fetchSemanticsNodes().isNotEmpty()
             }
         }
         for (theme in listOf("light", "dark")) {
             if (theme == "dark") compose.onNodeWithText("Dark theme").activate()
-            for (mode in listOf("Preview", "Split", "Source")) {
+            for (mode in listOf("Preview", "Markdown + Preview", "Markdown")) {
                 selectMode(mode)
-                capture("native-document-${mode.lowercase()}-$theme.png")
+                capture("native-document-${mode.lowercase().replace(" + ", "-")}-$theme.png")
             }
         }
         selectMode("Preview")
-        // Eight body blocks precede the image paragraph; the preview also has a provenance header.
-        compose.onNodeWithContentDescription("Rendered document content").performScrollToIndex(9)
+        compose.onNodeWithContentDescription("Rendered document content").performScrollToNode(hasContentDescription("Synthetic workflow"))
         compose.waitUntil(10_000) { compose.onAllNodesWithContentDescription("Synthetic workflow").fetchSemanticsNodes().isNotEmpty() }
         // Decoding replaces the shorter loading placeholder; position again with the real image dimensions.
-        compose.onNodeWithContentDescription("Rendered document content").performScrollToIndex(9)
+        compose.onNodeWithContentDescription("Synthetic workflow").performScrollTo()
         compose.waitUntil(10_000) {
             val image = compose.onNodeWithContentDescription("Synthetic workflow").getUnclippedBoundsInRoot()
             val viewport = compose.onNodeWithContentDescription("Rendered document content").getUnclippedBoundsInRoot()
