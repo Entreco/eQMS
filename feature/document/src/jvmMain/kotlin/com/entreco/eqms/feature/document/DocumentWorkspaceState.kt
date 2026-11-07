@@ -27,7 +27,7 @@ internal class DocumentTab(
     val dirty get() = !historical && (title != snapshot?.title.orEmpty() || body != snapshot?.body.orEmpty())
     val editable get() = !historical && (snapshot == null || snapshot?.status == DocumentStatus.Draft)
     val scroll = ScrollState(0)
-    var viewMode by mutableStateOf(DocumentViewMode.Preview)
+    var viewMode by mutableStateOf(DocumentViewMode.Source)
     val previewScroll = androidx.compose.foundation.lazy.LazyListState()
     var splitFraction by mutableFloatStateOf(0.5f)
     var rendered by mutableStateOf<RenderedDocument?>(null)
@@ -47,6 +47,62 @@ internal class DocumentTab(
     var difference by mutableStateOf<String?>(null)
     var older by mutableStateOf<DocumentSnapshot?>(null)
     var newer by mutableStateOf<DocumentSnapshot?>(null)
+    // Programmatic insertion must be a separate undo step, not grouped with preceding typing.
+    private val undoEdits = ArrayDeque<Pair<TextFieldValue, TextFieldValue>>()
+    private val redoEdits = ArrayDeque<Pair<TextFieldValue, TextFieldValue>>()
+
+    fun recordBodyEdit(before: TextFieldValue, after: TextFieldValue) {
+        if (before.text == after.text) return
+        undoEdits.addLast(before to after)
+        redoEdits.clear()
+        while (undoEdits.size > 100 || undoEdits.sumOf { (it.first.text.length.toLong() + it.second.text.length) * 2 } > 32L * 1024 * 1024) {
+            undoEdits.removeFirst()
+        }
+    }
+
+    fun undoBodyEdit(redo: Boolean = false) {
+        if (!editable) return
+        val source = if (redo) redoEdits else undoEdits
+        val target = if (redo) undoEdits else redoEdits
+        val edit = source.removeLastOrNull() ?: return
+        if (body != (if (redo) edit.first.text else edit.second.text)) {
+            undoEdits.clear()
+            redoEdits.clear()
+            message = "Undo history cleared after the document buffer changed outside the editor."
+            return
+        }
+        bodyField.value = (if (redo) edit.second else edit.first).copy(composition = null)
+        target.addLast(edit)
+        renderRequestedAt = System.nanoTime()
+        message = null
+    }
+
+    fun insertPageBreak() {
+        if (!editable || viewMode == DocumentViewMode.Preview) return
+        val before = bodyField.value
+        val after = insertPageBreak(before)
+        recordBodyEdit(before, after)
+        bodyField.value = after
+        renderRequestedAt = System.nanoTime()
+        message = "Page break inserted. Only standalone top-level markers affect pagination; Save persists this edit."
+    }
+}
+
+internal fun insertPageBreak(value: TextFieldValue): TextFieldValue {
+    val caret = value.selection.end
+    val before = value.text.substring(0, caret)
+    val after = value.text.substring(caret)
+    val newline = if ("\r\n" in value.text) "\r\n" else "\n"
+    val prefix = if (before.isEmpty() || before.endsWith(newline + newline)) ""
+        else if (before.endsWith(newline)) newline else newline + newline
+    val suffix = if (after.startsWith(newline + newline)) ""
+        else if (after.startsWith(newline)) newline else newline + newline
+    val inserted = "$prefix<!-- pagebreak -->$suffix"
+    return value.copy(
+        text = before + inserted + after,
+        selection = androidx.compose.ui.text.TextRange(caret + inserted.length),
+        composition = null,
+    )
 }
 
 internal class DocumentWorkspaceState(
@@ -66,6 +122,14 @@ internal class DocumentWorkspaceState(
     var busy by mutableStateOf(false)
         private set
     var error by mutableStateOf<String?>(null)
+    var pageSetup by mutableStateOf(DocumentPageSetup())
+        private set
+    var pageSetupLoading by mutableStateOf(true)
+        private set
+    var pageSetupSaving by mutableStateOf(false)
+        private set
+    var pageSetupError by mutableStateOf<String?>(null)
+        private set
     var pendingClose by mutableStateOf<List<DocumentTab>?>(null)
         private set
     private var afterClose: (() -> Unit)? = null
@@ -118,6 +182,7 @@ internal class DocumentWorkspaceState(
 
     suspend fun refresh() {
         if (busy || disposed) return
+        loadPageSetup()
         documentsLoading = true
         documentsError = null
         val request = ++refreshGeneration
@@ -147,6 +212,37 @@ internal class DocumentWorkspaceState(
             if (request == refreshGeneration) documentsLoading = false
         }
         if (!disposed) search.refresh()
+    }
+
+    suspend fun loadPageSetup() {
+        if (disposed) return
+        pageSetupLoading = true
+        pageSetupError = null
+        capabilities.loadPageSetup(project).fold(
+            onSuccess = { setup -> if (!disposed) pageSetup = setup.validate() },
+            onFailure = {
+                if (!disposed) {
+                    pageSetupError = it.message ?: "Could not load page setup."
+                    pageSetup = DocumentPageSetup()
+                }
+            },
+        )
+        pageSetupLoading = false
+    }
+
+    suspend fun savePageSetup(setup: DocumentPageSetup) {
+        if (disposed || pageSetupSaving) return
+        pageSetupSaving = true
+        pageSetupError = null
+        capabilities.savePageSetup(project, setup).fold(
+            onSuccess = { saved -> if (!disposed) pageSetup = saved.validate() },
+            onFailure = { if (!disposed) pageSetupError = it.message ?: "Could not save page setup." },
+        )
+        pageSetupSaving = false
+    }
+
+    fun reportPageSetupError(message: String) {
+        pageSetupError = message
     }
 
     suspend fun save(tab: DocumentTab): Boolean {

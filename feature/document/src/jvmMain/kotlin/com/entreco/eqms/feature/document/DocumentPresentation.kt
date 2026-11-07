@@ -1,6 +1,7 @@
 package com.entreco.eqms.feature.document
 
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.Orientation
@@ -13,11 +14,15 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.text.selection.SelectionContainer
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.toComposeImageBitmap
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.input.pointer.PointerIcon
@@ -30,6 +35,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalDensity
 import com.entreco.eqms.feature.ui.WorkspaceTextField
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -38,8 +44,9 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
 import org.jetbrains.jewel.foundation.theme.JewelTheme
 import org.jetbrains.jewel.ui.component.OutlinedButton
-import org.jetbrains.jewel.ui.component.DefaultButton
 import org.jetbrains.jewel.ui.component.Text
+import org.jetbrains.jewel.ui.component.SelectableIconButton
+import org.jetbrains.jewel.ui.component.Tooltip
 import org.jetbrains.skia.Image as SkiaImage
 import java.awt.Cursor
 import java.security.MessageDigest
@@ -74,9 +81,11 @@ internal class DocumentBitmapCache {
 }
 
 @Composable
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 internal fun DocumentPresentation(
     project: String,
     tab: DocumentTab,
+    pageSetup: DocumentPageSetup,
     capabilities: DocumentCapabilities,
     interactive: Boolean,
     cache: DocumentBitmapCache,
@@ -84,27 +93,38 @@ internal fun DocumentPresentation(
     modifier: Modifier = Modifier,
     onRendered: (DocumentRenderTiming) -> Unit = {},
 ) {
+    val sourceStates = rememberSaveableStateHolder()
     Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
             DocumentViewMode.entries.forEach { mode ->
-                val control = Modifier.semantics { contentDescription = "View ${mode.name}"; selected = tab.viewMode == mode }
-                if (tab.viewMode == mode) {
-                    DefaultButton(onClick = {}, enabled = interactive, modifier = control) { Text(mode.name) }
-                } else {
-                    OutlinedButton(onClick = { tab.viewMode = mode }, enabled = interactive, modifier = control) { Text(mode.name) }
+                Tooltip(tooltip = { Text(mode.label) }) {
+                    SelectableIconButton(
+                        selected = tab.viewMode == mode,
+                        onClick = { tab.viewMode = mode }, enabled = interactive,
+                        modifier = Modifier.size(32.dp).semantics { contentDescription = "View ${mode.label}" },
+                    ) { ModeIcon(mode) }
+                }
+            }
+            if (tab.viewMode != DocumentViewMode.Preview) {
+                OutlinedButton(onClick = tab::insertPageBreak, enabled = interactive && tab.editable) {
+                    Text("Insert page break")
                 }
             }
         }
         if (tab.viewMode == DocumentViewMode.Source) {
-            Source(tab, interactive, Modifier.weight(1f).fillMaxWidth())
+            sourceStates.SaveableStateProvider("markdown") {
+                Source(tab, interactive, Modifier.weight(1f).fillMaxWidth())
+            }
         } else {
             BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
                 val availableWidth = constraints.maxWidth.toFloat().coerceAtLeast(1f)
                 if (tab.viewMode == DocumentViewMode.Preview) {
-                    Preview(project, tab, capabilities, cache, onExternalLink, onRendered, Modifier.fillMaxSize())
+                    Preview(project, tab, pageSetup, capabilities, cache, onExternalLink, onRendered, Modifier.fillMaxSize())
                 } else {
                     Row(Modifier.fillMaxSize()) {
-                        Source(tab, interactive, Modifier.weight(tab.splitFraction).fillMaxHeight())
+                        sourceStates.SaveableStateProvider("markdown") {
+                            Source(tab, interactive, Modifier.weight(tab.splitFraction).fillMaxHeight())
+                        }
                         val adjust: (Float) -> Unit = { tab.splitFraction = (tab.splitFraction + it).coerceIn(0.25f, 0.75f) }
                         OutlinedButton(
                             onClick = { adjust(0.05f) }, enabled = interactive,
@@ -118,7 +138,7 @@ internal fun DocumentPresentation(
                                 }
                                 .draggable(rememberDraggableState { adjust(it / availableWidth) }, Orientation.Horizontal, enabled = interactive),
                         ) {}
-                        Preview(project, tab, capabilities, cache, onExternalLink, onRendered,
+                        Preview(project, tab, pageSetup, capabilities, cache, onExternalLink, onRendered,
                             Modifier.weight(1f - tab.splitFraction).fillMaxHeight())
                     }
                 }
@@ -128,14 +148,48 @@ internal fun DocumentPresentation(
 }
 
 @Composable
+private fun ModeIcon(mode: DocumentViewMode) {
+    val color = JewelTheme.globalColors.text.normal
+    Canvas(Modifier.size(18.dp)) {
+        if (mode != DocumentViewMode.Source) {
+            val left = if (mode == DocumentViewMode.Split) size.width * 0.55f else 2f
+            drawRect(color, Offset(left, 1f), Size(size.width - left - 1f, size.height - 2f), style = Stroke(1.4f))
+        }
+        if (mode != DocumentViewMode.Preview) {
+            val right = if (mode == DocumentViewMode.Split) size.width * 0.4f else size.width - 2f
+            repeat(4) { line ->
+                val y = size.height * (0.2f + line * 0.2f)
+                drawLine(color, Offset(1f, y), Offset(right, y), strokeWidth = 1.4f)
+            }
+        }
+    }
+}
+
+internal fun renderTemplate(template: String, title: String, page: Int, total: Int): String =
+    template.replace("{title}", title.ifBlank { "Untitled document" })
+        .replace("{page}", "$page")
+        .replace("{total}", "$total")
+
+@Composable
 private fun Source(tab: DocumentTab, interactive: Boolean, modifier: Modifier) {
-    Column(modifier.verticalScroll(tab.scroll), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
         WorkspaceTextField(tab.title, { tab.renderRequestedAt = System.nanoTime(); tab.titleField.value = tab.titleField.value.copy(text = it); tab.message = null },
             "Document title", singleLine = true, readOnly = !tab.editable, enabled = interactive,
             textState = tab.titleField, modifier = Modifier.fillMaxWidth())
-        WorkspaceTextField(tab.body, { tab.renderRequestedAt = System.nanoTime(); tab.bodyField.value = tab.bodyField.value.copy(text = it); tab.message = null },
+        WorkspaceTextField(tab.body, {
+            tab.renderRequestedAt = System.nanoTime()
+            tab.message = null
+        },
             "Markdown body", readOnly = !tab.editable, enabled = interactive,
-            textState = tab.bodyField, modifier = Modifier.fillMaxWidth().height(440.dp))
+            textState = tab.bodyField, onEdit = tab::recordBodyEdit,
+            modifier = Modifier.fillMaxWidth().weight(1f).onPreviewKeyEvent {
+                val command = if (System.getProperty("os.name").startsWith("Mac")) it.isMetaPressed else it.isCtrlPressed
+                if (command && !it.isAltPressed && it.type == KeyEventType.KeyDown &&
+                    (it.key == Key.Z || it.key == Key.Y)) {
+                    if (interactive && tab.editable) tab.undoBodyEdit(redo = it.isShiftPressed || it.key == Key.Y)
+                    true
+                } else false
+            })
     }
 }
 
@@ -143,6 +197,7 @@ private fun Source(tab: DocumentTab, interactive: Boolean, modifier: Modifier) {
 private fun Preview(
     project: String,
     tab: DocumentTab,
+    pageSetup: DocumentPageSetup,
     capabilities: DocumentCapabilities,
     cache: DocumentBitmapCache,
     onExternalLink: (String) -> Unit,
@@ -157,10 +212,13 @@ private fun Preview(
     var loading by remember(tab) { mutableStateOf(false) }
     var showContents by remember(tab) { mutableStateOf(false) }
     var showSourceDetails by remember(tab) { mutableStateOf(false) }
+    var anchorPages by remember(tab) { mutableStateOf<Map<String, Int>>(emptyMap()) }
+    var imageRatios by remember(project, tab) { mutableStateOf<Map<String, Float>>(emptyMap()) }
     val current = tab.rendered?.takeIf {
         tab.renderedTitle == title && tab.renderedBody == body && tab.renderedRevision == revision &&
             (it.source.kind == "unsaved") == dirty
     }
+
     LaunchedEffect(tab, title, body, revision, dirty) {
         if (current != null) return@LaunchedEffect
         loading = true
@@ -184,10 +242,7 @@ private fun Preview(
     val navigate: (String) -> Unit = { target ->
         if (target.startsWith("#")) {
             val anchor = target.drop(1)
-            val index = current?.nodes?.indexOfFirst { node ->
-                fun contains(n: RenderNode): Boolean = n.anchor == anchor || n.children.any(::contains)
-                contains(node)
-            } ?: -1
+            val index = anchorPages[anchor] ?: -1
             if (index >= 0) scope.launch { tab.previewScroll.animateScrollToItem(index + 1) }
             else error = "Reference target was not found: $target"
         } else if (target.startsWith("https://") || target.startsWith("http://") || target.startsWith("mailto:")) {
@@ -198,8 +253,19 @@ private fun Preview(
         if (loading) Text("Rendering document...", color = JewelTheme.globalColors.text.info)
         error?.let { Text(it, color = JewelTheme.globalColors.text.error) }
         if (current != null) {
-            key(current) {
-                LazyColumn(state = tab.previewScroll, modifier = Modifier.fillMaxSize().onGloballyPositioned {
+            BoxWithConstraints(Modifier.fillMaxSize()) {
+                val density = LocalDensity.current
+                val available = (constraints.maxWidth - with(density) { 24.dp.roundToPx() }).toFloat().coerceAtLeast(1f)
+                val layoutResult = rememberPaginatedLayout(current, pageSetup, available, navigate, imageRatios)
+                val layout = layoutResult.getOrNull()
+                if (layout == null) {
+                    Text("Pagination failed: ${layoutResult.exceptionOrNull()?.message}",
+                        color = JewelTheme.globalColors.text.error)
+                    return@BoxWithConstraints
+                }
+                SideEffect { anchorPages = layout.anchorPages }
+                LazyColumn(state = tab.previewScroll, modifier = Modifier.fillMaxSize()
+                    .background(JewelTheme.globalColors.borders.normal.copy(alpha = 0.08f)).onGloballyPositioned {
                     if (tab.reportedRendering !== current) {
                         tab.reportedRendering = current
                         onRendered(DocumentRenderTiming(current.inputDigest,
@@ -210,7 +276,6 @@ private fun Preview(
                     item(key = "document-header") {
                         Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
                             Column(Modifier.widthIn(max = 760.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                Text(current.title.ifBlank { "Untitled document" }, fontSize = 24.sp, lineHeight = 32.sp, fontWeight = FontWeight.SemiBold)
                                 Text(if (dirty) "Unsaved preview - not a saved or approved record"
                                     else "${if (tab.historical) "Historical" else "Saved"} revision ${current.source.revision.take(12)}",
                                     color = JewelTheme.globalColors.text.info)
@@ -239,10 +304,16 @@ private fun Preview(
                             }
                         }
                     }
-                    itemsIndexed(current.nodes) { _, node ->
+                    itemsIndexed(layout.pages) { index, _ ->
                         Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
-                            Block(node, project, tab.historical, capabilities, cache, navigate,
-                                Modifier.widthIn(max = 760.dp).fillMaxWidth())
+                            DocumentPage(layout, index, pageSetup, current.title) { node, modifier ->
+                                if (node.kind == "image") DocumentImageView(node, project, tab.historical, capabilities, cache,
+                                    modifier, onDimensions = { width, height ->
+                                        val ratio = width.toFloat() / height
+                                        if (imageRatios[node.target] != ratio) imageRatios = imageRatios + (node.target to ratio)
+                                    })
+                                else Block(node, project, tab.historical, capabilities, cache, navigate, modifier)
+                            }
                         }
                     }
                 }
@@ -280,7 +351,7 @@ private fun Block(node: RenderNode, project: String, historical: Boolean, capabi
                 node.children.forEach { row ->
                     Row(Modifier.height(IntrinsicSize.Min)) {
                         row.children.forEach { cell ->
-                            BasicText(inlineText(cell.children, navigate),
+                            BasicText(inlineText(cell.children, navigate, colors.text.normal),
                                 Modifier.width(cellWidth).fillMaxHeight().border(0.5.dp, colors.borders.normal).padding(10.dp),
                                 style = base.copy(fontWeight = if (row.kind == "table_header") FontWeight.SemiBold else FontWeight.Normal))
                         }
@@ -304,7 +375,7 @@ private fun Block(node: RenderNode, project: String, historical: Boolean, capabi
             val level = node.kind.takeIf { it.matches(Regex("h[1-6]")) }?.last()?.digitToInt()
             val style = if (level != null) base.copy(fontSize = (29 - level * 2).sp, lineHeight = (37 - level * 2).sp,
                 fontWeight = FontWeight.SemiBold) else base
-            val text = inlineText(if (node.children.isEmpty()) listOf(node) else node.children, navigate)
+            val text = inlineText(if (node.children.isEmpty()) listOf(node) else node.children, navigate, colors.text.normal)
             Column(modifier) {
                 SelectionContainer {
                     BasicText(text, Modifier.fillMaxWidth().then(if (level != null) Modifier.semantics { heading() } else Modifier),
@@ -320,11 +391,10 @@ private fun Block(node: RenderNode, project: String, historical: Boolean, capabi
     }
 }
 
-@Composable
-private fun inlineText(nodes: List<RenderNode>, navigate: (String) -> Unit): AnnotatedString {
-    val linkColor = JewelTheme.globalColors.text.normal
+internal fun inlineText(nodes: List<RenderNode>, navigate: (String) -> Unit, linkColor: Color): AnnotatedString {
     return buildAnnotatedString {
         fun appendNode(node: RenderNode) {
+            if (node.anchor.isNotBlank()) pushStringAnnotation("anchor", node.anchor)
             when (node.kind) {
                 "link", "note_link" -> withLink(LinkAnnotation.Clickable(node.target,
                     TextLinkStyles(style = SpanStyle(color = linkColor, textDecoration = TextDecoration.Underline)),
@@ -338,6 +408,7 @@ private fun inlineText(nodes: List<RenderNode>, navigate: (String) -> Unit): Ann
                 "image" -> append("[Image: ${node.plainText()}]")
                 else -> { append(node.text); node.children.forEach(::appendNode) }
             }
+            if (node.anchor.isNotBlank()) pop()
         }
         nodes.forEach(::appendNode)
     }
@@ -345,7 +416,7 @@ private fun inlineText(nodes: List<RenderNode>, navigate: (String) -> Unit): Ann
 
 @Composable
 private fun DocumentImageView(node: RenderNode, project: String, historical: Boolean, capabilities: DocumentCapabilities,
-    cache: DocumentBitmapCache, modifier: Modifier) {
+    cache: DocumentBitmapCache, modifier: Modifier, onDimensions: (Int, Int) -> Unit = { _, _ -> }) {
     var bitmap by remember(project, node.target, historical) { mutableStateOf<ImageBitmap?>(null) }
     var error by remember(project, node.target, historical) { mutableStateOf<String?>(null) }
     LaunchedEffect(project, node.target, historical) {
@@ -358,6 +429,9 @@ private fun DocumentImageView(node: RenderNode, project: String, historical: Boo
                 onSuccess = { image ->
                     try {
                         bitmap = withContext(Dispatchers.Default) { cache.decode(image) }
+                        onDimensions(image.width, image.height)
+                    } catch (failure: kotlinx.coroutines.CancellationException) {
+                        throw failure
                     } catch (failure: IllegalArgumentException) {
                         error = "Image decode failed: ${failure.message}"
                     } catch (failure: IllegalStateException) {
@@ -372,7 +446,7 @@ private fun DocumentImageView(node: RenderNode, project: String, historical: Boo
         if (bitmap == null && error == null) Text("Loading image: ${node.plainText()}", color = JewelTheme.globalColors.text.info)
         bitmap?.let {
             Image(it, node.plainText().ifBlank { "Document image" }, Modifier.fillMaxWidth().heightIn(max = 400.dp)
-                .aspectRatio(it.width.toFloat() / it.height), contentScale = ContentScale.Fit)
+                .weight(1f, fill = false), contentScale = ContentScale.Fit)
             Text("Local unversioned image - not covered by the document hash", fontSize = 11.sp,
                 color = JewelTheme.globalColors.text.info)
         }

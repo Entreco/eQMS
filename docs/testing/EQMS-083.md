@@ -6,7 +6,7 @@ Status: draft. Define before implementation; do not treat this plan as evidence.
 |---|---|---|
 | T083-01 | R083-01/02 | Semantic/HTML fixtures for all supported syntax, duplicate/Unicode headings, references, footnotes, raw HTML and deterministic output. |
 | T083-02 | R083-03 | Exact saved/historical identity/hash; unsaved buffer labels/digest; no changed bytes, Git refs or journal. |
-| T083-03 | R083-04 | Mode defaults/switching, independent tabs/caret/scroll, dirty/save/close guards and lifecycle read-only. |
+| T083-03 | R083-04 | Mode switching, independent tabs/caret/scroll, dirty/save/close guards and lifecycle read-only. |
 | T083-04 | R083-05 | Both themes, TOC/footnote navigation, keyboard/focus, local overflow, split resize and minimum window size. Tables fill the available content width, retain equal column widths and align wrapped cells within each row. |
 | T083-05 | R083-06 | Unsafe URI, raw HTML, missing/remote/oversized assets, traversal/symlinks and historical placeholders; explicit diagnostics. |
 | T083-06 | R083-07 | Size/depth/node limits, malformed protocol, async races/cancellation/error fallback; buffers remain recoverable. |

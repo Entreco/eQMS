@@ -5,6 +5,8 @@ use serde::{Deserialize, Serialize};
 pub const MAX_BODY: usize = 1024 * 1024;
 pub const MAX_NODES: usize = 100_000;
 pub const MAX_DEPTH: usize = 64;
+pub const SEMANTIC_SCHEMA: u32 = 2;
+pub const RENDERER: &str = "eqms-markdown-2";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Node {
@@ -87,6 +89,32 @@ fn note_anchor(label: &str) -> String {
     format!("note-{}", &crate::markdown::hash(label.as_bytes())[7..])
 }
 
+fn is_exact_page_break(body: &str, range: std::ops::Range<usize>, text: &str) -> bool {
+    let text = text
+        .strip_suffix("\r\n")
+        .or_else(|| text.strip_suffix('\n'))
+        .unwrap_or(text);
+    if text != "<!-- pagebreak -->" {
+        return false;
+    }
+
+    let Some(prefix) = body.get(..range.start) else {
+        return false;
+    };
+    if prefix
+        .rfind('\n')
+        .map_or(range.start != 0, |newline| newline + 1 != range.start)
+    {
+        return false;
+    }
+    let Some(line_end) = body[range.start..].find('\n').map(|end| range.start + end) else {
+        return body.get(range.start..) == Some("<!-- pagebreak -->");
+    };
+    body.get(range.start..line_end)
+        .and_then(|line| line.strip_suffix('\r').or(Some(line)))
+        == Some("<!-- pagebreak -->")
+}
+
 pub fn parse(title: &str, body: &str) -> Result<Document, String> {
     if body.len() > MAX_BODY || title.len() > 16 * 1024 {
         return Err(
@@ -102,14 +130,23 @@ pub fn parse(title: &str, body: &str) -> Result<Document, String> {
     let mut references = std::collections::BTreeMap::<String, usize>::new();
     let options =
         Options::ENABLE_TABLES | Options::ENABLE_FOOTNOTES | Options::ENABLE_STRIKETHROUGH;
-    for event in Parser::new_ext(body, options) {
+    let mut pending_page_break = false;
+    let mut skip_html_block_end = false;
+    for (event, range) in Parser::new_ext(body, options).into_offset_iter() {
         count += 1;
         if count > MAX_NODES || stack.len() > MAX_DEPTH {
             return Err("Preview node/depth limit exceeded. Source remains available.".into());
         }
+        if skip_html_block_end {
+            if matches!(event, Event::End(_)) {
+                skip_html_block_end = false;
+            }
+            continue;
+        }
         let mut leaf = None;
         match event {
             Event::Start(tag) => {
+                pending_page_break = matches!(tag, Tag::HtmlBlock) && stack.len() == 1;
                 let mut node = Node::new("section");
                 match tag {
                     Tag::Paragraph => node.kind = "paragraph".into(),
@@ -156,7 +193,6 @@ pub fn parse(title: &str, body: &str) -> Result<Document, String> {
                     }
                     Tag::HtmlBlock => {
                         node.kind = "literal".into();
-                        diagnostics.push("Raw HTML is shown literally, not executed.".into());
                     }
                     _ => diagnostics
                         .push("Unsupported Markdown container shown as plain content.".into()),
@@ -239,6 +275,21 @@ pub fn parse(title: &str, body: &str) -> Result<Document, String> {
             | Event::Code(ref text)
             | Event::Html(ref text)
             | Event::InlineHtml(ref text) => {
+                if matches!(event, Event::Html(_))
+                    && pending_page_break
+                    && is_exact_page_break(body, range, text)
+                {
+                    stack.pop().ok_or("Unbalanced Markdown tree")?;
+                    stack
+                        .last_mut()
+                        .ok_or("Unbalanced Markdown tree")?
+                        .children
+                        .push(Node::new("page_break"));
+                    pending_page_break = false;
+                    skip_html_block_end = true;
+                    continue;
+                }
+                pending_page_break = false;
                 let kind = match &event {
                     Event::Code(_) => "code",
                     Event::Html(_) | Event::InlineHtml(_) => "literal",
@@ -252,12 +303,14 @@ pub fn parse(title: &str, body: &str) -> Result<Document, String> {
                 leaf = Some(node);
             }
             Event::SoftBreak | Event::HardBreak => {
+                pending_page_break = false;
                 let mut node = Node::new("break");
                 node.text = "\n".into();
                 leaf = Some(node);
             }
             Event::Rule => leaf = Some(Node::new("rule")),
             Event::FootnoteReference(label) => {
+                pending_page_break = false;
                 let mut node = Node::new("note_link");
                 node.text = format!("[{label}]");
                 node.target = format!("#{}", note_anchor(&label));
@@ -274,7 +327,9 @@ pub fn parse(title: &str, body: &str) -> Result<Document, String> {
                 );
                 leaf = Some(node);
             }
-            _ => return Err("Unsupported Markdown event. Source remains available.".into()),
+            _ => {
+                return Err("Unsupported Markdown event. Source remains available.".into());
+            }
         }
         if let Some(node) = leaf {
             stack
@@ -285,11 +340,36 @@ pub fn parse(title: &str, body: &str) -> Result<Document, String> {
         }
     }
     let nodes = stack.pop().ok_or("Missing Markdown tree")?.children;
+    let start = nodes
+        .iter()
+        .position(|node| node.kind != "page_break")
+        .unwrap_or(nodes.len());
+    let end = nodes
+        .iter()
+        .rposition(|node| node.kind != "page_break")
+        .map_or(start, |index| index + 1);
+    let mut normalized = Vec::with_capacity(end.saturating_sub(start));
+    let mut previous_was_page_break = false;
+    for node in nodes
+        .into_iter()
+        .skip(start)
+        .take(end.saturating_sub(start))
+    {
+        if node.kind == "page_break" {
+            if !previous_was_page_break {
+                normalized.push(node);
+            }
+            previous_was_page_break = true;
+        } else {
+            previous_was_page_break = false;
+            normalized.push(node);
+        }
+    }
     diagnostics.sort();
     diagnostics.dedup();
     Ok(Document {
-        semantic_schema: 1,
-        renderer: "eqms-markdown-1".into(),
+        semantic_schema: SEMANTIC_SCHEMA,
+        renderer: RENDERER.into(),
         title: title.into(),
         input_digest: crate::markdown::hash(body.as_bytes()),
         source: Provenance {
@@ -298,7 +378,7 @@ pub fn parse(title: &str, body: &str) -> Result<Document, String> {
             revision: String::new(),
             content_hash: String::new(),
         },
-        nodes,
+        nodes: normalized,
         toc,
         diagnostics,
     })
@@ -360,5 +440,83 @@ mod tests {
         assert!(parse("", &format!("{}x", "> ".repeat(70))).is_err());
         assert!(parse("", &"*x* ".repeat(30_000)).is_err());
         assert!(parse("", "").is_ok());
+    }
+
+    #[test]
+    fn page_break_is_an_exact_top_level_html_block_and_preserves_input_digest() {
+        let body = "Before\n\n<!-- pagebreak -->\n\nAfter\r\n";
+        let doc = parse("Document", body).unwrap();
+        assert_eq!(doc.semantic_schema, 2);
+        assert_eq!(doc.renderer, "eqms-markdown-2");
+        assert_eq!(doc.input_digest, crate::markdown::hash(body.as_bytes()));
+        assert_eq!(
+            doc.nodes
+                .iter()
+                .map(|node| node.kind.as_str())
+                .collect::<Vec<_>>(),
+            ["paragraph", "page_break", "paragraph"]
+        );
+
+        let crlf = "Before\r\n\r\n<!-- pagebreak -->\r\n\r\nAfter\r\n";
+        let crlf_doc = parse("Document", crlf).unwrap();
+        assert!(crlf_doc.nodes.iter().any(|node| node.kind == "page_break"));
+        assert_eq!(
+            crlf_doc.input_digest,
+            crate::markdown::hash(crlf.as_bytes())
+        );
+    }
+
+    #[test]
+    fn page_break_requires_the_exact_standalone_top_level_line() {
+        let body = concat!(
+            "prose <!-- pagebreak -->\n\n",
+            "<!--pagebreak-->\n\n",
+            "<!-- pagebreak --> extra\n\n",
+            "`<!-- pagebreak -->`\n\n",
+            "```\n<!-- pagebreak -->\n```\n\n",
+            "- <!-- pagebreak -->\n\n",
+            "> <!-- pagebreak -->\n\n",
+            "ordinary\n\n---\n"
+        );
+        let doc = parse("Document", body).unwrap();
+        fn contains_page_break(nodes: &[Node]) -> bool {
+            nodes
+                .iter()
+                .any(|node| node.kind == "page_break" || contains_page_break(&node.children))
+        }
+        assert!(!contains_page_break(&doc.nodes));
+        assert!(
+            doc.nodes
+                .iter()
+                .any(|node| { node.plain_text().contains("<!-- pagebreak -->") })
+        );
+        assert!(doc.nodes.iter().any(|node| node.kind == "rule"));
+        assert_eq!(doc.input_digest, crate::markdown::hash(body.as_bytes()));
+    }
+
+    #[test]
+    fn leading_trailing_and_consecutive_page_breaks_are_normalized() {
+        let doc = parse(
+            "Document",
+            "<!-- pagebreak -->\n\nA\n\n<!-- pagebreak -->\n\n<!-- pagebreak -->\n\nB\n\n<!-- pagebreak -->",
+        )
+        .unwrap();
+        assert_eq!(
+            doc.nodes
+                .iter()
+                .map(|node| node.kind.as_str())
+                .collect::<Vec<_>>(),
+            ["paragraph", "page_break", "paragraph"]
+        );
+
+        let adjacent = parse("Document", "A\n<!-- pagebreak -->\n<!-- pagebreak -->\nB").unwrap();
+        assert_eq!(
+            adjacent
+                .nodes
+                .iter()
+                .map(|node| node.kind.as_str())
+                .collect::<Vec<_>>(),
+            ["paragraph", "page_break", "paragraph"]
+        );
     }
 }

@@ -463,6 +463,18 @@ requirements and tests; targets are not claims of observed results.
 - Support headings/TOC, tables, references/footnotes and bounded project-local raster images; no automatic networking or mutable-image historical claims.
 - Pagination, page numbers and repeating print headers/footers remain EQMS-082; DOCX remains EQMS-080.
 
+### EQMS-104: Add editable paginated document canvas
+**Type:** Feature  
+**Priority:** P1  
+**Dependencies:** EQMS-083, EQMS-092  
+**Description:** Add a project-configurable, page-based document canvas for draft editing while keeping canonical Markdown authoritative and preserving revision, lifecycle and provenance controls.
+**Acceptance criteria:**
+- Canvas view supports page-size/orientation/margin setup in project settings, defaulting to A4 portrait with fixed margins.
+- Canvas shows repeated headers/footers and automatic page numbers without implying approval or replacing canonical hashes.
+- Editing remains Markdown-backed, preserves unsupported content through Source view, and does not silently drop content.
+- Existing save/conflict/history/lifecycle/dirty navigation behavior remains intact.
+- Mapped requirements/tests/evidence and a draft PR are produced; manual review/testing remains required.
+
 ---
 
 ## Milestone 9 — Desktop and web clients

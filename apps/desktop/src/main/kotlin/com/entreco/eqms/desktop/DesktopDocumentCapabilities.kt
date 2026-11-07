@@ -10,6 +10,9 @@ import com.entreco.eqms.feature.document.RenderNode
 import com.entreco.eqms.feature.document.RenderHeading
 import com.entreco.eqms.feature.document.RenderSource
 import com.entreco.eqms.feature.document.DocumentImage
+import com.entreco.eqms.feature.document.DocumentPageSetup
+import com.entreco.eqms.feature.document.PageOrientation
+import com.entreco.eqms.feature.document.PageSize
 import com.entreco.eqms.feature.search.SearchHit
 import com.entreco.eqms.feature.search.SearchPage
 import com.entreco.eqms.feature.search.SearchPreparation
@@ -22,6 +25,8 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.runInterruptible
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.*
+import java.util.prefs.BackingStoreException
+import java.util.prefs.Preferences
 
 internal fun interface DocumentExecutor {
     fun execute(executable: String, arguments: List<String>, input: String?): ProcessResult
@@ -32,7 +37,66 @@ internal class DesktopDocumentCapabilities(
     private val executor: DocumentExecutor = DocumentExecutor { command, arguments, input ->
         executeProcess(command, arguments, input)
     },
+    private val settingsNode: () -> Preferences = {
+        Preferences.userRoot().node("com/entreco/dutchdoxx/project-page-setup")
+    },
 ) : DocumentCapabilities {
+    override suspend fun loadPageSetup(project: String): Result<DocumentPageSetup> = withContext(Dispatchers.IO) {
+        try {
+            val raw = settingsNode().get(projectSettingsKey(project), null)
+                ?: return@withContext Result.success(DocumentPageSetup())
+            val value = Json.parseToJsonElement(raw).jsonObject
+            Result.success(
+                DocumentPageSetup(
+                    size = PageSize.valueOf(value.string("size")),
+                    orientation = PageOrientation.valueOf(value.string("orientation")),
+                    marginTopMm = value.number("margin_top_mm"),
+                    marginRightMm = value.number("margin_right_mm"),
+                    marginBottomMm = value.number("margin_bottom_mm"),
+                    marginLeftMm = value.number("margin_left_mm"),
+                    headerTemplate = value.string("header_template"),
+                    footerTemplate = value.string("footer_template"),
+                ).validate()
+            )
+        } catch (_: IllegalArgumentException) {
+            Result.failure(IllegalArgumentException("Stored page setup is invalid."))
+        } catch (_: IllegalStateException) {
+            Result.failure(IllegalArgumentException("Stored page setup is invalid."))
+        } catch (_: SerializationException) {
+            Result.failure(IllegalArgumentException("Stored page setup is invalid JSON."))
+        } catch (error: SecurityException) {
+            Result.failure(error)
+        }
+    }
+
+    override suspend fun savePageSetup(project: String, setup: DocumentPageSetup): Result<DocumentPageSetup> =
+        withContext(Dispatchers.IO) {
+            try {
+                val validated = setup.validate()
+                val payload = buildJsonObject {
+                    put("size", validated.size.name)
+                    put("orientation", validated.orientation.name)
+                    put("margin_top_mm", validated.marginTopMm)
+                    put("margin_right_mm", validated.marginRightMm)
+                    put("margin_bottom_mm", validated.marginBottomMm)
+                    put("margin_left_mm", validated.marginLeftMm)
+                    put("header_template", validated.headerTemplate)
+                    put("footer_template", validated.footerTemplate)
+                }
+                settingsNode().apply {
+                    put(projectSettingsKey(project), payload.toString())
+                    flush()
+                }
+                Result.success(validated)
+            } catch (error: BackingStoreException) {
+                Result.failure(error)
+            } catch (error: SecurityException) {
+                Result.failure(error)
+            } catch (error: IllegalArgumentException) {
+                Result.failure(error)
+            }
+        }
+
     override suspend fun renderBuffer(project: String, title: String, body: String): Result<RenderedDocument> =
         operation("render-buffer", project, emptyList(), buildJsonObject {
             put("title", title); put("body", body)
@@ -367,3 +431,12 @@ private fun validateHashes(revision: String, contentHash: String, eventHash: Str
     require(Regex("sha256:[0-9a-f]{64}").matches(contentHash)) { "Invalid content hash." }
     require(Regex("[0-9a-f]{64}").matches(eventHash)) { "Invalid event hash." }
 }
+
+private fun JsonObject.number(name: String): Double {
+    val value = requireNotNull(this[name]) { "Missing $name." }.jsonPrimitive
+    require(!value.isString) { "$name must be numeric." }
+    return value.double
+}
+
+private fun projectSettingsKey(project: String): String =
+    bodyDigest(project).removePrefix("sha256:")

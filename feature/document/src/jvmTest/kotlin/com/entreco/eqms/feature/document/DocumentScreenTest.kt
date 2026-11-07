@@ -26,8 +26,8 @@ class DocumentScreenTest {
 
     private fun sourceField(name: String): SemanticsNodeInteraction {
         if (compose.onAllNodesWithContentDescription(name).fetchSemanticsNodes().isEmpty() &&
-            compose.onAllNodesWithContentDescription("View Source").fetchSemanticsNodes().isNotEmpty()) {
-            compose.onNodeWithContentDescription("View Source").performClick()
+            compose.onAllNodesWithContentDescription("View Markdown").fetchSemanticsNodes().isNotEmpty()) {
+            compose.onNodeWithContentDescription("View Markdown").performClick()
         }
         return compose.onNodeWithContentDescription(name)
     }
@@ -52,11 +52,12 @@ class DocumentScreenTest {
         compose.onNodeWithText("Policy (Draft)").performClick()
         compose.onNodeWithContentDescription("Toggle Project panel").performClick()
         compose.onNodeWithContentDescription("Toggle Review panel").performClick()
+        compose.onNodeWithContentDescription("View Preview").performClick()
         compose.waitUntil(5_000) { compose.onAllNodesWithText("Role").fetchSemanticsNodes().isNotEmpty() }
         val table = compose.onNodeWithContentDescription("Rendered table with 2 columns").fetchSemanticsNode().boundsInRoot
         val role = compose.onNodeWithText("Role").fetchSemanticsNode().boundsInRoot
         val activity = compose.onNodeWithText("Activity").fetchSemanticsNode().boundsInRoot
-        assertTrue(role.width > 300f)
+        assertTrue(role.width > 200f)
         assertTrue(abs(role.width - activity.width) < 1f)
         assertTrue(abs(activity.right - role.left + 20f - table.width) < 1f)
         val reviewer = compose.onNodeWithText("Reviewer").fetchSemanticsNode().boundsInRoot
@@ -329,7 +330,44 @@ class DocumentScreenTest {
     }
 
     @Test
-    fun previewIsDefaultAndModesRetainUnsavedSourceCaretAndIndependentTabs() {
+    fun threeModesKeepLongSourceEditableAndPageBreakInsertionIsUndoable() {
+        val capabilities = Capabilities()
+        val tab = DocumentTab(1, null).apply { body = "Start\n\n" + "Long source line\n".repeat(300) + "End" }
+        var interactive by mutableStateOf(true)
+        compose.setContent {
+            IntUiTheme(isDark = false) {
+                DocumentPresentation("/project", tab, DocumentPageSetup(), capabilities, interactive,
+                    remember { DocumentBitmapCache() }, {}, Modifier.requiredSize(900.dp, 700.dp))
+            }
+        }
+        val modes = compose.onAllNodes(hasContentDescription("View ", substring = true)).fetchSemanticsNodes()
+        assertEquals(3, modes.size)
+        compose.onNodeWithContentDescription("View Markdown").assertIsSelected()
+        val original = tab.body
+        sourceField("Markdown body").performTextInputSelection(TextRange(original.length))
+        sourceField("Markdown body").performTextInput(" edited")
+        compose.runOnIdle { assertTrue(tab.body.endsWith("End edited")) }
+        compose.onNodeWithText("Insert page break").performClick()
+        compose.runOnIdle { assertTrue(tab.body.endsWith("<!-- pagebreak -->\n\n")) }
+        sourceField("Markdown body").performSemanticsAction(SemanticsActions.RequestFocus) { it() }
+        sourceField("Markdown body").performKeyInput {
+            keyDown(Key.MetaLeft); pressKey(Key.Z); keyUp(Key.MetaLeft)
+        }
+        compose.runOnIdle { assertEquals("$original edited", tab.body) }
+        compose.onNodeWithContentDescription("View Markdown + Preview").performClick()
+        sourceField("Markdown body").performTextInput("split edit")
+        compose.runOnIdle { assertTrue(tab.body.contains("split edit")) }
+        compose.runOnIdle { interactive = false }
+        compose.onNodeWithText("Insert page break").assertIsNotEnabled()
+        compose.runOnIdle { interactive = true }
+        compose.onNodeWithContentDescription("View Preview").performClick()
+        compose.onNodeWithText("Insert page break").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Markdown body").assertDoesNotExist()
+        compose.runOnIdle { assertEquals(0, capabilities.saves) }
+    }
+
+    @Test
+    fun markdownIsDefaultAndModesRetainUnsavedSourceCaretAndIndependentTabs() {
         val capabilities = Capabilities()
         compose.setContent {
             IntUiTheme(isDark = true) {
@@ -339,17 +377,16 @@ class DocumentScreenTest {
             }
         }
         compose.onNodeWithText("Policy (Draft)").performClick()
-        compose.onNodeWithContentDescription("View Preview").assertIsSelected()
-        compose.onNodeWithContentDescription("Markdown body").assertDoesNotExist()
-        compose.waitUntil { compose.onAllNodesWithText("original").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithContentDescription("View Markdown").assertIsSelected()
+        sourceField("Markdown body").assertExists()
         sourceField("Markdown body").performTextReplacement("unsaved preview text")
         sourceField("Markdown body").performTextInputSelection(TextRange(5))
-        compose.onNodeWithContentDescription("View Split").performClick()
+        compose.onNodeWithContentDescription("View Markdown + Preview").performClick()
         compose.waitUntil { compose.onAllNodesWithText("Unsaved preview - not a saved or approved record").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithContentDescription("Resize source and preview; arrow keys adjust").assertExists()
         compose.onNodeWithContentDescription("View Preview").performClick()
         compose.onNodeWithText("New document").performClick()
-        compose.onNodeWithContentDescription("View Preview").assertIsSelected()
+        compose.onNodeWithContentDescription("View Markdown").assertIsSelected()
         sourceField("Document title").performTextReplacement("Other")
         compose.onNodeWithContentDescription("Document tab Policy").performClick()
         compose.onNodeWithContentDescription("View Preview").assertIsSelected()
@@ -365,6 +402,7 @@ class DocumentScreenTest {
         capabilities.renderPending = pending
         compose.setContent { IntUiTheme(isDark = false) { DocumentScreen("/project", capabilities, { _, _ -> }) } }
         compose.onNodeWithText("Policy (Draft)").performClick()
+        compose.onNodeWithContentDescription("View Preview").performClick()
         compose.onNodeWithText("Rendering document...").assertExists()
         compose.onNodeWithText("New document").performClick()
         sourceField("Document title").performTextReplacement("Other")
@@ -387,11 +425,13 @@ class DocumentScreenTest {
         val capabilities = Capabilities()
         capabilities.renderNodes = listOf(RenderNode("image", target = "assets/sample.png",
             children = listOf(RenderNode("text", "Synthetic illustration"))))
-        var tab by mutableStateOf(DocumentTab(1, capabilities.first, historical = true))
+        var tab by mutableStateOf(DocumentTab(1, capabilities.first, historical = true).apply {
+            viewMode = DocumentViewMode.Preview
+        })
         var dark by mutableStateOf(true)
         compose.setContent {
             IntUiTheme(isDark = dark) {
-                DocumentPresentation("/project", tab, capabilities, true, remember { DocumentBitmapCache() }, {},
+                DocumentPresentation("/project", tab, DocumentPageSetup(), capabilities, true, remember { DocumentBitmapCache() }, {},
                     Modifier.requiredSize(700.dp, 600.dp))
             }
         }
@@ -400,7 +440,7 @@ class DocumentScreenTest {
         }
         compose.runOnIdle { dark = false; assertEquals(0, capabilities.imageReads) }
         compose.onNodeWithText("Synthetic illustration: Historical image unavailable: assets are not versioned.").assertExists()
-        compose.runOnIdle { tab = DocumentTab(2, capabilities.first) }
+        compose.runOnIdle { tab = DocumentTab(2, capabilities.first).apply { viewMode = DocumentViewMode.Preview } }
         compose.waitUntil { compose.onAllNodesWithText("Synthetic illustration: Missing test image").fetchSemanticsNodes().isNotEmpty() }
         compose.runOnIdle { assertEquals(1, capabilities.imageReads) }
     }
@@ -412,7 +452,7 @@ class DocumentScreenTest {
         var interactive by mutableStateOf(true)
         compose.setContent {
             IntUiTheme(isDark = true) {
-                DocumentPresentation("/project", tab, capabilities, interactive, remember { DocumentBitmapCache() }, {},
+                DocumentPresentation("/project", tab, DocumentPageSetup(), capabilities, interactive, remember { DocumentBitmapCache() }, {},
                     Modifier.requiredSize(900.dp, 600.dp))
             }
         }
@@ -436,6 +476,7 @@ class DocumentScreenTest {
         capabilities.renderToc = listOf(RenderHeading(2, "End", "end"))
         compose.setContent { IntUiTheme(isDark = false) { DocumentScreen("/project", capabilities, { _, _ -> }) } }
         compose.onNodeWithText("Policy (Draft)").performClick()
+        compose.onNodeWithContentDescription("View Preview").performClick()
         compose.waitUntil { compose.onAllNodesWithText("Table of contents").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithText("Table of contents").performClick()
         compose.onNodeWithContentDescription("Go to End").performClick()
@@ -449,6 +490,7 @@ class DocumentScreenTest {
             RenderNode("link", target = "https://example.invalid", children = listOf(RenderNode("text", "External document"))))))
         compose.setContent { IntUiTheme(isDark = true) { DocumentScreen("/project", capabilities, { _, _ -> }) } }
         compose.onNodeWithText("Policy (Draft)").performClick()
+        compose.onNodeWithContentDescription("View Preview").performClick()
         compose.waitUntil { compose.onAllNodesWithText("External document").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithText("External document").performTouchInput { click(androidx.compose.ui.geometry.Offset(10f, 10f)) }
         compose.onNodeWithText("Open external link?").assertExists()

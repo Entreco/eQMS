@@ -22,6 +22,10 @@ This folder is reserved for architecture notes, module decisions, and other proj
 - [Project search requirements](requirements/EQMS-050.md)
 - [Project search test specification](testing/EQMS-050.md)
 - [Project search automated evidence and latency](testing/evidence/EQMS-050.md)
+- [Markdown editing and paginated preview design and risk assessment](architecture/EQMS-104.md)
+- [Markdown editing and paginated preview requirements](requirements/EQMS-104.md)
+- [Markdown editing and paginated preview test specification](testing/EQMS-104.md)
+- [Markdown editing and paginated preview automated evidence](testing/evidence/EQMS-104.md)
 
 Issue delivery follows the [contributor workflow](../AGENTS.md). Feature records
 remain drafts pending manual review and testing.
