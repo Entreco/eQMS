@@ -24,7 +24,7 @@ class DesktopChromeTest {
             { error("No check expected") }, { error("No browser expected") },
         )
         compose.setContent { ProjectScreen(projects, chrome = chrome) }
-        compose.onNodeWithText("Open project").performClick()
+        compose.menu(chrome, DesktopCommand.OpenProject)
         compose.onNodeWithText("Select directory").performClick()
         compose.onNodeWithText("Project verified and opened.").assertExists()
         compose.runOnIdle { chrome.request(DesktopCommand.About) }

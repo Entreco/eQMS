@@ -51,10 +51,10 @@ class ToolShortcutHandlerTest {
             handler.handle(Key.One, KeyEventType.KeyUp, false, false, false, false, true, observed::add)
             down(true)
             repeat(3) { down(true) }
-            assertEquals(listOf(WorkspaceTool.Project), observed)
+            assertEquals(listOf(WorkspaceTool.Documents), observed)
             handler.reset()
             down(true)
-            assertEquals(listOf(WorkspaceTool.Project, WorkspaceTool.Project), observed)
+            assertEquals(listOf(WorkspaceTool.Documents, WorkspaceTool.Documents), observed)
         }
     }
 }

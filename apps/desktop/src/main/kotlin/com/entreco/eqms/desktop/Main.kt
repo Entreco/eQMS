@@ -156,6 +156,9 @@ fun main() {
     val chrome = DesktopChrome(
         version, preferences.readDark(), preferences::saveDark, updates::check, updates::open,
         aboutLogo = { DesktopLogo() },
+        initialProject = preferences.readProject(),
+        initialRecents = preferences.readRecents(),
+        saveProjects = preferences::saveProjects,
     )
     launchDesktop(chrome)
 }

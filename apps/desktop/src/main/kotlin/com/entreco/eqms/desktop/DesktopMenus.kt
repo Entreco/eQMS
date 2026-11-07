@@ -29,6 +29,10 @@ internal fun FrameWindowScope.DesktopMenus(chrome: DesktopChrome, onQuit: () -> 
         }
         Menu("File") {
             Item("New project", enabled = chrome.enabled, onClick = { chrome.request(DesktopCommand.NewProject) })
+            Item("Open project", enabled = chrome.enabled, onClick = { chrome.request(DesktopCommand.OpenProject) })
+            Menu("Open recent", enabled = chrome.enabled && chrome.recents.isNotEmpty()) {
+                chrome.recents.forEach { path -> Item(path, onClick = { chrome.requestRecent(path) }) }
+            }
             Item("Close project", enabled = chrome.enabled && chrome.hasProject, onClick = { chrome.request(DesktopCommand.CloseProject) })
         }
         Menu("Edit") {}

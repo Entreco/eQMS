@@ -3,6 +3,7 @@ package com.entreco.eqms.feature.scaffold
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlinx.coroutines.CompletableDeferred
 import org.junit.Rule
@@ -41,8 +42,9 @@ class ProjectScreenTest {
     @Test
     fun createFolderNavigatesAndInitializesOnlyAfterSelection() {
         val capabilities = Capabilities()
-        compose.setContent { ProjectScreen(capabilities) }
-        compose.onNodeWithText("Create project").performClick()
+        val chrome = testChrome()
+        compose.setContent { ProjectScreen(capabilities, chrome = chrome) }
+        compose.menu(chrome, DesktopCommand.NewProject)
         compose.onNodeWithText("New folder").performClick()
         compose.onNodeWithContentDescription("Folder name").performTextInput("project with spaces")
         compose.onNodeWithText("Create folder").performClick()
@@ -61,8 +63,9 @@ class ProjectScreenTest {
     @Test
     fun openHasNoFolderCreationAndUsesVerification() {
         val capabilities = Capabilities()
-        compose.setContent { ProjectScreen(capabilities) }
-        compose.onNodeWithText("Open project").performClick()
+        val chrome = testChrome()
+        compose.setContent { ProjectScreen(capabilities, chrome = chrome) }
+        compose.menu(chrome, DesktopCommand.OpenProject)
         compose.onNodeWithText("New folder").assertDoesNotExist()
         compose.onNodeWithText("Select directory").performClick()
         compose.onNodeWithText("Project verified and opened.").assertExists()
@@ -72,8 +75,9 @@ class ProjectScreenTest {
     @Test
     fun failedNavigationCannotSelectPreviousDirectory() {
         val capabilities = Capabilities()
-        compose.setContent { ProjectScreen(capabilities) }
-        compose.onNodeWithText("Open project").performClick()
+        val chrome = testChrome()
+        compose.setContent { ProjectScreen(capabilities, chrome = chrome) }
+        compose.menu(chrome, DesktopCommand.OpenProject)
         compose.onNodeWithContentDescription("Directory path").performTextReplacement("/missing")
         compose.onNodeWithText("Select directory").assertIsNotEnabled()
         compose.onNodeWithText("Go").performClick()
@@ -86,8 +90,9 @@ class ProjectScreenTest {
     @Test
     fun folderFailureIsVisibleAndCancellationDoesNotInitialize() {
         val capabilities = Capabilities()
-        compose.setContent { ProjectScreen(capabilities) }
-        compose.onNodeWithText("Create project").performClick()
+        val chrome = testChrome()
+        compose.setContent { ProjectScreen(capabilities, chrome = chrome) }
+        compose.menu(chrome, DesktopCommand.NewProject)
         compose.onNodeWithText("New folder").performClick()
         compose.onNodeWithContentDescription("Folder name").performTextInput("existing")
         compose.onNodeWithText("Create folder").performClick()
@@ -103,8 +108,9 @@ class ProjectScreenTest {
     @Test
     fun cancellingAfterCreatingFolderDoesNotInitialize() {
         val capabilities = Capabilities()
-        compose.setContent { ProjectScreen(capabilities) }
-        compose.onNodeWithText("Create project").performClick()
+        val chrome = testChrome()
+        compose.setContent { ProjectScreen(capabilities, chrome = chrome) }
+        compose.menu(chrome, DesktopCommand.NewProject)
         compose.onNodeWithText("New folder").performClick()
         compose.onNodeWithContentDescription("Folder name").performTextInput("kept folder")
         compose.onNodeWithText("Create folder").performClick()
@@ -121,16 +127,19 @@ class ProjectScreenTest {
         val capabilities = Capabilities()
         val result = CompletableDeferred<Result<String>>()
         capabilities.workspaceResult = result
-        compose.setContent { ProjectScreen(capabilities) }
-        compose.onNodeWithText("Open project").performClick()
+        val chrome = testChrome()
+        compose.setContent { ProjectScreen(capabilities, chrome = chrome) }
+        compose.menu(chrome, DesktopCommand.OpenProject)
         compose.onNodeWithText("Select directory").performClick()
         compose.onNodeWithText("Working...").assertExists()
-        compose.onNodeWithText("Create project").assertIsNotEnabled()
-        compose.onNodeWithText("Open project").assertIsNotEnabled()
+        compose.runOnIdle {
+            assertFalse(chrome.enabled)
+            chrome.request(DesktopCommand.OpenProject)
+        }
+        compose.onNodeWithText("Select directory").assertDoesNotExist()
         compose.runOnIdle { result.complete(Result.failure(IllegalArgumentException("Invalid workspace"))) }
         compose.onNodeWithText("Invalid workspace").assertExists()
         compose.onNodeWithText("Project verified and opened.").assertDoesNotExist()
-        compose.onNodeWithText("Open project").assertIsEnabled()
-        compose.runOnIdle { assertEquals(1, capabilities.operations.size) }
+        compose.runOnIdle { assertTrue(chrome.enabled); assertEquals(1, capabilities.operations.size) }
     }
 }

@@ -59,8 +59,8 @@ class DesktopWindowTest {
             }
         }
         compose.onAllNodesWithText("DutchDoxx").assertCountEquals(1)
-        compose.onAllNodesWithText("Open project").assertCountEquals(1)
-        compose.onAllNodesWithText("Create project").assertCountEquals(1)
+        compose.onAllNodesWithText("Open project").assertCountEquals(0)
+        compose.onAllNodesWithText("Create project").assertCountEquals(0)
         compose.onNodeWithText("Dark theme").assertIsDisplayed()
         val original = checkNotNull(frame)
         val lightColor = headerColor
@@ -70,7 +70,8 @@ class DesktopWindowTest {
             assertNotNull(original.menuBar)
             assertEquals("DutchDoxx", original.title)
         }
-        click("Open project")
+        compose.runOnIdle { chrome.request(DesktopCommand.OpenProject) }
+        waitForText("Select directory")
         click("Select directory")
         waitForText("Project verified and opened.")
         compose.onNodeWithText("Project verified and opened.").assertExists()

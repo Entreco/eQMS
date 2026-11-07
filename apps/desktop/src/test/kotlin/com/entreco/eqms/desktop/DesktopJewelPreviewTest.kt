@@ -8,6 +8,7 @@ import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import com.entreco.eqms.feature.scaffold.ProjectScreen
 import com.entreco.eqms.feature.scaffold.DesktopChrome
+import com.entreco.eqms.feature.scaffold.DesktopCommand
 import java.awt.Robot
 import java.awt.event.KeyEvent
 import java.awt.event.MouseEvent
@@ -104,7 +105,7 @@ class DesktopJewelPreviewTest {
                     headerActionsModifier = workspaceActionsModifier())
             }
         }
-        compose.onNodeWithText("Open project").activate()
+        compose.runOnIdle { chrome.request(DesktopCommand.OpenProject) }
         compose.waitUntil(10_000) {
             compose.onAllNodes(hasContentDescription("Directory path") and isEnabled()).fetchSemanticsNodes().size == 1
         }
@@ -180,7 +181,7 @@ class DesktopJewelPreviewTest {
             check(ImageIO.write(robot.createScreenCapture(java.awt.Rectangle(host.locationOnScreen, host.size)),
                 "png", File(output, name)))
         }
-        fun captureTooltip(name: String, tool: String = "Project", number: Int = 1) {
+        fun captureTooltip(name: String, tool: String = "Documents", number: Int = 1) {
             compose.mainClock.autoAdvance = false
             val bounds = compose.onNodeWithContentDescription("Toggle $tool panel").fetchSemanticsNode().boundsInRoot
             val shortcut = if (isMacOS) "\u2318$number" else "Alt+$number"
@@ -251,7 +252,7 @@ class DesktopJewelPreviewTest {
             compose.onNodeWithText("Save").assertIsNotEnabled()
             capture(captureName)
         }
-        compose.onNodeWithContentDescription("Hide Project panel").activate()
+        compose.onNodeWithContentDescription("Hide Documents panel").activate()
         compose.onNodeWithContentDescription("Hide Review panel").activate()
         capture("jewel-collapsed.png")
         compose.onNodeWithContentDescription("Document tab Risk management plan (sample)").activate()

@@ -26,6 +26,31 @@ internal class DesktopPreferences(
         }
     }
 
+    fun readProject(): Result<String?> = access { node().get("project", null)?.also(::requireStoredPath) }
+
+    fun readRecents(): Result<List<String>> = access {
+        (0 until MAX_RECENT).mapNotNull { node().get("recent$it", null)?.also(::requireStoredPath) }.distinct()
+    }
+
+    suspend fun saveProjects(project: String?, recents: List<String>): Result<Unit> = withContext(Dispatchers.IO) {
+        access {
+            val bounded = recents.distinct().take(MAX_RECENT)
+            (listOfNotNull(project) + bounded).forEach(::requireStoredPath)
+            node().apply {
+                if (project == null) remove("project") else put("project", project)
+                for (index in 0 until MAX_RECENT) {
+                    bounded.getOrNull(index)?.let { put("recent$index", it) } ?: remove("recent$index")
+                }
+                flush()
+            }
+            Unit
+        }
+    }
+
+    private fun requireStoredPath(path: String) {
+        require(path.isNotBlank() && path.length <= Preferences.MAX_VALUE_LENGTH) { "Invalid stored project path." }
+    }
+
     private fun <T> access(action: () -> T): Result<T> = try {
         Result.success(action())
     } catch (error: BackingStoreException) {
@@ -34,5 +59,9 @@ internal class DesktopPreferences(
         Result.failure(error)
     } catch (error: IllegalArgumentException) {
         Result.failure(error)
+    }
+
+    private companion object {
+        const val MAX_RECENT = 5
     }
 }
