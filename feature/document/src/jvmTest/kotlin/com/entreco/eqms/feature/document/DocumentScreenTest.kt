@@ -279,6 +279,7 @@ class DocumentScreenTest {
         var fail = false
         var diffFails = false
         var saves = 0
+        val savedPages = mutableListOf<DocumentPageSetup?>()
         var prepares = 0
         val queries = mutableListOf<String>()
         var searchResult = SearchResults("snapshot", false, SearchPage(emptyList(), null), SearchPage(emptyList(), null), SearchPage(emptyList(), null))
@@ -291,18 +292,19 @@ class DocumentScreenTest {
             lists++
             return listPending?.await() ?: Result.success(listOf(saved))
         }
-        override suspend fun createDocument(project: String, title: String, body: String): Result<DocumentSnapshot> {
+        override suspend fun createDocument(project: String, title: String, body: String, page: DocumentPageSetup?): Result<DocumentSnapshot> {
             saves++
             pending?.let { return it.await() }
             if (fail) return Result.failure(IllegalArgumentException("Conflict: edits not saved"))
-            return Result.success(first.copy(id = "DOC-new-$saves", title = title, body = body, revision = "created"))
+            return Result.success(first.copy(id = "DOC-new-$saves", title = title, body = body, revision = "created", page = page ?: first.page))
         }
-        override suspend fun saveDocument(project: String, id: String, expected: String, title: String, body: String): Result<DocumentSnapshot> {
+        override suspend fun saveDocument(project: String, id: String, expected: String, title: String, body: String, page: DocumentPageSetup?): Result<DocumentSnapshot> {
             saves++
             pending?.let { return it.await() }
             if (fail) return Result.failure(IllegalArgumentException("Conflict: edits not saved"))
             if (expected != saved.revision) return Result.failure(IllegalArgumentException("Conflict: draft changed"))
-            saved = first.copy(title = title, body = body, revision = "second")
+            savedPages += page
+            saved = first.copy(title = title, body = body, revision = "second", page = page ?: saved.page)
             return Result.success(saved)
         }
         override suspend fun documentHistory(project: String, id: String) = Result.success(listOf(saved, first))
@@ -875,5 +877,50 @@ class DocumentScreenTest {
         }
         compose.onNodeWithText("Save all").performClick()
         compose.runOnIdle { assertTrue(closed); assertEquals(3, capabilities.saves) }
+    }
+
+    private fun metadataScreen(dark: Boolean, capabilities: Capabilities) {
+        compose.setContent {
+            IntUiTheme(isDark = dark) {
+                Box(Modifier.requiredSize(720.dp, 640.dp)) {
+                    DocumentScreen("/project", capabilities, { _, _ -> })
+                }
+            }
+        }
+        compose.onNodeWithText("Policy (${capabilities.saved.status.label})").performClick()
+        compose.onNodeWithContentDescription("Toggle Metadata panel").performClick()
+    }
+
+    @Test
+    fun metadataPanelEditsTheBufferValidatesInlineAndPersistsOnlyOnSave() {
+        for (dark in listOf(true, false)) {
+            val capabilities = Capabilities()
+            metadataScreen(dark, capabilities)
+            compose.onNodeWithText("ID: DOC-1").assertExists()
+            compose.onNodeWithText("Revision: first").assertExists()
+            compose.onNodeWithText("Status: Draft").assertExists()
+            compose.onNodeWithText("Page setup").assertDoesNotExist()
+            compose.onNodeWithText("Top margin (mm)").assertExists()
+            compose.onNodeWithContentDescription("Top margin (mm)").performTextReplacement("99")
+            compose.onNodeWithText("Cannot save", substring = true).assertExists()
+            compose.onNodeWithText("Save").assertIsNotEnabled()
+            compose.onNodeWithContentDescription("Top margin (mm)").performTextReplacement("10.5")
+            compose.onNodeWithText("Cannot save", substring = true).assertDoesNotExist()
+            compose.onNodeWithText("Draft - unsaved changes").assertExists()
+            compose.runOnIdle { assertEquals(0, capabilities.saves) }
+            compose.onNodeWithText("Save").performClick()
+            compose.waitUntil(3000) { capabilities.savedPages.isNotEmpty() }
+            compose.runOnIdle { assertEquals(10.5, capabilities.savedPages.single()!!.marginTopMm) }
+            compose.onNodeWithText("Draft saved.").assertExists()
+            compose.onNodeWithText("Draft - unsaved changes").assertDoesNotExist()
+        }
+    }
+
+    @Test
+    fun metadataPanelIsReadOnlyForNonDraftRecords() {
+        val capabilities = Capabilities().apply { saved = first.copy(status = DocumentStatus.Approved) }
+        metadataScreen(false, capabilities)
+        compose.onNodeWithText("Read-only: metadata", substring = true).assertExists()
+        compose.onNodeWithText("Status: Approved").assertExists()
     }
 }

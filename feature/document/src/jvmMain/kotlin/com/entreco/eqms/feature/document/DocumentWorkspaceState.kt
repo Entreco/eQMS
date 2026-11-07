@@ -24,7 +24,12 @@ internal class DocumentTab(
     var body: String
         get() = bodyField.value.text
         set(value) { bodyField.value = TextFieldValue(value) }
-    val dirty get() = !historical && (title != snapshot?.title.orEmpty() || body != snapshot?.body.orEmpty())
+    var metadataError by mutableStateOf<String?>(null)
+    var page by mutableStateOf(snapshot?.page ?: DocumentPageSetup())
+    val dirty get() = !historical && (
+        title != snapshot?.title.orEmpty() || body != snapshot?.body.orEmpty() ||
+            page != (snapshot?.page ?: DocumentPageSetup())
+        )
     val editable get() = !historical && (snapshot == null || snapshot?.status == DocumentStatus.Draft)
     val scroll = ScrollState(0)
     var viewMode by mutableStateOf(DocumentViewMode.Source)
@@ -122,14 +127,6 @@ internal class DocumentWorkspaceState(
     var busy by mutableStateOf(false)
         private set
     var error by mutableStateOf<String?>(null)
-    var pageSetup by mutableStateOf(DocumentPageSetup())
-        private set
-    var pageSetupLoading by mutableStateOf(true)
-        private set
-    var pageSetupSaving by mutableStateOf(false)
-        private set
-    var pageSetupError by mutableStateOf<String?>(null)
-        private set
     var pendingClose by mutableStateOf<List<DocumentTab>?>(null)
         private set
     private var afterClose: (() -> Unit)? = null
@@ -182,7 +179,6 @@ internal class DocumentWorkspaceState(
 
     suspend fun refresh() {
         if (busy || disposed) return
-        loadPageSetup()
         documentsLoading = true
         documentsError = null
         val request = ++refreshGeneration
@@ -214,37 +210,6 @@ internal class DocumentWorkspaceState(
         if (!disposed) search.refresh()
     }
 
-    suspend fun loadPageSetup() {
-        if (disposed) return
-        pageSetupLoading = true
-        pageSetupError = null
-        capabilities.loadPageSetup(project).fold(
-            onSuccess = { setup -> if (!disposed) pageSetup = setup.validate() },
-            onFailure = {
-                if (!disposed) {
-                    pageSetupError = it.message ?: "Could not load page setup."
-                    pageSetup = DocumentPageSetup()
-                }
-            },
-        )
-        pageSetupLoading = false
-    }
-
-    suspend fun savePageSetup(setup: DocumentPageSetup) {
-        if (disposed || pageSetupSaving) return
-        pageSetupSaving = true
-        pageSetupError = null
-        capabilities.savePageSetup(project, setup).fold(
-            onSuccess = { saved -> if (!disposed) pageSetup = saved.validate() },
-            onFailure = { if (!disposed) pageSetupError = it.message ?: "Could not save page setup." },
-        )
-        pageSetupSaving = false
-    }
-
-    fun reportPageSetupError(message: String) {
-        pageSetupError = message
-    }
-
     suspend fun save(tab: DocumentTab): Boolean {
         if (busy || disposed || tab !in tabs) return false
         if (!tab.editable || tab.title.isBlank()) {
@@ -252,12 +217,18 @@ internal class DocumentWorkspaceState(
             activeKey = tab.key
             return false
         }
+        val invalid = tab.metadataError ?: runCatching { tab.page.validate() }.exceptionOrNull()?.message
+        if (invalid != null) {
+            tab.error = "Metadata is invalid: $invalid"
+            activeKey = tab.key
+            return false
+        }
         var saved = false
         operation {
             tab.error = null
             val before = tab.snapshot
-            val result = if (before == null) capabilities.createDocument(project, tab.title, tab.body)
-                else capabilities.saveDocument(project, before.id, before.revision, tab.title, tab.body)
+            val result = if (before == null) capabilities.createDocument(project, tab.title, tab.body, tab.page)
+                else capabilities.saveDocument(project, before.id, before.revision, tab.title, tab.body, tab.page)
             if (!disposed && tab in tabs) result.fold(
                 onSuccess = {
                     applySnapshot(tab, it)
@@ -398,6 +369,7 @@ internal class DocumentWorkspaceState(
         tab.message = null
         if (tab.title != document.title) tab.title = document.title
         if (tab.body != document.body) tab.body = document.body
+        tab.page = document.page
         tab.history = emptyList()
         tab.events = emptyList()
         tab.historyGeneration++

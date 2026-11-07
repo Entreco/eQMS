@@ -31,13 +31,10 @@ data class DocumentSnapshot(
     val configuredAuthor: String,
     val localTimestamp: String,
     val status: DocumentStatus = DocumentStatus.Draft,
+    val page: DocumentPageSetup = DocumentPageSetup(),
 )
 
 interface DocumentCapabilities : SearchCapabilities {
-    suspend fun loadPageSetup(project: String): Result<DocumentPageSetup> =
-        Result.success(DocumentPageSetup())
-    suspend fun savePageSetup(project: String, setup: DocumentPageSetup): Result<DocumentPageSetup> =
-        Result.success(setup.validate())
     suspend fun renderBuffer(project: String, title: String, body: String): Result<RenderedDocument> =
         Result.failure(UnsupportedOperationException("Document rendering is not configured. Source remains available."))
     suspend fun renderSaved(project: String, document: DocumentSnapshot): Result<RenderedDocument> =
@@ -49,8 +46,12 @@ interface DocumentCapabilities : SearchCapabilities {
     suspend fun transitionDocument(project: String, document: DocumentSnapshot, target: DocumentStatus): Result<DocumentSnapshot>
     suspend fun documentLifecycleHistory(project: String, id: String): Result<List<DocumentLifecycleEvent>>
     suspend fun listDocuments(project: String): Result<List<DocumentSnapshot>>
-    suspend fun createDocument(project: String, title: String, body: String): Result<DocumentSnapshot>
-    suspend fun saveDocument(project: String, id: String, expected: String, title: String, body: String): Result<DocumentSnapshot>
+    suspend fun createDocument(
+        project: String, title: String, body: String, page: DocumentPageSetup? = null,
+    ): Result<DocumentSnapshot>
+    suspend fun saveDocument(
+        project: String, id: String, expected: String, title: String, body: String, page: DocumentPageSetup? = null,
+    ): Result<DocumentSnapshot>
     suspend fun documentHistory(project: String, id: String): Result<List<DocumentSnapshot>>
     suspend fun documentHistorySnapshot(project: String, id: String): Result<DocumentHistorySnapshot> {
         val revisions = documentHistory(project, id)

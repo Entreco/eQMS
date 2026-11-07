@@ -48,7 +48,9 @@ data class DocumentPageSetup(
 
     fun validate(): DocumentPageSetup {
         val margins = listOf(marginTopMm, marginRightMm, marginBottomMm, marginLeftMm)
-        require(margins.all { it in 5.0..50.0 }) { "Page margins must be between 5.0 mm and 50.0 mm." }
+        require(margins.all { it in 5.0..50.0 && kotlin.math.abs(it * 10 - kotlin.math.round(it * 10)) < 1e-6 }) {
+            "Page margins must be between 5.0 mm and 50.0 mm in 0.1 mm steps."
+        }
         require(marginLeftMm + marginRightMm <= pageWidthMm - 40.0) {
             "Horizontal margins leave no editable area."
         }
@@ -58,7 +60,23 @@ data class DocumentPageSetup(
         require(headerTemplate.length <= 120 && footerTemplate.length <= 120) {
             "Header and footer templates must be at most 120 characters."
         }
+        require(listOf(headerTemplate, footerTemplate).all(::validTemplate)) {
+            "Header and footer may only use {title}, {page} and {total}, without control characters."
+        }
         return this
+    }
+}
+
+private fun validTemplate(text: String): Boolean {
+    if (text.any { it.isISOControl() }) return false
+    var rest = text
+    while (true) {
+        val open = rest.indexOfAny(charArrayOf('{', '}'))
+        if (open < 0) return true
+        if (rest[open] == '}') return false
+        val close = rest.indexOf('}', open)
+        if (close < 0 || rest.substring(open, close + 1) !in setOf("{title}", "{page}", "{total}")) return false
+        rest = rest.substring(close + 1)
     }
 }
 

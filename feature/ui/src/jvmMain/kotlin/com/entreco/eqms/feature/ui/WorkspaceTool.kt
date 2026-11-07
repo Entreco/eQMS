@@ -31,7 +31,8 @@ enum class WorkspaceTool(val isLeft: Boolean, val number: Int, val key: Key, val
     Project(true, 1, Key.One, AllIconsKeys.Toolwindows.ToolWindowProject),
     Search(true, 2, Key.Two, AllIconsKeys.Toolwindows.ToolWindowFind),
     Review(false, 3, Key.Three, AllIconsKeys.Actions.Checked),
-    History(false, 4, Key.Four, AllIconsKeys.General.History);
+    History(false, 4, Key.Four, AllIconsKeys.General.History),
+    Metadata(false, 5, Key.Five, AllIconsKeys.General.Information);
 
     fun shortcut(isMac: Boolean): String = if (isMac) "\u2318$number" else "Alt+$number"
 }

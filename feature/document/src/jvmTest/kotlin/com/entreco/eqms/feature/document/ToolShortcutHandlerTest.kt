@@ -32,7 +32,7 @@ class ToolShortcutHandlerTest {
                         fail("Unexpected toggle for $mac $meta $alt $ctrl $shift")
                     })
                 }
-            assertFalse(handler.handle(Key.Five, KeyEventType.KeyDown, mac, !mac, false, false, true) {
+            assertFalse(handler.handle(Key.Six, KeyEventType.KeyDown, mac, !mac, false, false, true) {
                 fail("Unrelated key")
             })
         }
