@@ -28,7 +28,7 @@ import org.jetbrains.jewel.ui.icon.IconKey
 import org.jetbrains.jewel.ui.icons.AllIconsKeys
 
 enum class WorkspaceTool(val isLeft: Boolean, val number: Int, val key: Key, val icon: IconKey) {
-    Project(true, 1, Key.One, AllIconsKeys.Toolwindows.ToolWindowProject),
+    Documents(true, 1, Key.One, AllIconsKeys.Toolwindows.ToolWindowProject),
     Search(true, 2, Key.Two, AllIconsKeys.Toolwindows.ToolWindowFind),
     Review(false, 3, Key.Three, AllIconsKeys.Actions.Checked),
     History(false, 4, Key.Four, AllIconsKeys.General.History);

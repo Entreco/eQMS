@@ -182,11 +182,18 @@ The first desktop milestone supports creating a project with `qms init` and
 opening/verifying one with `qms verify`. The UI delegates workspace rules to the
 native CLI; see the [EQMS-090 design](../architecture/EQMS-090.md).
 
-In **Create project**, use **New folder** to create a named child of the
+Projects are managed only from the native **File** menu: **New project**,
+**Open project**, **Open recent** (last five), and **Close project**. In the
+creation chooser, use **New folder** to create a named child of the
 displayed directory; the new folder is selected for initialization. Invalid
 names, existing paths, and permission errors are shown without overwriting.
 Cancelling the chooser leaves any folder already created on disk but does not
 initialize a workspace. **Open project** selects an existing workspace.
+
+The open project's path is remembered (per user, in Java Preferences) and
+reopened and re-verified on the next launch until **Close project** is used. If
+it can no longer be opened, the app shows a message and the welcome screen and
+keeps the stored path. Only paths are stored, no project content.
 
 The Jewel project screen and directory dialogs live in `feature:scaffold/jvmMain`.
 Capability interfaces, DTOs, and reusable search state remain in `commonMain`,
@@ -252,7 +259,8 @@ decoration and in-content toolbar.
 On macOS the native
 application menu supplies OS-standard **About** and **Settings/Preferences**
 alongside standard system items. **File > New project** uses the existing
-creation chooser. **File > Close project** returns to welcome without quitting
+creation chooser; **File > Open project** and **Open recent** open existing
+workspaces. **File > Close project** returns to welcome without quitting
 or deleting files. Unsaved changes require confirmation; Cancel/Keep editing
 preserves edits. Quit/window close remains guarded. File/Help commands are
 disabled during conflicting operations or dialogs.

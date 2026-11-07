@@ -99,7 +99,7 @@ class DesktopDocumentRenderingTest {
         val coldOpenMillis = (System.nanoTime() - openStarted) / 1_000_000.0
         System.getenv("EQMS_JEWEL_PREVIEW_DIR")?.let { destination ->
             val directory = File(destination).apply { mkdirs(); check(isDirectory) }
-            compose.onNodeWithContentDescription("Toggle Project panel").performClick()
+            compose.onNodeWithContentDescription("Toggle Documents panel").performClick()
             compose.onNodeWithContentDescription("Toggle Review panel").performClick()
             fun capture(name: String) {
                 compose.waitForIdle()

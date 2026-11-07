@@ -36,7 +36,7 @@ fun ProjectScreen(
     closeRequested: Boolean = false,
     onCloseHandled: () -> Unit = {},
     onCloseConfirmed: () -> Unit = {},
-    chrome: DesktopChrome? = null,
+    chrome: DesktopChrome,
     headerActionsModifier: Modifier = Modifier,
     layout: ProjectScreenLayout? = null,
 ) {
@@ -64,10 +64,9 @@ fun ProjectScreen(
     var documentDirty by remember { mutableStateOf(false) }
     var documentBusy by remember { mutableStateOf(false) }
     val documentNavigation = remember { DocumentNavigationController() }
-    var localDark by remember { mutableStateOf(true) }
-    val dark = chrome?.dark ?: localDark
+    val dark = chrome.dark
     var appearanceError by remember {
-        mutableStateOf(chrome?.initialAppearance?.exceptionOrNull()?.let { "Could not load appearance: ${it.message}" })
+        mutableStateOf(chrome.initialAppearance.exceptionOrNull()?.let { "Could not load appearance: ${it.message}" })
     }
     var savingAppearance by remember { mutableStateOf(false) }
     var chromeDialog by remember { mutableStateOf<DesktopCommand?>(null) }
@@ -78,19 +77,15 @@ fun ProjectScreen(
 
     fun changeAppearance(value: Boolean) {
         if (savingAppearance) return
-        if (chrome == null) {
-            localDark = value
-        } else {
-            savingAppearance = true
-            scope.launch {
-                try {
-                    chrome.saveAppearance(value).fold(
-                        onSuccess = { chrome.dark = value; appearanceError = null },
-                        onFailure = { appearanceError = "Could not save appearance: ${it.message}" },
-                    )
-                } finally {
-                    savingAppearance = false
-                }
+        savingAppearance = true
+        scope.launch {
+            try {
+                chrome.saveAppearance(value).fold(
+                    onSuccess = { chrome.dark = value; appearanceError = null },
+                    onFailure = { appearanceError = "Could not save appearance: ${it.message}" },
+                )
+            } finally {
+                savingAppearance = false
             }
         }
     }
@@ -99,13 +94,71 @@ fun ProjectScreen(
         documentNavigation.request(action)
     }
 
-    SideEffect {
-        chrome?.enabled = interactive
-        chrome?.hasProject = project != null
+    fun persistProjects(current: String?, recents: List<String>) {
+        scope.launch {
+            chrome.saveProjects(current, recents).onFailure {
+                error = true
+                message = "Could not save project preference: ${it.message ?: "storage failure"}"
+            }
+        }
     }
 
-    LaunchedEffect(chrome?.command) {
-        val command = chrome?.consume()
+    fun openProject(path: String, create: Boolean, restoring: Boolean = false) {
+        busy = true
+        message = null
+        scope.launch {
+            try {
+                capabilities.openProject(path, create).fold(
+                    onSuccess = { opened ->
+                        navigate {
+                            project = opened
+                            projectGeneration++
+                            error = false
+                            message = when {
+                                create -> "Project created successfully."
+                                restoring -> "Project restored and verified."
+                                else -> "Project verified and opened."
+                            }
+                            val recents = (listOf(opened) + chrome.recents).distinct().take(MAX_RECENT_PROJECTS)
+                            chrome.recents = recents
+                            persistProjects(opened, recents)
+                        }
+                    },
+                    onFailure = {
+                        error = true
+                        val reason = it.message ?: "Workspace operation failed."
+                        message = if (restoring) "Could not reopen the last project: $reason" else reason
+                    },
+                )
+            } finally {
+                busy = false
+            }
+        }
+    }
+
+    SideEffect {
+        chrome.enabled = interactive
+        chrome.hasProject = project != null
+    }
+
+    LaunchedEffect(Unit) {
+        chrome.initialProject.fold(
+            onSuccess = { stored -> if (stored != null) openProject(stored, create = false, restoring = true) },
+            onFailure = {
+                error = true
+                message = "Could not load the last project: ${it.message ?: "invalid stored value"}"
+            },
+        )
+        chrome.initialRecents.exceptionOrNull()?.let {
+            if (message == null) {
+                error = true
+                message = "Could not load recent projects: ${it.message ?: "invalid stored value"}"
+            }
+        }
+    }
+
+    LaunchedEffect(chrome.command) {
+        val command = chrome.consume()
         if (command != null && interactive) {
             when (command) {
                 DesktopCommand.About -> {
@@ -113,6 +166,8 @@ fun ProjectScreen(
                     aboutRequest++
                 }
                 DesktopCommand.NewProject -> { creating = true }
+                DesktopCommand.OpenProject -> { creating = false }
+                DesktopCommand.OpenRecent -> chrome.recentPath?.let { openProject(it, create = false) }
                 DesktopCommand.CloseProject -> if (project != null) navigate {
                     project = null
                     projectGeneration++
@@ -120,6 +175,7 @@ fun ProjectScreen(
                     documentBusy = false
                     error = false
                     message = null
+                    persistProjects(null, chrome.recents)
                 }
                 else -> chromeDialog = command
             }
@@ -134,7 +190,7 @@ fun ProjectScreen(
     }
 
     IntUiTheme(isDark = dark) {
-        if (aboutVisible && chrome != null) {
+        if (aboutVisible) {
             AboutWindow(chrome, dark, aboutRequest, onClose = { aboutVisible = false })
         }
         screenLayout(
@@ -155,8 +211,6 @@ fun ProjectScreen(
             },
             {
                 Row(headerActionsModifier, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    OutlinedButton(enabled = interactive, onClick = { creating = true }) { Text("Create project") }
-                    OutlinedButton(enabled = interactive, onClick = { creating = false }) { Text("Open project") }
                     OutlinedButton(enabled = interactive, onClick = { changeAppearance(!dark) }) { Text(if (dark) "Light theme" else "Dark theme") }
                 }
             },
@@ -177,28 +231,17 @@ fun ProjectScreen(
                                     )
                                 }
                             } else {
-                                Row(Modifier.fillMaxSize()) {
-                                    Column(
-                                        Modifier.width(240.dp).fillMaxHeight()
-                                            .border(1.dp, JewelTheme.globalColors.borders.normal).padding(16.dp),
-                                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                                    ) {
-                                        Text("Project", fontWeight = FontWeight.SemiBold)
-                                        Text(if (path == null) "No project open" else path, color = JewelTheme.globalColors.text.info)
-                                        Text("Documents appear here after opening a workspace.", color = JewelTheme.globalColors.text.info)
-                                    }
-                                    Column(
-                                        Modifier.weight(1f).fillMaxHeight().padding(48.dp),
-                                        verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
-                                    ) {
-                                        Text("Your quality workspace", fontSize = 26.sp, fontWeight = FontWeight.SemiBold)
-                                        Text("Create a project or open an existing verified workspace.")
-                                        Text(
-                                            "Write Markdown drafts, search saved documents, and inspect working history.",
-                                            color = JewelTheme.globalColors.text.info,
-                                        )
-                                        Text("Drafts are not approvals.", color = JewelTheme.globalColors.text.info)
-                                    }
+                                Column(
+                                    Modifier.fillMaxSize().padding(48.dp),
+                                    verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
+                                ) {
+                                    Text("Your quality workspace", fontSize = 26.sp, fontWeight = FontWeight.SemiBold)
+                                    Text("Use File > New project or File > Open project to get started.")
+                                    Text(
+                                        "Write Markdown drafts, search saved documents, and inspect working history.",
+                                        color = JewelTheme.globalColors.text.info,
+                                    )
+                                    Text("Drafts are not approvals.", color = JewelTheme.globalColors.text.info)
                                 }
                             }
                         }
@@ -208,7 +251,7 @@ fun ProjectScreen(
                         }
                         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                             Text(
-                                if (busy) "Working..." else message ?: if (project == null) "No project open" else "Workspace open",
+                                if (busy) "Working..." else message ?: "",
                                 Modifier.weight(1f),
                                 color = if (error) JewelTheme.globalColors.text.error else JewelTheme.globalColors.text.normal,
                             )
@@ -218,14 +261,12 @@ fun ProjectScreen(
                             )
                         }
                         chromeDialog?.let { command ->
-                            chrome?.let {
-                                key(command) {
-                                    ChromeDialog(
-                                        command, it, dark, savingAppearance, appearanceError,
-                                        onAppearance = ::changeAppearance,
-                                        onDismiss = { chromeDialog = null },
-                                    )
-                                }
+                            key(command) {
+                                ChromeDialog(
+                                    command, chrome, dark, savingAppearance, appearanceError,
+                                    onAppearance = ::changeAppearance,
+                                    onDismiss = { chromeDialog = null },
+                                )
                             }
                         }
                     }
@@ -240,28 +281,7 @@ fun ProjectScreen(
                             },
                             onSelect = { path ->
                                 creating = null
-                                busy = true
-                                message = null
-                                scope.launch {
-                                    try {
-                                        capabilities.openProject(path, create).fold(
-                                            onSuccess = {
-                                                navigate {
-                                                    project = it
-                                                    projectGeneration++
-                                                    error = false
-                                                    message = if (create) "Project created successfully." else "Project verified and opened."
-                                                }
-                                            },
-                                            onFailure = {
-                                                error = true
-                                                message = it.message ?: "Workspace operation failed."
-                                            },
-                                        )
-                                    } finally {
-                                        busy = false
-                                    }
-                                }
+                                openProject(path, create)
                             },
                         )
                     }
