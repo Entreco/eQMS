@@ -18,7 +18,7 @@ remains a scaffold. See [PLANNING.md](PLANNING.md) for the roadmap,
 
 Document authoring adds **New document**, a plain Markdown editor, explicit
 **Save**, and read-only history/comparison in desktop. Native
-`qms document create/list/show/save/history/history-snapshot/diff` owns
+`qms document create/import/list/show/save/history/history-snapshot/diff` owns
 persistence. Each document's Draft history lives on an isolated Git ref;
 saving does not publish or change the controlled baseline. Review, signatures,
 publication, and reference validation remain follow-up work. See the
