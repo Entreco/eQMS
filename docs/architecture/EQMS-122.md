@@ -1,10 +1,10 @@
 ---
 title: Desktop display of CLI usage errors
 status: draft
-related: [EQMS-090, EQMS-101, EQMS-107]
+related: [EQMS-090, EQMS-101, EQMS-122]
 ---
 
-# EQMS-107: Desktop display of CLI usage errors
+# EQMS-122: Desktop display of CLI usage errors
 
 ## Problem
 

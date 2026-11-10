@@ -26,10 +26,14 @@ This folder is reserved for architecture notes, module decisions, and other proj
 - [Markdown editing and paginated preview requirements](requirements/EQMS-104.md)
 - [Markdown editing and paginated preview test specification](testing/EQMS-104.md)
 - [Markdown editing and paginated preview automated evidence](testing/evidence/EQMS-104.md)
-- [Desktop usage-error display design and risk assessment](architecture/EQMS-107.md)
-- [Desktop usage-error display requirements](requirements/EQMS-107.md)
-- [Desktop usage-error display test specification](testing/EQMS-107.md)
-- [Desktop usage-error display automated evidence](testing/evidence/EQMS-107.md)
+- [Desktop usage-error display design and risk assessment](architecture/EQMS-122.md)
+- [Desktop usage-error display requirements](requirements/EQMS-122.md)
+- [Desktop usage-error display test specification](testing/EQMS-122.md)
+- [Desktop usage-error display automated evidence](testing/evidence/EQMS-122.md)
+- [Role model and approval matrix design and risk assessment](architecture/EQMS-013.md)
+- [Role model and approval matrix requirements](requirements/EQMS-013.md)
+- [Role model and approval matrix test specification](testing/EQMS-013.md)
+- [Role model and approval matrix automated evidence](testing/evidence/EQMS-013.md)
 
 Issue delivery follows the [contributor workflow](../AGENTS.md). Feature records
 remain drafts pending manual review and testing.

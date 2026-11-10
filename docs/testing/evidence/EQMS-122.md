@@ -1,4 +1,4 @@
-# EQMS-107 automated test evidence
+# EQMS-122 automated test evidence
 
 ## Tested revision and environment
 
@@ -12,7 +12,7 @@
 
 | Command | Outcome |
 |---|---|
-| `./gradlew :apps:desktop:test --tests '*WorkspaceCliTest' --tests '*DesktopDocumentCapabilitiesTest'` | Passed, including the two new TEST-107-001/002 tests. |
+| `./gradlew :apps:desktop:test --tests '*WorkspaceCliTest' --tests '*DesktopDocumentCapabilitiesTest'` | Passed, including the two new TEST-122-001/002 tests. |
 | `./gradlew :apps:desktop:test` | 58 tests, 3 skipped, 1 failed: `DesktopWindowNativeTest.nativeMouseClickReachesTheUnifiedTitleBarAction`. |
 
 The failing native-window test also fails on unmodified `main` in this
