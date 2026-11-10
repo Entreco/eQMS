@@ -40,3 +40,8 @@ dogfood check uses an ephemeral workspace and self-declared genesis checkpoint:
 it does not provide a persistent audit trail, authenticated identity, trusted
 time, reviewer approval or compliance assurance. Windows/Linux runtimes and
 performance were not tested (the script takes roughly 35 s locally).
+
+## Re-verification after merging main (EQMS-013)
+
+- Source revision: `c1475acdd27b299dbf2d4426796fa18c804b3e7a` (merge of `origin/main` 72606a7 into the branch; the only conflict was the `docs/README.md` index, resolved by keeping both lists).
+- Same environment and commands as above: fmt, clippy (warnings denied), `cargo test --workspace --locked` (128 tests passed, 0 failed), release build and `scripts/dogfood-check.sh` all passed. The script now imports 68 documents (EQMS-013 records included) with `checkpoint_ancestry` verified.
