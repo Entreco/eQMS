@@ -80,6 +80,19 @@ platform/font changes can change the page count. Tables flow by rows; oversized
 indivisible blocks have a visible scrollable overflow diagnostic. Tables are
 edited as Markdown, not rich cells.
 
+Project branding (EQMS-107, CLI only; no UI yet):
+
+```sh
+qms init <project> --name "Acme Medical" --accent auto
+qms project branding show <project> [--json]
+qms project branding set <project> [--name N] [--accent '#RRGGBB'|auto] \
+  [--seed TEXT | --logo-file logo.png]
+```
+
+Without recorded branding, `show` derives defaults from the directory name
+(`persisted:false`). Contrast warnings are advisory. See the
+[EQMS-107 design](../architecture/EQMS-107.md).
+
 For an explicit page boundary, put `<!-- pagebreak -->` alone on a top-level
 line, separated from surrounding paragraphs by blank lines, or use **Insert
 page break** in Markdown/Markdown + Preview. Insertion preserves selected text

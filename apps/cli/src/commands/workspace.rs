@@ -3,9 +3,11 @@ use std::path::Path;
 
 pub(crate) fn commands() -> [Command; 4] {
     [
-        Command::new("init")
-            .about("Initialize a Git-backed eQMS workspace")
-            .arg(Arg::new("path").required(true)),
+        super::project::branding_options(
+            Command::new("init")
+                .about("Initialize a Git-backed eQMS workspace (branding options record project identity)")
+                .arg(Arg::new("path").required(true)),
+        ),
         Command::new("index")
             .about("Manage the rebuildable SQLite query index")
             .subcommand_required(true)
@@ -34,12 +36,31 @@ pub(crate) fn run(operation: &str, matches: &ArgMatches, json: bool) -> Result<S
     let path = Path::new(args.get_one::<String>("path").expect("required path"));
     match operation {
         "init" => eqms_core::workspace::Workspace::initialize(path)
-            .map(|workspace| {
+            .map_err(|error| error.to_string())
+            .and_then(|workspace| {
+                let branded = ["name", "accent", "seed", "logo-file"]
+                    .iter()
+                    .any(|option| args.contains_id(option));
+                let branding = if branded {
+                    let store = eqms_core::branding::BrandingStore::new(&workspace);
+                    let base = store.show().map_err(|error| error.to_string())?.branding;
+                    let (next, png) = super::project::apply_options(base, args)?;
+                    store
+                        .set(&next, png.as_deref())
+                        .map_err(|error| error.to_string())?;
+                    Some(next.name)
+                } else {
+                    None
+                };
+                Ok((workspace, branding))
+            })
+            .map(|(workspace, branding)| {
                 let resources = eqms_core::workspace::INITIALIZED_RESOURCES;
                 if json {
                     serde_json::json!({
                         "path": workspace.path().display().to_string(),
-                        "created_resources": resources
+                        "created_resources": resources,
+                        "branding_name": branding
                     })
                     .to_string()
                 } else {
@@ -47,10 +68,11 @@ pub(crate) fn run(operation: &str, matches: &ArgMatches, json: bool) -> Result<S
                         "Initialized eQMS workspace at {}\nCreated resources: {}",
                         workspace.path().display(),
                         resources.join(", ")
-                    )
+                    ) + &branding
+                        .map(|name| format!("\nProject branding recorded for {name}"))
+                        .unwrap_or_default()
                 }
-            })
-            .map_err(|error| error.to_string()),
+            }),
         "index" => eqms_core::workspace::Workspace::open(path)
             .map_err(|error| error.to_string())
             .and_then(|workspace| {

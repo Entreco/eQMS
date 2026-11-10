@@ -595,6 +595,16 @@ requirements and tests; targets are not claims of observed results.
 - Security checks are integrated into compliance commands.
 - Identity assurance, trusted checkpoints, independent verification, and backup/restore address risks a local hash chain alone cannot solve.
 
+### EQMS-107: Project branding foundation (#76)
+**Type:** Feature  
+**Priority:** P1  
+**Description:** Slice 1 of the DutchDoxx identity, white-label branding and template roadmap: Rust core and `qms` CLI project branding (name, accent, logo). UI chrome, product attribution, templates, waivers and publication reconciliation are follow-up work.  
+**Acceptance criteria:**
+- Branding is Git-tracked, hashed, journaled and tamper-evident.
+- A deterministic generated logo is the default; PNG logos are bounded and validated.
+- Contrast issues are reported without blocking.
+- Design, requirements, tests and evidence are recorded under `docs/`.
+
 ---
 
 ## Execution sequence and first feature
