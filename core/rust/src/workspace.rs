@@ -714,6 +714,44 @@ impl Workspace {
         read_workspace_file(&self.path, relative).map_err(Into::into)
     }
 
+    /// Writes a regular file below the workspace, creating plain parent directories and
+    /// refusing symlinks. The caller records the content hash through `record_event`.
+    pub(crate) fn write_tracked_file(
+        &self,
+        relative: &str,
+        bytes: &[u8],
+    ) -> Result<(), WorkspaceError> {
+        let components = checked_components(Path::new(relative))?;
+        let mut path = self.path.clone();
+        for component in &components[..components.len() - 1] {
+            path.push(component);
+            match fs::symlink_metadata(&path) {
+                Ok(metadata) if metadata.is_dir() && !metadata.file_type().is_symlink() => {}
+                Ok(_) => {
+                    return Err(error(format!(
+                        "{relative}: parent is not a plain directory"
+                    )));
+                }
+                Err(e) if e.kind() == io::ErrorKind::NotFound => fs::create_dir(&path)?,
+                Err(e) => return Err(e.into()),
+            }
+        }
+        path.push(components[components.len() - 1]);
+        match fs::symlink_metadata(&path) {
+            Ok(metadata) if metadata.is_file() && !metadata.file_type().is_symlink() => {
+                fs::remove_file(&path)?
+            }
+            Ok(_) => return Err(error(format!("{relative}: not a regular file"))),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+            Err(e) => return Err(e.into()),
+        }
+        let mut file =
+            open_workspace_file(&self.path, Path::new(relative), WorkspaceFileMode::Create)?;
+        file.write_all(bytes)?;
+        file.sync_all()?;
+        Ok(())
+    }
+
     #[cfg(unix)]
     pub fn read_render_asset(&self, relative: &str) -> Result<Vec<u8>, WorkspaceError> {
         if !crate::render::asset_path(relative) {
@@ -1087,7 +1125,9 @@ fn validate_content_hashes(
     content_hashes: &BTreeMap<String, String>,
 ) -> Result<(), WorkspaceError> {
     for (path, hash) in content_hashes {
-        let valid_path = (path.starts_with("documents/") || path.starts_with("modules/"))
+        let valid_path = (path.starts_with("documents/")
+            || path.starts_with("modules/")
+            || path.starts_with("branding/"))
             && !path.contains('\\')
             && path
                 .split('/')

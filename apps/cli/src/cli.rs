@@ -1,4 +1,4 @@
-use crate::commands::{audit, document, search, workspace};
+use crate::commands::{audit, document, project, search, workspace};
 use crate::output::{self, Response};
 use clap::{Arg, ArgAction, Command, error::ErrorKind};
 use std::ffi::OsString;
@@ -25,6 +25,7 @@ fn command() -> Command {
         .subcommand(document::command())
         .subcommand(audit::command())
         .subcommand(search::command())
+        .subcommand(project::command())
         .subcommands(workspace::commands())
 }
 
@@ -70,6 +71,15 @@ pub(crate) fn response(args: Vec<OsString>, input: &mut dyn Read) -> Response {
                 } else {
                     response
                 }
+            }
+            Some(("project", args)) => {
+                let command = format!(
+                    "project.branding.{}",
+                    args.subcommand()
+                        .and_then(|(_, branding)| branding.subcommand_name())
+                        .unwrap_or("show")
+                );
+                Response::from_result(project::run(args, json), json, &command)
             }
             Some((operation @ ("init" | "index" | "verify" | "recover"), args)) => {
                 let command = if operation == "index" {
