@@ -243,7 +243,7 @@ internal class DesktopDocumentCapabilities(
             val response = Json.parseToJsonElement(result.output.trim()).jsonObject
             require(response.qmsSchemaVersion() == 2) { "qms returned an unsupported JSON schema version." }
             require(response.isQmsJsonV2Envelope()) { "qms returned an invalid or unsupported JSON response." }
-            require(response.stringValue("command") == if (search) command else "document.$command") {
+            require(response.stringValue("command") == (if (search) command else "document.$command") || response.isCliUsageError(result.exitCode)) {
                 "qms returned a response for an unexpected command."
             }
             if (result.exitCode != 0) {

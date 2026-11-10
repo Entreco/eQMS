@@ -38,6 +38,11 @@ internal fun JsonObject.isQmsJsonV2Envelope(): Boolean {
     }
 }
 
+/** Usage errors are emitted before a command is known, so their envelope has a null command. */
+internal fun JsonObject.isCliUsageError(exitCode: Int): Boolean =
+    exitCode != 0 && this["command"] === JsonNull && stringValue("status") == "error" &&
+        (this["error"] as? JsonObject)?.stringValue("code") == "INVALID_ARGUMENT"
+
 internal fun JsonObject.stringValue(name: String): String? =
     (this[name] as? JsonPrimitive)
         ?.takeIf(JsonPrimitive::isString)

@@ -86,6 +86,20 @@ class WorkspaceCliTest {
         }
     }
 
+    @Test
+    fun usageErrorWithoutCommandSurfacesCliMessage() {
+        val output = failure("x", "INVALID_ARGUMENT", "bad option").replace("\"command\":\"x\"", "\"command\":null")
+        val result = WorkspaceCli("qms-test", RecordingExecutor(ProcessResult(2, output)))
+            .execute(WorkspaceOperation.Open, Path.of("/tmp/project"))
+        assertEquals(WorkspaceCommandResult.Failure("bad option"), result)
+        val operational = output.replace("INVALID_ARGUMENT", "OPERATION_FAILED")
+        assertEquals(
+            WorkspaceCommandResult.Failure("qms returned a response for an unexpected command."),
+            WorkspaceCli("qms-test", RecordingExecutor(ProcessResult(1, operational)))
+                .execute(WorkspaceOperation.Open, Path.of("/tmp/project")),
+        )
+    }
+
     private fun success(command: String, data: String) =
         """{"schema_version":2,"status":"ok","command":"$command","timestamp_unix_ms":1792600000000,"findings":[],"references":[],"data":$data,"error":null}"""
 
