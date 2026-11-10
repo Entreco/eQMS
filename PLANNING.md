@@ -182,6 +182,7 @@ unless explicitly stated otherwise.
 - Output explicitly distinguishes scaffolding from implemented processes and compliance evidence.
 
 ### EQMS-016: Dogfood project documentation
+**Status:** Import command, [workflow](docs/operations/EQMS-016.md) and CI check implemented; [design/risk](docs/architecture/EQMS-016.md), [requirements](docs/requirements/EQMS-016.md), [tests](docs/testing/EQMS-016.md) and [automated evidence](docs/testing/evidence/EQMS-016.md) recorded; human review/testing pending. CI uses an ephemeral workspace; a persistent workspace with an externally held checkpoint is a follow-up.
 **Type:** Feature  
 **Priority:** P0  
 **Dependencies:** EQMS-010, EQMS-020, EQMS-023, EQMS-031  
