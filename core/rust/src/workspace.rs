@@ -369,6 +369,13 @@ fn cleanup_parent_directories(created: Vec<PathBuf>, cause: WorkspaceError) -> W
     }
 }
 
+fn replace_workspace_file(root: &Path, relative: &str, bytes: &[u8]) -> io::Result<()> {
+    let mut file = open_workspace_file(root, Path::new(relative), WorkspaceFileMode::Write)?;
+    file.set_len(0)?;
+    file.write_all(bytes)?;
+    file.sync_all()
+}
+
 fn truncate_workspace_file(root: &Path, relative: &str, length: u64) -> io::Result<()> {
     let file = open_workspace_file(root, Path::new(relative), WorkspaceFileMode::Write)?;
     file.set_len(length)?;
@@ -1039,6 +1046,56 @@ impl Workspace {
         git(&self.path, &commit_args)?;
         self.verify_unlocked()?;
         Ok(())
+    }
+
+    /// Installed module `(id, version)` pairs from the committed module manifest.
+    pub fn installed_modules(&self) -> Result<Vec<(String, String)>, WorkspaceError> {
+        let bytes = read_workspace_file(&self.path, MODULE_MANIFEST_PATH)?;
+        let manifest: ModuleManifest = serde_json::from_slice(&bytes)
+            .map_err(|e| error(format!("invalid module manifest: {e}")))?;
+        Ok(manifest
+            .modules
+            .into_iter()
+            .map(|entry| (entry.id, entry.version))
+            .collect())
+    }
+
+    /// Record a `module.installed` event, optionally replacing the module manifest first.
+    pub(crate) fn record_module_event(
+        &self,
+        modules: Option<Vec<(String, String)>>,
+        payload: BTreeMap<String, String>,
+    ) -> Result<JournalRecord, WorkspaceError> {
+        let Some(mut modules) = modules else {
+            return self.record_event("module.installed", payload, BTreeMap::new());
+        };
+        modules.sort();
+        let original = read_workspace_file(&self.path, MODULE_MANIFEST_PATH)?;
+        let mut updated = serde_json::to_vec_pretty(&ModuleManifest {
+            schema_version: 1,
+            modules: modules
+                .into_iter()
+                .map(|(id, version)| ModuleEntry { id, version })
+                .collect(),
+        })
+        .map_err(|e| error(e.to_string()))?;
+        updated.push(b'\n');
+        let hash = format!("sha256:{:x}", Sha256::digest(&updated));
+        replace_workspace_file(&self.path, MODULE_MANIFEST_PATH, &updated)?;
+        match self.record_event(
+            "module.installed",
+            payload,
+            BTreeMap::from([(MODULE_MANIFEST_PATH.to_owned(), hash)]),
+        ) {
+            Ok(record) => Ok(record),
+            Err(cause) => {
+                // Once the journal was appended, `qms recover` needs the new manifest.
+                if !cause.to_string().contains("qms recover") {
+                    let _ = replace_workspace_file(&self.path, MODULE_MANIFEST_PATH, &original);
+                }
+                Err(cause)
+            }
+        }
     }
 
     pub(crate) fn acquire_lock(&self) -> Result<File, WorkspaceError> {
