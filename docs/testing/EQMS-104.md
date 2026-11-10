@@ -4,6 +4,8 @@ status: draft
 related: [EQMS-104]
 ---
 
+> Superseded in part by EQMS-106: T104-03, T104-05 and the page-setup parts of T104-10 are replaced by T106 tests (page setup is document metadata).
+
 # EQMS-104 tests
 
 Defined before implementation. Requirements are in

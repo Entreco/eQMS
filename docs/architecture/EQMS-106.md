@@ -41,7 +41,7 @@ Markdown body
 Defaults for new documents: A4, portrait, 25.4 mm margins, header `{title}`,
 footer `Page {page} of {total}` (identical to the EQMS-104 defaults).
 
-Validation (`PageSetup::new`): `page_size` is `A4` or `Letter`; `orientation` is
+Validation (`PageSetup::validated`): `page_size` is `A4` or `Letter`; `orientation` is
 `portrait` or `landscape`; each margin is finite, within 5.0-50.0 mm and a
 multiple of 0.1 mm (so the encoding is exact and stable); horizontal margins
 leave at least 40 mm and vertical margins at least 60 mm of content area;
@@ -74,8 +74,8 @@ Metadata panel edits the buffer (draft values with inline validation using the
 same rules as Rust, which remains authoritative) and persistence happens only
 through the existing explicit Save with its expected-revision conflict, dirty
 and close guards. Dirty state includes metadata. Pagination and preview use the
-tab buffer's page setup. Metadata is the fourth tool on the right rail (after
-Review and History, shortcut 5); the panel is read-only for historical and
+tab buffer's page setup. Metadata is the third tool on the right rail (after
+Review and History; shortcut 5); the panel is read-only for historical and
 non-Draft records and shows ID, revision, content hash and status exactly as
 saved. Rendering and viewing the panel never write documents, refs or journals.
 
