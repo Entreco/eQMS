@@ -8,7 +8,7 @@ related: [EQMS-107]
 
 ## Tested revision and environment
 
-- Tested revision: `241d9bee19037d17aa7af25df287d74c0971ffbb`
+- Tested revision: `abf298c020aebff2b116f8bdedfb4e7eac67dfa0`
 - Platform: macOS 26.6.2, arm64
 - Rust: `rustc 1.99.1 (58cf8f9c3 2026-10-13)`
 
@@ -18,7 +18,7 @@ related: [EQMS-107]
 |---|---|
 | `cargo fmt --all --check` | Passed |
 | `cargo clippy --workspace --all-targets -- -D warnings` | Passed |
-| `cargo test --workspace` | Passed: 16 + 5 CLI unit/integration, 12 + 3 + 1 other integration, 90 core unit tests (incl. 9 branding) |
+| `cargo test --workspace` | Passed: all suites, incl. 106 core unit tests (9 branding); rerun after merging origin/main |
 | Manual CLI smoke: `qms init <dir> --name "Acme Medical" --accent auto`, `project branding show --json`, `set --accent`, `show` on a plain workspace, `set --logo-file /nonexistent`, `verify` | Behaved as specified (persisted flag, warnings, error, 3 verified journal records) |
 
 ## Limitations
