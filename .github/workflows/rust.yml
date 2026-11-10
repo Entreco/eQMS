@@ -18,3 +18,5 @@ jobs:
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - run: cargo test --workspace --locked
       - run: cargo build --workspace --release --locked
+      - name: Dogfood documentation check (EQMS-016)
+        run: scripts/dogfood-check.sh
