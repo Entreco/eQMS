@@ -142,6 +142,21 @@ class DesktopDocumentCapabilitiesTest {
     }
 
     @Test
+    fun usageErrorsWithoutCommandShowCliMessageButOtherMismatchesAreRejected() = runBlocking {
+        fun envelope(status: String, command: String, code: String) =
+            """{"schema_version":2,"status":"$status","command":$command,"timestamp_unix_ms":1792600000000,"findings":[],"references":[],"data":null,"error":{"code":"$code","message":"unexpected argument '--page-size'"}}"""
+        fun save(exit: Int, output: String) = runBlocking {
+            DesktopDocumentCapabilities("qms", DocumentExecutor { _, _, _ -> ProcessResult(exit, output) })
+                .saveDocument("project", id, revision, "Policy", "edits").exceptionOrNull()?.message
+        }
+        assertEquals("unexpected argument '--page-size'", save(2, envelope("error", "null", "INVALID_ARGUMENT")))
+        val unexpected = "Invalid qms response: qms returned a response for an unexpected command."
+        assertEquals(unexpected, save(1, envelope("error", "\"document.create\"", "OPERATION_FAILED")))
+        assertEquals(unexpected, save(1, envelope("error", "null", "OPERATION_FAILED")))
+        assertEquals(unexpected, save(0, envelope("error", "null", "INVALID_ARGUMENT")))
+    }
+
+    @Test
     fun operationalAndLaunchErrorsAreVisible() = runBlocking {
         val failed = DesktopDocumentCapabilities("qms", DocumentExecutor { _, _, _ ->
             ProcessResult(1, """{"schema_version":2,"status":"error","command":"document.create","timestamp_unix_ms":1792600000000,"findings":[],"references":[],"data":null,"error":{"code":"OPERATION_FAILED","message":"stale save"}}""")

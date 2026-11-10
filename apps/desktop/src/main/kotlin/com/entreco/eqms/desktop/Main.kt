@@ -63,7 +63,7 @@ internal class WorkspaceCli(
         if (!response.isQmsJsonV2Envelope()) {
             return WorkspaceCommandResult.Failure("qms returned an invalid JSON response.")
         }
-        if (response.stringValue("command") != operation.command) {
+        if (response.stringValue("command") != operation.command && !response.isCliUsageError(result.exitCode)) {
             return WorkspaceCommandResult.Failure("qms returned a response for an unexpected command.")
         }
         if (result.exitCode != 0) {
