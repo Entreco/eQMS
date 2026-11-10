@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "id": "qms-starter",
+  "version": "1.0.0",
+  "title": "QMS starter scaffolds",
+  "dependencies": [],
+  "artifacts": [
+    {
+      "key": "quality-policy",
+      "type": "policy",
+      "title": "Quality policy (scaffold)",
+      "template": "quality-policy.md"
+    },
+    {
+      "key": "document-control-procedure",
+      "type": "procedure",
+      "title": "Document control procedure (scaffold)",
+      "template": "document-control-procedure.md"
+    },
+    {
+      "key": "risk-management-procedure",
+      "type": "procedure",
+      "title": "Risk management procedure (scaffold)",
+      "template": "risk-management-procedure.md"
+    }
+  ],
+  "validation": [
+    { "artifact": "quality-policy", "required_headings": ["Policy statement", "Scope"] },
+    { "artifact": "document-control-procedure", "required_headings": ["Purpose", "Scope", "Responsibilities", "Procedure"] },
+    { "artifact": "risk-management-procedure", "required_headings": ["Purpose", "Scope", "Responsibilities", "Procedure"] }
+  ]
+}

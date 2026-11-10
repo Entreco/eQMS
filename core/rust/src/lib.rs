@@ -9,6 +9,7 @@ pub mod import;
 pub mod index;
 pub mod markdown;
 pub mod model;
+pub mod module;
 pub mod render;
 pub mod roles;
 pub mod search;

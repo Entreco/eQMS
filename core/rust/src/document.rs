@@ -137,6 +137,32 @@ fn valid_hex(value: &str, lengths: &[usize]) -> bool {
             .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 
+/// Expected creation payload; module provenance is all-or-nothing and covered by the event hash.
+fn created_payload(
+    id: &str,
+    parent: &str,
+    actual: &BTreeMap<String, String>,
+) -> Result<BTreeMap<String, String>, WorkspaceError> {
+    let mut payload = BTreeMap::from([
+        ("document_id".to_owned(), id.to_owned()),
+        ("base_revision".to_owned(), parent.to_owned()),
+    ]);
+    if actual.contains_key("module_id") {
+        for key in [
+            "module_id",
+            "module_version",
+            "artifact_key",
+            "template_hash",
+        ] {
+            let value = actual
+                .get(key)
+                .ok_or_else(|| error("incomplete module provenance"))?;
+            payload.insert(key.to_owned(), value.clone());
+        }
+    }
+    Ok(payload)
+}
+
 fn validate_id(id: &str) -> Result<(), WorkspaceError> {
     markdown::validate_id(id).map_err(|cause| error(cause.to_string()))
 }
@@ -428,7 +454,57 @@ impl Documents {
             .trim()
             .to_owned();
         let content = canonical(&id, title, body, page)?;
-        self.record(&id, &base, None, &content, None)
+        self.record(&id, &base, None, &content, None, &BTreeMap::new())
+    }
+
+    /// Create a Draft artifact with a caller-derived ID and module provenance in its creation event.
+    pub fn create_artifact(
+        &self,
+        id: &str,
+        title: &str,
+        body: &str,
+        provenance: &BTreeMap<String, String>,
+    ) -> Result<Document, WorkspaceError> {
+        validate_id(id)?;
+        let _lock = self.workspace.acquire_lock()?;
+        self.verify_baseline()?;
+        let base = git_text(self.root(), &["rev-parse", "HEAD"])?
+            .trim()
+            .to_owned();
+        let content = canonical(id, title, body, &PageSetup::default())?;
+        self.record(id, &base, None, &content, None, provenance)
+    }
+
+    /// Creation-event payload of a saved document, or `None` when it does not exist.
+    pub fn creation_payload(
+        &self,
+        id: &str,
+    ) -> Result<Option<BTreeMap<String, String>>, WorkspaceError> {
+        validate_id(id)?;
+        let _lock = self.workspace.acquire_lock()?;
+        let head = git_text(
+            self.root(),
+            &[
+                "for-each-ref",
+                "--format=%(objectname)",
+                &format!("{PREFIX}{id}"),
+            ],
+        )?;
+        let head = head.trim();
+        if head.is_empty() {
+            return Ok(None);
+        }
+        let journal = blob(self.root(), head, JOURNAL)?;
+        Ok(verify_journal(&journal)?
+            .into_iter()
+            .find(|event| {
+                event.event_type == "document.created"
+                    && event
+                        .payload
+                        .get("document_id")
+                        .is_some_and(|value| value == id)
+            })
+            .map(|event| event.payload))
     }
 
     /// Save new content, keeping the previous revision's page setup.
@@ -481,7 +557,14 @@ impl Documents {
         if previous.content_hash == hash(&content) {
             return Ok(previous.clone());
         }
-        self.record(id, &current, Some(expected), &content, Some(&verified))
+        self.record(
+            id,
+            &current,
+            Some(expected),
+            &content,
+            Some(&verified),
+            &BTreeMap::new(),
+        )
     }
 
     pub fn transition(
@@ -598,6 +681,7 @@ impl Documents {
         expected: Option<&str>,
         content: &[u8],
         verified_parent: Option<&VerifiedHistory>,
+        provenance: &BTreeMap<String, String>,
     ) -> Result<Document, WorkspaceError> {
         ensure_git_identity(self.root())?;
         let (mut journal, last) = match verified_parent {
@@ -617,6 +701,7 @@ impl Documents {
         let mut payload = BTreeMap::from([("document_id".to_owned(), id.to_owned())]);
         if expected.is_none() {
             payload.insert("base_revision".to_owned(), parent.to_owned());
+            payload.extend(provenance.clone());
             if !git(self.root(), &["ls-tree", "-z", parent, "--", &path])?
                 .stdout
                 .is_empty()
@@ -908,10 +993,7 @@ impl Documents {
                     .clone();
                 let (title, body, page) = decode(&bytes, id)?;
                 let expected_payload = if created {
-                    BTreeMap::from([
-                        ("document_id".to_owned(), id.to_owned()),
-                        ("base_revision".to_owned(), commit.parent.clone()),
-                    ])
+                    created_payload(id, &commit.parent, &event.payload)?
                 } else {
                     BTreeMap::from([("document_id".to_owned(), id.to_owned())])
                 };
@@ -1073,10 +1155,7 @@ impl Documents {
         let saved = event.event_type == "document.saved";
         let lifecycle = event.event_type == "document.lifecycle.transition";
         let expected_payload = if created {
-            BTreeMap::from([
-                ("document_id".to_owned(), id.to_owned()),
-                ("base_revision".to_owned(), parent.to_owned()),
-            ])
+            created_payload(id, parent, &event.payload)?
         } else if saved {
             BTreeMap::from([("document_id".to_owned(), id.to_owned())])
         } else if lifecycle {

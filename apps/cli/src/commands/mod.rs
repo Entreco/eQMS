@@ -2,6 +2,7 @@ pub(crate) mod approval;
 pub(crate) mod audit;
 pub(crate) mod document;
 mod markdown;
+pub(crate) mod module;
 mod render;
 pub(crate) mod search;
 pub(crate) mod workspace;
