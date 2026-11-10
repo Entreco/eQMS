@@ -192,6 +192,23 @@ mod tests {
     fn set_then_show_round_trips_and_rejects_bad_input() {
         let dir = std::env::temp_dir().join(format!("eqms-brand-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir(&dir).unwrap();
+        for args in [
+            &["init", "--quiet"][..],
+            &["config", "user.name", "Branding Test"],
+            &["config", "user.email", "branding@example.invalid"],
+        ] {
+            assert!(
+                std::process::Command::new("git")
+                    .arg("-C")
+                    .arg(&dir)
+                    .args(args)
+                    .output()
+                    .unwrap()
+                    .status
+                    .success()
+            );
+        }
         Workspace::initialize(&dir).unwrap();
         let path = dir.to_str().unwrap();
         assert_eq!(

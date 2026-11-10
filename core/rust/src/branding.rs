@@ -414,6 +414,23 @@ mod tests {
     fn temp_workspace(tag: &str) -> (std::path::PathBuf, Workspace) {
         let dir = std::env::temp_dir().join(format!("eqms-brand-{tag}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir(&dir).unwrap();
+        for args in [
+            &["init", "--quiet"][..],
+            &["config", "user.name", "Branding Test"],
+            &["config", "user.email", "branding@example.invalid"],
+        ] {
+            assert!(
+                std::process::Command::new("git")
+                    .arg("-C")
+                    .arg(&dir)
+                    .args(args)
+                    .output()
+                    .unwrap()
+                    .status
+                    .success()
+            );
+        }
         let workspace = Workspace::initialize(&dir).unwrap();
         (dir, workspace)
     }
