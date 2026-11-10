@@ -1,4 +1,4 @@
-use crate::commands::{approval, audit, document, project, search, workspace};
+use crate::commands::{approval, audit, document, module, project, search, workspace};
 use crate::output::{self, Response};
 use clap::{Arg, ArgAction, Command, error::ErrorKind};
 use std::ffi::OsString;
@@ -26,6 +26,7 @@ fn command() -> Command {
         .subcommand(audit::command())
         .subcommand(approval::command())
         .subcommand(search::command())
+        .subcommand(module::command())
         .subcommand(project::command())
         .subcommands(workspace::commands())
 }
@@ -57,6 +58,13 @@ pub(crate) fn response(args: Vec<OsString>, input: &mut dyn Read) -> Response {
                     .map(|operation| format!("approval.{operation}"))
                     .unwrap_or_else(|| "approval".to_owned());
                 Response::from_result(approval::run(args, json), json, &command)
+            }
+            Some(("module", args)) => {
+                let command = args
+                    .subcommand_name()
+                    .map(|operation| format!("module.{operation}"))
+                    .unwrap_or_else(|| "module".to_owned());
+                Response::from_result(module::run(args, json), json, &command)
             }
             Some(("search", args)) => Response::from_result(
                 search::run(args, json),
