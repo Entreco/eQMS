@@ -1,4 +1,4 @@
-use crate::markdown::{self, Markdown, hash};
+use crate::markdown::{self, Markdown, PageSetup, hash};
 use crate::workspace::{
     JournalRecord, Workspace, WorkspaceError, ensure_git_identity, error, git, git_text,
     parse_and_verify_journal, read_git_blobs, timestamp, with_hash,
@@ -120,6 +120,7 @@ pub struct DocumentHistorySnapshot {
 pub struct Document {
     pub id: String,
     pub title: String,
+    pub page: PageSetup,
     pub body: String,
     pub status: String,
     pub revision: String,
@@ -140,18 +141,27 @@ fn validate_id(id: &str) -> Result<(), WorkspaceError> {
     markdown::validate_id(id).map_err(|cause| error(cause.to_string()))
 }
 
-fn canonical(id: &str, title: &str, body: &str) -> Result<Vec<u8>, WorkspaceError> {
-    Markdown::new(id, title, body)
+fn canonical(
+    id: &str,
+    title: &str,
+    body: &str,
+    page: &PageSetup,
+) -> Result<Vec<u8>, WorkspaceError> {
+    Markdown::with_page(id, title, body, page.clone())
         .and_then(|document| document.canonical_bytes())
         .map_err(|cause| error(cause.to_string()))
 }
 
-fn decode(bytes: &[u8], id: &str) -> Result<(String, String), WorkspaceError> {
+fn decode(bytes: &[u8], id: &str) -> Result<(String, String, PageSetup), WorkspaceError> {
     let document = Markdown::validate(bytes).map_err(|cause| error(cause.to_string()))?;
     if document.id() != id {
         return Err(error("document ID differs from expected document"));
     }
-    Ok((document.title().to_owned(), document.body().to_owned()))
+    Ok((
+        document.title().to_owned(),
+        document.body().to_owned(),
+        document.page().clone(),
+    ))
 }
 
 fn blob(root: &Path, revision: &str, path: &str) -> Result<Vec<u8>, WorkspaceError> {
@@ -396,6 +406,15 @@ impl Documents {
     }
 
     pub fn create(&self, title: &str, body: &str) -> Result<Document, WorkspaceError> {
+        self.create_with_page(title, body, &PageSetup::default())
+    }
+
+    pub fn create_with_page(
+        &self,
+        title: &str,
+        body: &str,
+        page: &PageSetup,
+    ) -> Result<Document, WorkspaceError> {
         let _lock = self.workspace.acquire_lock()?;
         self.verify_baseline()?;
         let seed = format!(
@@ -408,16 +427,40 @@ impl Documents {
         let base = git_text(self.root(), &["rev-parse", "HEAD"])?
             .trim()
             .to_owned();
-        let content = canonical(&id, title, body)?;
+        let content = canonical(&id, title, body, page)?;
         self.record(&id, &base, None, &content, None)
     }
 
+    /// Save new content, keeping the previous revision's page setup.
     pub fn save(
         &self,
         id: &str,
         expected: &str,
         title: &str,
         body: &str,
+    ) -> Result<Document, WorkspaceError> {
+        self.save_inner(id, expected, title, body, None)
+    }
+
+    /// Save content and metadata; a metadata-only change is a new revision.
+    pub fn save_with_page(
+        &self,
+        id: &str,
+        expected: &str,
+        title: &str,
+        body: &str,
+        page: &PageSetup,
+    ) -> Result<Document, WorkspaceError> {
+        self.save_inner(id, expected, title, body, Some(page))
+    }
+
+    fn save_inner(
+        &self,
+        id: &str,
+        expected: &str,
+        title: &str,
+        body: &str,
+        page: Option<&PageSetup>,
     ) -> Result<Document, WorkspaceError> {
         let _lock = self.workspace.acquire_lock()?;
         self.verify_baseline()?;
@@ -434,7 +477,7 @@ impl Documents {
                 "document content cannot be saved after leaving Draft; lifecycle rework is not supported",
             ));
         }
-        let content = canonical(id, title, body)?;
+        let content = canonical(id, title, body, page.unwrap_or(&previous.page))?;
         if previous.content_hash == hash(&content) {
             return Ok(previous.clone());
         }
@@ -863,7 +906,7 @@ impl Documents {
                     .get(&change.new_oid)
                     .ok_or_else(|| error("missing document content blob"))?
                     .clone();
-                let (title, body) = decode(&bytes, id)?;
+                let (title, body, page) = decode(&bytes, id)?;
                 let expected_payload = if created {
                     BTreeMap::from([
                         ("document_id".to_owned(), id.to_owned()),
@@ -888,6 +931,7 @@ impl Documents {
                 let document = Document {
                     id: id.to_owned(),
                     title,
+                    page,
                     body,
                     status: "Draft".to_owned(),
                     revision: commit.revision.clone(),
@@ -925,10 +969,11 @@ impl Documents {
                 {
                     return Err(error("invalid document revision or audit linkage"));
                 }
-                let (title, body) = decode(bytes, id)?;
+                let (title, body, page) = decode(bytes, id)?;
                 Document {
                     id: id.to_owned(),
                     title,
+                    page,
                     body,
                     status: "Draft".to_owned(),
                     revision: commit.revision.clone(),
@@ -1020,7 +1065,7 @@ impl Documents {
                 return Err(error("document and journal must be regular Git blobs"));
             }
         }
-        let (title, body) = decode(&bytes, id)?;
+        let (title, body, page) = decode(&bytes, id)?;
         if blob(self.root(), parent, JOURNAL)? != parent_journal {
             return Err(error("ancestor journal differs from verified head prefix"));
         }
@@ -1100,6 +1145,7 @@ impl Documents {
         let document = Document {
             id: id.to_owned(),
             title,
+            page,
             body,
             status: "Draft".to_owned(),
             revision: revision.to_owned(),
@@ -1152,7 +1198,7 @@ mod tests {
     }
 
     #[test]
-    fn pre_codec_extraction_history_retains_exact_content_hash_and_revision() {
+    fn v1_history_is_rejected_as_an_accepted_pre_release_limitation() {
         let path = std::env::temp_dir().join(format!(
             "eqms-legacy-{}-{}",
             std::process::id(),
@@ -1169,23 +1215,84 @@ mod tests {
         git(&fixture.0, &["checkout-index", "-a"]).unwrap();
         let id = "DOC-3683c4441260979ff0733dd027d68911";
         let documents = fixture.docs();
-        let legacy = documents.show(id, None).unwrap();
-        assert_eq!(legacy.id, id);
-        assert_eq!(legacy.title, "Legacy policy");
-        assert_eq!(legacy.body, "Legacy body  \nNo final newline");
-        assert_eq!(legacy.revision, "2c83fc82db4e2bbeb178361134478aa5d84a2cc6");
-        assert_eq!(
-            legacy.content_hash,
-            "sha256:224514eb12998689344189b973cb15debd199e90ea748e0a70033fc4ff3a6308"
+        // EQMS-106: schema v1 is intentionally unsupported before the first public release.
+        let error = documents.show(id, None).unwrap_err().to_string();
+        assert!(
+            error.contains("unsupported document schema version 1"),
+            "{error}"
         );
-        assert_eq!(documents.history(id).unwrap(), vec![legacy.clone()]);
-        let bytes = blob(&fixture.0, &legacy.revision, &format!("documents/{id}.md")).unwrap();
-        assert_eq!(canonical(id, &legacy.title, &legacy.body).unwrap(), bytes);
-        assert!(decode(&bytes, "DOC-00000000000000000000000000000000").is_err());
-        let noncanonical = String::from_utf8(bytes)
-            .unwrap()
-            .replace("\"schema_version\":1", "\"schema_version\": 1");
-        assert!(decode(noncanonical.as_bytes(), id).is_err());
+        assert!(documents.history(id).is_err());
+        assert!(
+            documents
+                .save(id, "2c83fc82db4e2bbeb178361134478aa5d84a2cc6", "T", "b")
+                .is_err()
+        );
+        let bytes = blob(
+            &fixture.0,
+            "2c83fc82db4e2bbeb178361134478aa5d84a2cc6",
+            &format!("documents/{id}.md"),
+        )
+        .unwrap();
+        assert!(decode(&bytes, id).is_err());
+    }
+
+    #[test]
+    fn metadata_only_save_is_a_hashed_journaled_diffable_revision() {
+        let f = Fixture::new();
+        let docs = f.docs();
+        let first = docs.create("Policy", "body").unwrap();
+        assert_eq!(first.page, PageSetup::default());
+        let page = PageSetup {
+            size: markdown::PageSize::Letter,
+            orientation: markdown::Orientation::Landscape,
+            margin_top_mm: 12.5,
+            header: "Controlled {title}".to_owned(),
+            ..PageSetup::default()
+        };
+        let second = docs
+            .save_with_page(&first.id, &first.revision, "Policy", "body", &page)
+            .unwrap();
+        assert_ne!(second.revision, first.revision);
+        assert_ne!(second.content_hash, first.content_hash);
+        assert_eq!((&second.title, &second.body), (&first.title, &first.body));
+        assert_eq!(second.page, page);
+        let history = docs.history(&first.id).unwrap();
+        assert_eq!(history.len(), 2);
+        assert_eq!(history[0], second);
+        let journal = String::from_utf8(blob(&f.0, &second.revision, JOURNAL).unwrap()).unwrap();
+        assert!(journal.lines().last().unwrap().contains("document.saved"));
+        let diff = docs
+            .diff(&first.id, &first.revision, &second.revision)
+            .unwrap();
+        assert!(diff.contains("\"page_size\":\"Letter\""), "{diff}");
+        assert!(diff.contains("\"margin_top_mm\":12.5"), "{diff}");
+        // Identical content and metadata creates no revision; omitted metadata is kept.
+        let same = docs
+            .save_with_page(&first.id, &second.revision, "Policy", "body", &page)
+            .unwrap();
+        assert_eq!(same, second);
+        let kept = docs
+            .save(&first.id, &second.revision, "Policy", "body two")
+            .unwrap();
+        assert_eq!(kept.page, page);
+        let before = git_text(&f.0, &["show-ref"]).unwrap();
+        docs.show(&first.id, None).unwrap();
+        docs.history(&first.id).unwrap();
+        assert_eq!(before, git_text(&f.0, &["show-ref"]).unwrap());
+        assert!(
+            docs.save_with_page(
+                &first.id,
+                &kept.revision,
+                "Policy",
+                "body two",
+                &PageSetup {
+                    header: "{bad}".into(),
+                    ..PageSetup::default()
+                }
+            )
+            .is_err()
+        );
+        assert_eq!(docs.show(&first.id, None).unwrap(), kept);
     }
 
     #[test]
@@ -1308,16 +1415,20 @@ mod tests {
     #[test]
     fn canonical_metadata_is_strict_and_roundtrips() {
         let id = "DOC-00000000000000000000000000000000";
-        let bytes = canonical(id, " Quoted \"title\" ", "a\r\nb\r").unwrap();
+        let bytes = canonical(id, " Quoted \"title\" ", "a\r\nb\r", &PageSetup::default()).unwrap();
         assert_eq!(
             decode(&bytes, id).unwrap(),
-            ("Quoted \"title\"".into(), "a\nb\n".into())
+            (
+                "Quoted \"title\"".into(),
+                "a\nb\n".into(),
+                PageSetup::default()
+            )
         );
-        assert!(canonical(id, " \n ", "").is_err());
-        assert!(canonical("../escape", "title", "").is_err());
+        assert!(canonical(id, " \n ", "", &PageSetup::default()).is_err());
+        assert!(canonical("../escape", "title", "", &PageSetup::default()).is_err());
         let invalid = String::from_utf8(bytes)
             .unwrap()
-            .replace("\"schema_version\":1", "\"schema_version\":2");
+            .replace("\"schema_version\":2", "\"schema_version\":1");
         assert!(decode(invalid.as_bytes(), id).is_err());
     }
 
@@ -1617,6 +1728,7 @@ mod tests {
                     } else {
                         "tampered"
                     },
+                    &PageSetup::default(),
                 )
                 .unwrap();
                 let oid = input_git(&f.0, &["hash-object", "-w", "--stdin"], &bytes).unwrap();

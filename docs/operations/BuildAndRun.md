@@ -19,9 +19,10 @@ Documents open in editable **Markdown**. The three top toolbar controls are
 **Markdown**, **Markdown + Preview**, and **Preview**, in that order.
 Markdown + Preview keeps source editable beside a paginated rendered document;
 Preview shows only the read-only pages, with repeated header/footer templates
-and automatic page numbering. Use **Page setup** in the Project
-panel to configure page size (A4/US Letter), orientation and margins for the
-current project; defaults are A4 portrait with 25.4 mm margins. Choose
+and automatic page numbering. Use the **Metadata** panel (right rail,
+shortcut 5) to configure the title, page size (A4/US Letter), orientation,
+margins and header/footer of the open Draft document; these are saved with the
+document by **Save**. Defaults are A4 portrait with 25.4 mm margins. Choose
 **Markdown** to edit compact source, or **Markdown + Preview** to see source
 beside the rendered document. The split grip supports
 horizontal dragging and left/right arrow keys when focused. Modes, source
@@ -69,8 +70,11 @@ resource URLs. Native JSON uses outer schema 2 and semantic schema 2 with
 renderer `eqms-markdown-2`. PDF/DOCX generation remains separate roadmap work
 (#35/#33); desktop pagination does not implement those exports.
 
-Paginated preview is derived UI presentation, not canonical document
-metadata. Changing page setup alone does not create a new document revision.
+Paginated preview is derived UI presentation. Since schema v2 (EQMS-106) page
+setup is hashed document metadata: a metadata-only Save creates a new revision
+and journal event. Existing schema v1 workspaces are not readable and must be
+recreated (pre-release limitation). `qms document create|save` accept
+`--page-size`, `--orientation`, `--margin-*`, `--header` and `--footer`.
 Content is measured at the actual preview width, so narrow split panes and
 platform/font changes can change the page count. Tables flow by rows; oversized
 indivisible blocks have a visible scrollable overflow diagnostic. Tables are

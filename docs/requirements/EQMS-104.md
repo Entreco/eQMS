@@ -6,6 +6,10 @@ related: [EQMS-104]
 
 # EQMS-104 requirements
 
+> Superseded in part by EQMS-106: page setup (R104-03, R104-05, R104-06) is now
+> hashed per-document metadata edited in the Metadata panel, not a project-scoped
+> preference. Rendering and pagination behaviour is unchanged.
+
 | ID | Requirement |
 |---|---|
 | R104-01 | The toolbar provides exactly Markdown, Markdown + Preview, and Preview in that order; each newly opened tab defaults to editable Markdown, retaining per-tab mode, source selection/scroll and split state. |

@@ -8,12 +8,15 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.runBlocking
+import com.entreco.eqms.feature.document.DocumentPageSetup
 import com.entreco.eqms.feature.document.DocumentStatus
+import com.entreco.eqms.feature.document.PageOrientation
+import com.entreco.eqms.feature.document.PageSize
 
 class DesktopDocumentCapabilitiesTest {
     private val id = "DOC-${"0".repeat(32)}"
     private val revision = "a".repeat(40)
-    private val document = """{"id":"$id","title":"Policy","body":"# Policy\n","status":"Draft","revision":"$revision","content_hash":"sha256:${"b".repeat(64)}","event_hash":"${"c".repeat(64)}","configured_author":"Test <test@example.invalid>","local_timestamp":"1.000000000"}"""
+    private val document = """{"id":"$id","title":"Policy","body":"# Policy\n","status":"Draft","revision":"$revision","content_hash":"sha256:${"b".repeat(64)}","event_hash":"${"c".repeat(64)}","configured_author":"Test <test@example.invalid>","local_timestamp":"1.000000000","page":{"size":"A4","orientation":"portrait","margin_top_mm":25.4,"margin_right_mm":25.4,"margin_bottom_mm":25.4,"margin_left_mm":25.4,"header":"{title}","footer":"Page {page} of {total}"}}"""
     private fun response(command: String, data: String) =
         """{"schema_version":2,"status":"ok","command":"document.$command","timestamp_unix_ms":1792600000000,"findings":[],"references":[],"data":$data,"error":null}"""
 
@@ -33,6 +36,39 @@ class DesktopDocumentCapabilitiesTest {
         )
         capabilities.saveDocument("project with spaces", id, revision, "Policy", "# Policy\n").getOrThrow()
         assertEquals(listOf(id, "--title", "Policy", "--expected", revision), calls.last().first.takeLast(5))
+    }
+
+    @Test
+    fun pageMetadataIsDecodedAndSentAsExplicitOptionsOnlyWhenSupplied() = runBlocking {
+        val calls = mutableListOf<List<String>>()
+        val capabilities = DesktopDocumentCapabilities("test-qms", DocumentExecutor { _, args, _ ->
+            calls += args
+            ProcessResult(0, response(args[1], document))
+        })
+        val draft = capabilities.createDocument("p", "Policy", "").getOrThrow()
+        assertEquals(DocumentPageSetup(), draft.page)
+        assertFalse(calls.last().contains("--page-size"))
+        val page = DocumentPageSetup(
+            size = PageSize.Letter, orientation = PageOrientation.Landscape, marginTopMm = 10.0,
+            headerTemplate = "", footerTemplate = "-{page}-",
+        )
+        capabilities.saveDocument("p", id, revision, "Policy", "", page).getOrThrow()
+        val args = calls.last()
+        assertEquals("Letter", args[args.indexOf("--page-size") + 1])
+        assertEquals("landscape", args[args.indexOf("--orientation") + 1])
+        assertEquals("10.0", args[args.indexOf("--margin-top") + 1])
+        assertEquals("", args[args.indexOf("--header") + 1])
+        assertEquals("-{page}-", args[args.indexOf("--footer") + 1])
+    }
+
+    @Test
+    fun missingOrInvalidPageMetadataIsRejected() = runBlocking {
+        for (broken in listOf(document.replace("\"size\":\"A4\"", "\"size\":\"A5\""), document.replace("\"page\":{", "\"x\":{"))) {
+            val capabilities = DesktopDocumentCapabilities("qms", DocumentExecutor { _, args, _ ->
+                ProcessResult(0, response(args[1], broken))
+            })
+            assertTrue(capabilities.createDocument("p", "Policy", "").isFailure)
+        }
     }
 
     @Test

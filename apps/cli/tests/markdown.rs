@@ -6,8 +6,8 @@ use std::process::{Command, Output, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 static NEXT: AtomicUsize = AtomicUsize::new(0);
-const GOLDEN: &str = "---\n{\"schema_version\":1,\"id\":\"DOC-0123456789abcdef0123456789abcdef\",\"title\":\"Policy\",\"status\":\"Draft\"}\n---\nBody";
-const HASH: &str = "sha256:2866a39ccb18a2d807569fbbadb98f7b17a2cfc15e4155bc60efc4fc5bc44ccf";
+const GOLDEN: &str = "---\n{\"schema_version\":2,\"id\":\"DOC-0123456789abcdef0123456789abcdef\",\"title\":\"Policy\",\"page_size\":\"A4\",\"orientation\":\"portrait\",\"margin_top_mm\":25.4,\"margin_right_mm\":25.4,\"margin_bottom_mm\":25.4,\"margin_left_mm\":25.4,\"header\":\"{title}\",\"footer\":\"Page {page} of {total}\",\"status\":\"Draft\"}\n---\nBody";
+const HASH: &str = "sha256:5a5609835b73533faf1922b52b9290f45a3ddd74f615a1cdd3410d7ac4b1668d";
 
 struct Fixture(PathBuf);
 
@@ -86,7 +86,7 @@ fn file_and_stdin_operations_are_standalone_read_only_and_exact() {
             success(&formatted_json);
             let result = envelope(&formatted_json.stdout, "format", "ok");
             assert_eq!(result["data"]["content"], canonical);
-            assert_eq!(result["data"]["schema_version"], 1);
+            assert_eq!(result["data"]["schema_version"], 2);
             assert_eq!(result["data"]["canonical"], true);
             assert_eq!(result["data"]["id"], "DOC-0123456789abcdef0123456789abcdef");
             if body == "Body" {
@@ -111,7 +111,7 @@ fn file_and_stdin_operations_are_standalone_read_only_and_exact() {
         let validation = fixture.invoke(&["document", "validate", file.to_str().unwrap()], b"");
         success(&validation);
         let text = String::from_utf8(validation.stdout).unwrap();
-        assert!(text.starts_with("Canonical Markdown format v1: DOC-"));
+        assert!(text.starts_with("Canonical Markdown format v2: DOC-"));
         assert!(text.ends_with('\n'));
         assert_eq!(fs::read(&file).unwrap(), canonical.as_bytes());
         assert_eq!(fs::read_dir(&fixture.0).unwrap().count(), 1);
@@ -121,7 +121,7 @@ fn file_and_stdin_operations_are_standalone_read_only_and_exact() {
 #[test]
 fn invalid_input_errors_are_nonzero_without_partial_stdout() {
     let fixture = Fixture::new();
-    let noncanonical = GOLDEN.replace("\"schema_version\":1", "\"schema_version\": 1");
+    let noncanonical = GOLDEN.replace("\"schema_version\":2", "\"schema_version\": 2");
     for (operation, input) in [
         ("validate", noncanonical.as_bytes()),
         ("format", b"\xff".as_slice()),

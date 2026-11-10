@@ -16,11 +16,11 @@ class DocumentWorkspaceStateTest {
         var pendingList: CompletableDeferred<Result<List<DocumentSnapshot>>>? = null
         var pendingHistory: CompletableDeferred<Result<DocumentHistorySnapshot>>? = null
         override suspend fun listDocuments(project: String) = pendingList?.await() ?: Result.success(saved.values.toList())
-        override suspend fun createDocument(project: String, title: String, body: String) =
-            Result.success(first.copy(id = "new", title = title, body = body))
-        override suspend fun saveDocument(project: String, id: String, expected: String, title: String, body: String): Result<DocumentSnapshot> {
+        override suspend fun createDocument(project: String, title: String, body: String, page: DocumentPageSetup?) =
+            Result.success(first.copy(id = "new", title = title, body = body, page = page ?: first.page))
+        override suspend fun saveDocument(project: String, id: String, expected: String, title: String, body: String, page: DocumentPageSetup?): Result<DocumentSnapshot> {
             if (id == failId || saved.getValue(id).revision != expected) return Result.failure(IllegalStateException("Conflict"))
-            return Result.success(saved.getValue(id).copy(title = title, body = body, revision = "$expected-saved").also { saved[id] = it })
+            return Result.success(saved.getValue(id).copy(title = title, body = body, revision = "$expected-saved", page = page ?: saved.getValue(id).page).also { saved[id] = it })
         }
         override suspend fun showLatestDocument(project: String, id: String) = pending?.await() ?: Result.success(saved.getValue(id))
         override suspend fun documentHistory(project: String, id: String) = Result.success(listOf(saved.getValue(id)))
@@ -257,5 +257,74 @@ class DocumentWorkspaceStateTest {
             assertNull(tab.historyError)
             assertTrue(tab.history.isEmpty())
         } finally { state.dispose() }
+    }
+
+    @Test
+    fun metadataIsPartOfTheDirtyBufferAndSavedOnlyByExplicitSave() = runBlocking {
+        val capabilities = Capabilities()
+        val state = DocumentWorkspaceState("project", capabilities, this)
+        try {
+            val tab = state.openSnapshot(capabilities.first)
+            assertFalse(tab.dirty)
+            val landscape = tab.page.copy(orientation = PageOrientation.Landscape, headerTemplate = "Doc {title}")
+            tab.page = landscape
+            assertTrue(tab.dirty)
+            assertEquals(DocumentPageSetup(), capabilities.saved.getValue("one").page)
+            assertTrue(state.save(tab))
+            assertFalse(tab.dirty)
+            assertEquals(landscape, capabilities.saved.getValue("one").page)
+            tab.page = DocumentPageSetup()
+            assertTrue(tab.dirty)
+            state.reload(tab)
+            assertEquals(landscape, tab.page)
+            assertFalse(tab.dirty)
+        } finally { state.dispose() }
+    }
+
+    @Test
+    fun invalidMetadataBlocksSaveAndKeepsTheBuffer() = runBlocking {
+        val capabilities = Capabilities()
+        val state = DocumentWorkspaceState("project", capabilities, this)
+        try {
+            val tab = state.openSnapshot(capabilities.first)
+            tab.page = tab.page.copy(headerTemplate = "{unknown}")
+            assertFalse(state.save(tab))
+            assertTrue(tab.error!!.startsWith("Metadata is invalid"))
+            assertEquals("r1", capabilities.saved.getValue("one").revision)
+            tab.page = DocumentPageSetup()
+            tab.metadataError = "Margins must be numeric millimetre values."
+            assertFalse(state.save(tab))
+        } finally { state.dispose() }
+    }
+
+    @Test
+    fun historicalRecordsKeepTheirOwnMetadataReadOnly() = runBlocking {
+        val capabilities = Capabilities()
+        val state = DocumentWorkspaceState("project", capabilities, this)
+        try {
+            val old = capabilities.first.copy(page = DocumentPageSetup(size = PageSize.Letter))
+            val tab = state.openSnapshot(old, historical = true)
+            assertEquals(PageSize.Letter, tab.page.size)
+            assertFalse(tab.editable)
+            assertFalse(tab.dirty)
+        } finally { state.dispose() }
+    }
+
+    @Test
+    fun metadataValidationMirrorsTheCoreRules() {
+        val base = DocumentPageSetup()
+        fun ok(margins: List<String>, header: String = base.headerTemplate, footer: String = base.footerTemplate) =
+            metadataCandidate(base, margins, header, footer).isSuccess
+        val valid = listOf("25.4", "25.4", "25.4", "25.4")
+        assertTrue(ok(valid))
+        assertTrue(ok(listOf("5", "50", "5.0", "50.0")))
+        assertFalse(ok(listOf("4.9", "25.4", "25.4", "25.4")))
+        assertFalse(ok(listOf("25.45", "25.4", "25.4", "25.4")))
+        assertFalse(ok(listOf("x", "25.4", "25.4", "25.4")))
+        assertFalse(ok(listOf("NaN", "25.4", "25.4", "25.4")))
+        assertFalse(ok(valid, header = "{Title}"))
+        assertFalse(ok(valid, footer = "a\tb"))
+        assertFalse(ok(valid, header = "x".repeat(121)))
+        assertTrue(ok(valid, header = "", footer = "{page}/{total}"))
     }
 }

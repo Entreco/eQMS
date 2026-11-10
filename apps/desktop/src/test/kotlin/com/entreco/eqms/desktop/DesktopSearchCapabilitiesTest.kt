@@ -84,7 +84,7 @@ class DesktopSearchCapabilitiesTest {
 
     @Test
     fun exactRevisionReadChecksIdentityAndRevision() = runBlocking {
-        val data = """{"id":"$id","title":"Old policy","body":"old","status":"Draft","revision":"$revision","content_hash":"sha256:${"b".repeat(64)}","event_hash":"${"c".repeat(64)}","configured_author":"Test","local_timestamp":"1"}"""
+        val data = """{"id":"$id","title":"Old policy","body":"old","status":"Draft","revision":"$revision","content_hash":"sha256:${"b".repeat(64)}","event_hash":"${"c".repeat(64)}","configured_author":"Test","local_timestamp":"1","page":{"size":"A4","orientation":"portrait","margin_top_mm":25.4,"margin_right_mm":25.4,"margin_bottom_mm":25.4,"margin_left_mm":25.4,"header":"{title}","footer":"Page {page} of {total}"}}"""
         var arguments = emptyList<String>()
         val capabilities = DesktopDocumentCapabilities("qms", DocumentExecutor { _, args, _ ->
             arguments = args

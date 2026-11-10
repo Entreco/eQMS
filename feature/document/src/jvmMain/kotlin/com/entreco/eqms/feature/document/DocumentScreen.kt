@@ -70,19 +70,10 @@ fun DocumentScreen(
         var confirmation by remember { mutableStateOf<Pair<DocumentTab, DocumentStatus>?>(null) }
         var externalLink by remember { mutableStateOf<String?>(null) }
         var linkBusy by remember { mutableStateOf(false) }
-        var editingPageSetup by remember { mutableStateOf(false) }
-        var draftPageSetup by remember { mutableStateOf(DocumentPageSetup()) }
-        var marginTopText by remember { mutableStateOf("${draftPageSetup.marginTopMm}") }
-        var marginRightText by remember { mutableStateOf("${draftPageSetup.marginRightMm}") }
-        var marginBottomText by remember { mutableStateOf("${draftPageSetup.marginBottomMm}") }
-        var marginLeftText by remember { mutableStateOf("${draftPageSetup.marginLeftMm}") }
-        var headerTemplate by remember { mutableStateOf(draftPageSetup.headerTemplate) }
-        var footerTemplate by remember { mutableStateOf(draftPageSetup.footerTemplate) }
         val bitmapCache = remember { DocumentBitmapCache() }
         val tab = state.active
         val interactive =
             !state.busy && !workspaceBusy && state.pendingClose == null && confirmation == null && externalLink == null && !linkBusy
-                && !state.pageSetupSaving
         val isMac = remember { System.getProperty("os.name").startsWith("Mac") }
         val shortcuts = remember(isMac) { ToolShortcutHandler(isMac) }
         val railFocus = remember { WorkspaceTool.entries.associateWith { FocusRequester() } }
@@ -139,27 +130,11 @@ fun DocumentScreen(
                                             enabled = interactive,
                                             onClick = state::newDocument
                                         ) { Text("New document") }
-                                        OutlinedButton(
-                                            enabled = interactive && !state.pageSetupLoading,
-                                            onClick = {
-                                                draftPageSetup = state.pageSetup
-                                                marginTopText = "${state.pageSetup.marginTopMm}"
-                                                marginRightText = "${state.pageSetup.marginRightMm}"
-                                                marginBottomText = "${state.pageSetup.marginBottomMm}"
-                                                marginLeftText = "${state.pageSetup.marginLeftMm}"
-                                                headerTemplate = state.pageSetup.headerTemplate
-                                                footerTemplate = state.pageSetup.footerTemplate
-                                                editingPageSetup = true
-                                            },
-                                        ) { Text("Page setup") }
                                     }
                                     OutlinedButton(
                                         enabled = interactive && !state.documentsLoading,
                                         onClick = { scope.launch { state.refresh() } },
                                     ) { Text("Refresh documents") }
-                                    state.pageSetupError?.let {
-                                        Text("Could not load page setup: $it", color = JewelTheme.globalColors.text.error)
-                                    }
                                     LazyColumn(Modifier.weight(1f).fillMaxWidth()) {
                                         if (state.documentsLoading) item { Text("Loading documents...") }
                                         state.documentsError?.let { message ->
@@ -243,7 +218,7 @@ fun DocumentScreen(
                                 DocumentPresentation(
                                     project,
                                     tab,
-                                    state.pageSetup,
+                                    tab.page,
                                     capabilities,
                                     interactive,
                                     bitmapCache,
@@ -256,7 +231,7 @@ fun DocumentScreen(
                                     verticalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
                                     DefaultButton(
-                                        enabled = interactive && tab.editable && tab.title.isNotBlank(),
+                                        enabled = interactive && tab.editable && tab.title.isNotBlank() && tab.metadataError == null,
                                         onClick = { scope.launch { state.save(tab) } }) { Text("Save") }
                                     OutlinedButton(
                                         enabled = interactive && tab.snapshot != null,
@@ -285,6 +260,7 @@ fun DocumentScreen(
                             right!!.name, rightWidth.coerceIn(140f, panelLimit),
                             modifier = Modifier.onFocusChanged { rightFocused = it.hasFocus }) {
                             if (tab == null) Text("Select a document.") else when (right) {
+                                WorkspaceTool.Metadata -> DocumentMetadataPanel(tab, interactive, Modifier.weight(1f))
                                 WorkspaceTool.Review -> ReviewPanel(tab, interactive) { confirmation = tab to it }
                                 WorkspaceTool.History -> DocumentHistoryPanel(
                                     tab, interactive,
@@ -347,110 +323,6 @@ fun DocumentScreen(
                     }) { Text("Confirm") }
                 },
                 dismissButton = { OutlinedButton(onClick = { confirmation = null }) { Text("Cancel") } },
-            )
-        }
-        if (editingPageSetup) {
-            WorkspaceDialog(
-                onDismissRequest = { if (!state.pageSetupSaving) editingPageSetup = false },
-                title = { Text("Project page setup") },
-                text = {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("Presentation settings are project-scoped and do not change canonical revision hashes until you save content.")
-                        Text("Page size")
-                        ListComboBox(
-                            items = PageSize.entries.map { it.label },
-                            selectedIndex = PageSize.entries.indexOf(draftPageSetup.size),
-                            onSelectedItemChange = { draftPageSetup = draftPageSetup.copy(size = PageSize.entries[it]) },
-                            enabled = !state.pageSetupSaving,
-                        )
-                        Text("Orientation")
-                        ListComboBox(
-                            items = PageOrientation.entries.map { it.name },
-                            selectedIndex = PageOrientation.entries.indexOf(draftPageSetup.orientation),
-                            onSelectedItemChange = { draftPageSetup = draftPageSetup.copy(orientation = PageOrientation.entries[it]) },
-                            enabled = !state.pageSetupSaving,
-                        )
-                        WorkspaceTextField(
-                            marginTopText,
-                            { marginTopText = it },
-                            "Top margin (mm)",
-                            singleLine = true,
-                            enabled = !state.pageSetupSaving,
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                        WorkspaceTextField(
-                            marginRightText,
-                            { marginRightText = it },
-                            "Right margin (mm)",
-                            singleLine = true,
-                            enabled = !state.pageSetupSaving,
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                        WorkspaceTextField(
-                            marginBottomText,
-                            { marginBottomText = it },
-                            "Bottom margin (mm)",
-                            singleLine = true,
-                            enabled = !state.pageSetupSaving,
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                        WorkspaceTextField(
-                            marginLeftText,
-                            { marginLeftText = it },
-                            "Left margin (mm)",
-                            singleLine = true,
-                            enabled = !state.pageSetupSaving,
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                        WorkspaceTextField(
-                            headerTemplate,
-                            { headerTemplate = it },
-                            "Header template",
-                            singleLine = true,
-                            enabled = !state.pageSetupSaving,
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                        WorkspaceTextField(
-                            footerTemplate,
-                            { footerTemplate = it },
-                            "Footer template",
-                            singleLine = true,
-                            enabled = !state.pageSetupSaving,
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                        Text("Use placeholders {title}, {page}, {total}.", color = JewelTheme.globalColors.text.info)
-                        state.pageSetupError?.let { Text(it, color = JewelTheme.globalColors.text.error) }
-                    }
-                },
-                confirmButton = {
-                    DefaultButton(enabled = !state.pageSetupSaving, onClick = {
-                        scope.launch {
-                            val top = marginTopText.toDoubleOrNull()
-                            val right = marginRightText.toDoubleOrNull()
-                            val bottom = marginBottomText.toDoubleOrNull()
-                            val left = marginLeftText.toDoubleOrNull()
-                            if (listOf(top, right, bottom, left).any { it == null }) {
-                                state.reportPageSetupError("Margins must be numeric millimeter values.")
-                                return@launch
-                            }
-                            draftPageSetup = draftPageSetup.copy(
-                                marginTopMm = top!!,
-                                marginRightMm = right!!,
-                                marginBottomMm = bottom!!,
-                                marginLeftMm = left!!,
-                                headerTemplate = headerTemplate,
-                                footerTemplate = footerTemplate,
-                            )
-                            state.savePageSetup(draftPageSetup)
-                            if (state.pageSetupError == null) editingPageSetup = false
-                        }
-                    }) { Text(if (state.pageSetupSaving) "Saving..." else "Save") }
-                },
-                dismissButton = {
-                    OutlinedButton(enabled = !state.pageSetupSaving, onClick = { editingPageSetup = false }) {
-                        Text("Cancel")
-                    }
-                },
             )
         }
         state.pendingClose?.let { affected ->

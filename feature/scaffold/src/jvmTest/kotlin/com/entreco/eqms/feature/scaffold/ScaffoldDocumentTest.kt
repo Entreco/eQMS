@@ -86,9 +86,9 @@ class ScaffoldDocumentTest {
             lists++
             return Result.success(listOf(saved))
         }
-        override suspend fun createDocument(project: String, title: String, body: String): Result<DocumentSnapshot> =
+        override suspend fun createDocument(project: String, title: String, body: String, page: com.entreco.eqms.feature.document.DocumentPageSetup?): Result<DocumentSnapshot> =
             error("This navigation test must not save")
-        override suspend fun saveDocument(project: String, id: String, expected: String, title: String, body: String): Result<DocumentSnapshot> =
+        override suspend fun saveDocument(project: String, id: String, expected: String, title: String, body: String, page: com.entreco.eqms.feature.document.DocumentPageSetup?): Result<DocumentSnapshot> =
             error("This navigation test must not save")
         override suspend fun documentHistory(project: String, id: String) = Result.success(listOf(saved))
         override suspend fun documentDiff(project: String, id: String, from: String, to: String): Result<String> =

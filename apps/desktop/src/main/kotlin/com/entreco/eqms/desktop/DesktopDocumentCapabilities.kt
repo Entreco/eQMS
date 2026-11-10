@@ -25,8 +25,6 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.runInterruptible
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.*
-import java.util.prefs.BackingStoreException
-import java.util.prefs.Preferences
 
 internal fun interface DocumentExecutor {
     fun execute(executable: String, arguments: List<String>, input: String?): ProcessResult
@@ -37,66 +35,7 @@ internal class DesktopDocumentCapabilities(
     private val executor: DocumentExecutor = DocumentExecutor { command, arguments, input ->
         executeProcess(command, arguments, input)
     },
-    private val settingsNode: () -> Preferences = {
-        Preferences.userRoot().node("com/entreco/dutchdoxx/project-page-setup")
-    },
 ) : DocumentCapabilities {
-    override suspend fun loadPageSetup(project: String): Result<DocumentPageSetup> = withContext(Dispatchers.IO) {
-        try {
-            val raw = settingsNode().get(projectSettingsKey(project), null)
-                ?: return@withContext Result.success(DocumentPageSetup())
-            val value = Json.parseToJsonElement(raw).jsonObject
-            Result.success(
-                DocumentPageSetup(
-                    size = PageSize.valueOf(value.string("size")),
-                    orientation = PageOrientation.valueOf(value.string("orientation")),
-                    marginTopMm = value.number("margin_top_mm"),
-                    marginRightMm = value.number("margin_right_mm"),
-                    marginBottomMm = value.number("margin_bottom_mm"),
-                    marginLeftMm = value.number("margin_left_mm"),
-                    headerTemplate = value.string("header_template"),
-                    footerTemplate = value.string("footer_template"),
-                ).validate()
-            )
-        } catch (_: IllegalArgumentException) {
-            Result.failure(IllegalArgumentException("Stored page setup is invalid."))
-        } catch (_: IllegalStateException) {
-            Result.failure(IllegalArgumentException("Stored page setup is invalid."))
-        } catch (_: SerializationException) {
-            Result.failure(IllegalArgumentException("Stored page setup is invalid JSON."))
-        } catch (error: SecurityException) {
-            Result.failure(error)
-        }
-    }
-
-    override suspend fun savePageSetup(project: String, setup: DocumentPageSetup): Result<DocumentPageSetup> =
-        withContext(Dispatchers.IO) {
-            try {
-                val validated = setup.validate()
-                val payload = buildJsonObject {
-                    put("size", validated.size.name)
-                    put("orientation", validated.orientation.name)
-                    put("margin_top_mm", validated.marginTopMm)
-                    put("margin_right_mm", validated.marginRightMm)
-                    put("margin_bottom_mm", validated.marginBottomMm)
-                    put("margin_left_mm", validated.marginLeftMm)
-                    put("header_template", validated.headerTemplate)
-                    put("footer_template", validated.footerTemplate)
-                }
-                settingsNode().apply {
-                    put(projectSettingsKey(project), payload.toString())
-                    flush()
-                }
-                Result.success(validated)
-            } catch (error: BackingStoreException) {
-                Result.failure(error)
-            } catch (error: SecurityException) {
-                Result.failure(error)
-            } catch (error: IllegalArgumentException) {
-                Result.failure(error)
-            }
-        }
-
     override suspend fun renderBuffer(project: String, title: String, body: String): Result<RenderedDocument> =
         operation("render-buffer", project, emptyList(), buildJsonObject {
             put("title", title); put("body", body)
@@ -256,17 +195,19 @@ internal class DesktopDocumentCapabilities(
             }
         }
 
-    override suspend fun createDocument(project: String, title: String, body: String): Result<DocumentSnapshot> =
-        operation("create", project, listOf("--title", title), body) {
+    override suspend fun createDocument(
+        project: String, title: String, body: String, page: DocumentPageSetup?,
+    ): Result<DocumentSnapshot> =
+        operation("create", project, listOf("--title", title) + pageArguments(page), body) {
             snapshot(it).also { document ->
                 require(document.status == DocumentStatus.Draft) { "qms created a non-Draft document." }
             }
         }
 
     override suspend fun saveDocument(
-        project: String, id: String, expected: String, title: String, body: String,
+        project: String, id: String, expected: String, title: String, body: String, page: DocumentPageSetup?,
     ): Result<DocumentSnapshot> =
-        operation("save", project, listOf(id, "--title", title, "--expected", expected), body) {
+        operation("save", project, listOf(id, "--title", title, "--expected", expected) + pageArguments(page), body) {
             snapshot(it).also { doc ->
                 require(doc.id == id && doc.status == DocumentStatus.Draft) { "qms returned a different document or non-Draft save." }
             }
@@ -383,6 +324,7 @@ private fun snapshot(data: JsonElement): DocumentSnapshot {
     return DocumentSnapshot(
         id, title, value.string("body"), revision, contentHash, eventHash,
         value.string("configured_author"), value.string("local_timestamp"), status(value.string("status")),
+        pageSetup(value.getValue("page").jsonObject),
     )
 }
 
@@ -438,5 +380,34 @@ private fun JsonObject.number(name: String): Double {
     return value.double
 }
 
-private fun projectSettingsKey(project: String): String =
-    bodyDigest(project).removePrefix("sha256:")
+private fun pageSetup(value: JsonObject): DocumentPageSetup = DocumentPageSetup(
+    size = when (val size = value.string("size")) {
+        "A4" -> PageSize.A4
+        "Letter" -> PageSize.Letter
+        else -> throw IllegalArgumentException("Unknown page size $size.")
+    },
+    orientation = when (val orientation = value.string("orientation")) {
+        "portrait" -> PageOrientation.Portrait
+        "landscape" -> PageOrientation.Landscape
+        else -> throw IllegalArgumentException("Unknown orientation $orientation.")
+    },
+    marginTopMm = value.number("margin_top_mm"),
+    marginRightMm = value.number("margin_right_mm"),
+    marginBottomMm = value.number("margin_bottom_mm"),
+    marginLeftMm = value.number("margin_left_mm"),
+    headerTemplate = value.string("header"),
+    footerTemplate = value.string("footer"),
+).validate()
+
+private fun pageArguments(page: DocumentPageSetup?): List<String> = page?.let {
+    listOf(
+        "--page-size", if (it.size == PageSize.A4) "A4" else "Letter",
+        "--orientation", if (it.orientation == PageOrientation.Portrait) "portrait" else "landscape",
+        "--margin-top", it.marginTopMm.toString(),
+        "--margin-right", it.marginRightMm.toString(),
+        "--margin-bottom", it.marginBottomMm.toString(),
+        "--margin-left", it.marginLeftMm.toString(),
+        "--header", it.headerTemplate,
+        "--footer", it.footerTemplate,
+    )
+}.orEmpty()
