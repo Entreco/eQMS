@@ -13,7 +13,9 @@ import org.jetbrains.jewel.ui.component.DefaultButton
 import org.jetbrains.jewel.ui.component.OutlinedButton
 import org.jetbrains.jewel.ui.component.Text
 
-enum class DesktopCommand { About, Settings, CheckUpdates, NewProject, CloseProject }
+enum class DesktopCommand { About, Settings, CheckUpdates, NewProject, OpenProject, OpenRecent, CloseProject }
+
+const val MAX_RECENT_PROJECTS = 5
 
 data class ReleaseCheck(val message: String, val releaseUrl: String? = null)
 
@@ -24,6 +26,9 @@ class DesktopChrome(
     val checkUpdates: suspend () -> Result<ReleaseCheck>,
     val openRelease: suspend (String) -> Result<Unit>,
     val aboutLogo: @Composable () -> Unit = {},
+    val initialProject: Result<String?> = Result.success(null),
+    val initialRecents: Result<List<String>> = Result.success(emptyList()),
+    val saveProjects: suspend (project: String?, recents: List<String>) -> Result<Unit> = { _, _ -> Result.success(Unit) },
 ) {
     var dark by mutableStateOf(initialAppearance.getOrNull() ?: true)
         internal set
@@ -31,11 +36,23 @@ class DesktopChrome(
         internal set
     var hasProject by mutableStateOf(false)
         internal set
+    var recents by mutableStateOf((initialRecents.getOrNull() ?: emptyList()).distinct().take(MAX_RECENT_PROJECTS))
+        internal set
     internal var command by mutableStateOf<DesktopCommand?>(null)
+        private set
+    internal var recentPath: String? = null
         private set
 
     fun request(action: DesktopCommand) {
+        if (action == DesktopCommand.OpenRecent) return
         if (enabled && command == null && (action != DesktopCommand.CloseProject || hasProject)) command = action
+    }
+
+    fun requestRecent(path: String) {
+        if (enabled && command == null && path in recents) {
+            recentPath = path
+            command = DesktopCommand.OpenRecent
+        }
     }
 
     internal fun consume(): DesktopCommand? = command.also { command = null }

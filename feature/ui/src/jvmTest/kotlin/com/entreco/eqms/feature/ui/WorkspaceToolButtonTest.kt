@@ -22,7 +22,7 @@ class WorkspaceToolButtonTest {
     @Test
     fun compactIconOnlyButtonsExposeSelectionFocusAndDisabledStateInBothThemes() {
         var dark by mutableStateOf(true)
-        var selected by mutableStateOf(WorkspaceTool.Project)
+        var selected by mutableStateOf(WorkspaceTool.Documents)
         var enabled by mutableStateOf(true)
         compose.setContent {
             IntUiTheme(isDark = dark) {
@@ -44,7 +44,7 @@ class WorkspaceToolButtonTest {
                 button.assertIsSelected()
             }
             compose.runOnIdle { enabled = false }
-            compose.onNodeWithContentDescription("Toggle Project panel").assertIsNotEnabled()
+            compose.onNodeWithContentDescription("Toggle Documents panel").assertIsNotEnabled()
         }
     }
 
@@ -53,21 +53,21 @@ class WorkspaceToolButtonTest {
         var mac by mutableStateOf(true)
         compose.setContent {
             IntUiTheme(isDark = true) {
-                WorkspaceToolButton(WorkspaceTool.Project, true, true, mac, {})
+                WorkspaceToolButton(WorkspaceTool.Documents, true, true, mac, {})
             }
 
         }
-        val button = compose.onNodeWithContentDescription("Toggle Project panel")
+        val button = compose.onNodeWithContentDescription("Toggle Documents panel")
         for (platform in listOf(true, false)) {
             compose.runOnIdle { mac = platform }
             button.performMouseInput { enter(center); moveTo(center) }
             compose.mainClock.advanceTimeBy(2_000)
             compose.waitUntil(5_000) {
-                compose.onAllNodesWithText(WorkspaceTool.Project.shortcut(platform)).fetchSemanticsNodes().isNotEmpty()
+                compose.onAllNodesWithText(WorkspaceTool.Documents.shortcut(platform)).fetchSemanticsNodes().isNotEmpty()
             }
-            compose.onNodeWithText("Project").assertExists()
+            compose.onNodeWithText("Documents").assertExists()
             button.performMouseInput { exit(Offset(-10f, -10f)) }
-            compose.waitUntil(5_000) { compose.onAllNodesWithText("Project").fetchSemanticsNodes().isEmpty() }
+            compose.waitUntil(5_000) { compose.onAllNodesWithText("Documents").fetchSemanticsNodes().isEmpty() }
         }
     }
 
@@ -78,12 +78,12 @@ class WorkspaceToolButtonTest {
                 Row(Modifier.requiredSize(500.dp, 300.dp).padding(horizontal = 12.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically) {
-                    WorkspaceToolButton(WorkspaceTool.Project, true, true, true, {})
+                    WorkspaceToolButton(WorkspaceTool.Documents, true, true, true, {})
                     WorkspaceToolButton(WorkspaceTool.History, false, true, true, {})
                 }
             }
         }
-        for (tool in listOf(WorkspaceTool.Project, WorkspaceTool.History)) {
+        for (tool in listOf(WorkspaceTool.Documents, WorkspaceTool.History)) {
             val button = compose.onNodeWithContentDescription("Toggle ${tool.name} panel")
             for (height in listOf(2f, 33f)) {
                 button.performMouseInput { enter(Offset(center.x, height)); moveTo(Offset(center.x, height)) }

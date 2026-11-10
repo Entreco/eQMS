@@ -39,9 +39,14 @@ class DesktopNativeMenuTest {
                             else listOf("Application", "File", "Edit", "View", "Help")
                         assertEquals(expected, (0 until menus.menuCount).map { menus.getMenu(it).label })
                         val file = menus.getMenu(if (isMacOS) 0 else 1)
-                        assertEquals(listOf("New project", "Close project"), (0 until file.itemCount).map { file.getItem(it).label })
+                        assertEquals(
+                            listOf("New project", "Open project", "Open recent", "Close project"),
+                            (0 until file.itemCount).map { file.getItem(it).label },
+                        )
                         assertTrue(file.getItem(0).isEnabled)
-                        assertFalse(file.getItem(1).isEnabled)
+                        assertTrue(file.getItem(1).isEnabled)
+                        assertFalse(file.getItem(2).isEnabled)
+                        assertFalse(file.getItem(3).isEnabled)
                         assertEquals(0, menus.getMenu(if (isMacOS) 1 else 2).itemCount)
                         assertEquals(0, menus.getMenu(if (isMacOS) 2 else 3).itemCount)
                         assertEquals("Check for updates", menus.getMenu(menus.menuCount - 1).getItem(0).label)

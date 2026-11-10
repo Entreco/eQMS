@@ -47,7 +47,7 @@ class DesktopWindowNativeTest {
                         val origin = window.contentPane.locationOnScreen
                         val scale = window.graphicsConfiguration.defaultTransform.scaleX
                         val robot = Robot()
-                        robot.mouseMove(origin.x + ((actions.right - 40) / scale).toInt(), origin.y + (actions.center.y / scale).toInt())
+                        robot.mouseMove(origin.x + (actions.center.x / scale).toInt(), origin.y + (actions.center.y / scale).toInt())
                         delay(100)
                         robot.mousePress(InputEvent.BUTTON1_DOWN_MASK)
                         robot.mouseRelease(InputEvent.BUTTON1_DOWN_MASK)

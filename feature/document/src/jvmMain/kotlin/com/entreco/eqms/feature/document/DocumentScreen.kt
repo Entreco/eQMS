@@ -63,7 +63,7 @@ fun DocumentScreen(
             previousKeys.clear()
             previousKeys.addAll(openKeys)
         }
-        var left by remember { mutableStateOf<WorkspaceTool?>(WorkspaceTool.Project) }
+        var left by remember { mutableStateOf<WorkspaceTool?>(WorkspaceTool.Documents) }
         var right by remember { mutableStateOf<WorkspaceTool?>(WorkspaceTool.Review) }
         var leftWidth by remember { mutableFloatStateOf(260f) }
         var rightWidth by remember { mutableFloatStateOf(300f) }
@@ -124,7 +124,7 @@ fun DocumentScreen(
                             left!!.name, leftWidth.coerceIn(140f, panelLimit),
                             modifier = Modifier.onFocusChanged { leftFocused = it.hasFocus }) {
                             when (left) {
-                                WorkspaceTool.Project -> {
+                                WorkspaceTool.Documents -> {
                                     Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                                         DefaultButton(
                                             enabled = interactive,

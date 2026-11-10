@@ -50,7 +50,7 @@ class DocumentScreenTest {
             }
         }
         compose.onNodeWithText("Policy (Draft)").performClick()
-        compose.onNodeWithContentDescription("Toggle Project panel").performClick()
+        compose.onNodeWithContentDescription("Toggle Documents panel").performClick()
         compose.onNodeWithContentDescription("Toggle Review panel").performClick()
         compose.onNodeWithContentDescription("View Preview").performClick()
         compose.waitUntil(5_000) { compose.onAllNodesWithText("Role").fetchSemanticsNodes().isNotEmpty() }
@@ -76,7 +76,7 @@ class DocumentScreenTest {
         }
         for (theme in listOf(true, false)) {
             compose.runOnIdle { dark = theme }
-            for (name in listOf("Project panel", "Review panel", "Document editor panel")) {
+            for (name in listOf("Documents panel", "Review panel", "Document editor panel")) {
                 val pixels = compose.onNodeWithContentDescription(name).captureToImage().toPixelMap()
                 val corner = pixels[0, 0]
                 val fill = pixels[pixels.width / 2, pixels.height - 20]
@@ -107,10 +107,10 @@ class DocumentScreenTest {
                 moveTo(center); press(); moveTo(center + androidx.compose.ui.geometry.Offset(delta, 0f), 500); release()
             }
         }
-        val project = width("Project panel")
+        val project = width("Documents panel")
         val editor = width("Document editor panel")
         drag("Resize left panel", -60f)
-        assertTrue(width("Project panel") < project - 40)
+        assertTrue(width("Documents panel") < project - 40)
         assertTrue(width("Document editor panel") > editor + 40)
         val review = width("Review panel")
         val widerEditor = width("Document editor panel")
@@ -118,16 +118,16 @@ class DocumentScreenTest {
         assertTrue(width("Review panel") < review - 40)
         assertTrue(width("Document editor panel") > widerEditor + 40)
         drag("Resize left panel", -500f)
-        compose.onNodeWithContentDescription("Project panel").assertWidthIsEqualTo(140.dp)
+        compose.onNodeWithContentDescription("Documents panel").assertWidthIsEqualTo(140.dp)
         drag("Resize right panel", -500f)
         assertTrue(width("Review panel") <= 297.5f)
         assertTrue(width("Document editor panel") >= 300f)
         compose.runOnIdle { busy = true }
-        val leftBefore = width("Project panel")
+        val leftBefore = width("Documents panel")
         val rightBefore = width("Review panel")
         drag("Resize left panel", 60f)
         drag("Resize right panel", 60f)
-        assertEquals(leftBefore, width("Project panel"))
+        assertEquals(leftBefore, width("Documents panel"))
         assertEquals(rightBefore, width("Review panel"))
         sourceField("Markdown body").assertTextContains("keep during resize")
     }
@@ -170,10 +170,10 @@ class DocumentScreenTest {
         body.performTextReplacement("unsaved body")
         body.performTextInputSelection(TextRange(3))
         val before = body.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange]
-        for ((key, name) in listOf(Key.One to "Project", Key.Two to "Search", Key.Three to "Review", Key.Four to "History")) {
+        for ((key, name) in listOf(Key.One to "Documents", Key.Two to "Search", Key.Three to "Review", Key.Four to "History")) {
             val button = compose.onNodeWithContentDescription("Toggle $name panel")
             shortcut(key)
-            if (name == "Project" || name == "Review") button.assertIsNotSelected() else button.assertIsSelected()
+            if (name == "Documents" || name == "Review") button.assertIsNotSelected() else button.assertIsSelected()
             body.assertIsFocused().assertTextContains("unsaved body")
             assertEquals(before, body.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange])
         }
@@ -203,7 +203,7 @@ class DocumentScreenTest {
         sourceField("Markdown body").performClick()
         compose.runOnIdle { workspaceBusy = true }
         shortcut(Key.One)
-        compose.onNodeWithContentDescription("Toggle Project panel").assertIsSelected().assertIsNotEnabled()
+        compose.onNodeWithContentDescription("Toggle Documents panel").assertIsSelected().assertIsNotEnabled()
         compose.runOnIdle { workspaceBusy = false }
         compose.onNodeWithText("Submit for review").performScrollTo().performClick()
         compose.onNodeWithText("Cancel").performSemanticsAction(SemanticsActions.RequestFocus) { it() }
@@ -211,7 +211,7 @@ class DocumentScreenTest {
             val modifier = if (System.getProperty("os.name").startsWith("Mac")) Key.MetaLeft else Key.AltLeft
             keyDown(modifier); pressKey(Key.One); keyUp(modifier)
         }
-        compose.onNodeWithContentDescription("Toggle Project panel").assertIsSelected().assertIsNotEnabled()
+        compose.onNodeWithContentDescription("Toggle Documents panel").assertIsSelected().assertIsNotEnabled()
         compose.onNodeWithText("Cancel").performClick()
         sourceField("Markdown body").performTextReplacement("dirty")
         compose.onNodeWithContentDescription("Close tab Policy").performClick()
@@ -629,7 +629,7 @@ class DocumentScreenTest {
         sourceField("Markdown body").assertTextContains("unsaved latest")
         compose.onNodeWithText("Save").assertIsEnabled()
         searchField().performTextClearance()
-        compose.onNodeWithContentDescription("Toggle Project panel").performClick()
+        compose.onNodeWithContentDescription("Toggle Documents panel").performClick()
         compose.onNodeWithText("Latest policy (Draft)").assertExists()
     }
 
@@ -807,8 +807,8 @@ class DocumentScreenTest {
         compose.onNodeWithContentDescription("Document tab Policy").performClick()
         sourceField("Markdown body").assertTextContains("keep policy edits")
         assertEquals(TextRange(6), sourceField("Markdown body").fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange])
-        compose.onNodeWithContentDescription("Toggle Project panel").performClick()
-        compose.onNodeWithContentDescription("Toggle Project panel").performClick()
+        compose.onNodeWithContentDescription("Toggle Documents panel").performClick()
+        compose.onNodeWithContentDescription("Toggle Documents panel").performClick()
         compose.onNodeWithContentDescription("Toggle Review panel").performClick()
         compose.onNodeWithContentDescription("Toggle Review panel").performClick()
         sourceField("Markdown body").assertTextContains("keep policy edits")
@@ -834,13 +834,13 @@ class DocumentScreenTest {
         compose.onNodeWithText("Policy (Draft)").performClick()
         sourceField("Markdown body").assertIsDisplayed()
         assertTrue(sourceField("Markdown body").fetchSemanticsNode().boundsInRoot.width >= 180f)
-        compose.onNodeWithContentDescription("Toggle Project panel")
+        compose.onNodeWithContentDescription("Toggle Documents panel")
             .performSemanticsAction(SemanticsActions.RequestFocus) { it() }
-        compose.onNodeWithContentDescription("Toggle Project panel").performKeyInput { pressKey(Key.Enter) }
+        compose.onNodeWithContentDescription("Toggle Documents panel").performKeyInput { pressKey(Key.Enter) }
         compose.onNodeWithText("New document").assertDoesNotExist()
-        compose.onNodeWithContentDescription("Toggle Project panel")
+        compose.onNodeWithContentDescription("Toggle Documents panel")
             .performSemanticsAction(SemanticsActions.RequestFocus) { it() }
-        compose.onNodeWithContentDescription("Toggle Project panel").performKeyInput { pressKey(Key.Enter) }
+        compose.onNodeWithContentDescription("Toggle Documents panel").performKeyInput { pressKey(Key.Enter) }
         compose.onNodeWithText("New document").assertExists()
     }
 

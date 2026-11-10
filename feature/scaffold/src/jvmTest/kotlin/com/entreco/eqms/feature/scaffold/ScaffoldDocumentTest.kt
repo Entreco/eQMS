@@ -26,7 +26,7 @@ class ScaffoldDocumentTest {
         val projects = Projects()
         val documents = Documents()
         compose.setContent { ProjectScreen(projects, documents, chrome = chrome) }
-        compose.onNodeWithText("Open project").performClick()
+        compose.menu(chrome, DesktopCommand.OpenProject)
         compose.onNodeWithText("Select directory").performClick()
         compose.onNodeWithText("Policy (Draft)").performClick()
         fun sendToFocusedWindow() {
@@ -43,7 +43,7 @@ class ScaffoldDocumentTest {
         sendToFocusedWindow()
         compose.onNodeWithContentDescription("Toggle Search panel").assertIsNotSelected().assertIsNotEnabled()
         compose.onNodeWithText("Close").performClick()
-        compose.onNodeWithText("Open project").performClick()
+        compose.menu(chrome, DesktopCommand.OpenProject)
         compose.onNodeWithContentDescription("Directory path")
             .performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.RequestFocus) { it() }
         sendToFocusedWindow()
@@ -112,14 +112,15 @@ class ScaffoldDocumentTest {
         val documents = Documents()
         var closeRequested by mutableStateOf(false)
         var closed = false
+        val chrome = chrome()
         compose.setContent {
-            ProjectScreen(projects, documents, closeRequested, { closeRequested = false }, { closed = true })
+            ProjectScreen(projects, documents, closeRequested, { closeRequested = false }, { closed = true }, chrome = chrome)
         }
-        compose.onNodeWithText("Open project").performClick()
+        compose.menu(chrome, DesktopCommand.OpenProject)
         compose.onNodeWithText("Select directory").performClick()
         compose.onNodeWithText("New document").performClick()
         sourceField("Document title").performTextInput("Unsaved")
-        compose.onNodeWithText("Open project").performClick()
+        compose.menu(chrome, DesktopCommand.OpenProject)
         compose.onNodeWithText("Select directory").performClick()
         compose.onNodeWithText("Unsaved changes").assertExists()
         compose.onNodeWithText("Cancel").performClick()
@@ -144,7 +145,7 @@ class ScaffoldDocumentTest {
         compose.setContent { ProjectScreen(ProjectsRemembered(), capabilities, chrome = chrome) }
         compose.onNodeWithText("Your quality workspace").assertExists()
         compose.onNodeWithText("Light theme").assertExists()
-        compose.onNodeWithText("Open project").performClick()
+        compose.menu(chrome, DesktopCommand.OpenProject)
         compose.onNodeWithText("Select directory").performClick()
         compose.onNodeWithText("Policy (Draft)").performClick()
         sourceField("Markdown body").performTextReplacement("keep these edits")
@@ -162,7 +163,7 @@ class ScaffoldDocumentTest {
             assertEquals(1, capabilities.prepares)
             assertEquals(listOf("policy"), capabilities.queries)
         }
-        compose.onNodeWithText("Open project").performClick()
+        compose.menu(chrome, DesktopCommand.OpenProject)
         compose.onNodeWithText("Select directory").performClick()
         compose.onNodeWithText("Unsaved changes").assertExists()
         compose.onNodeWithText("Cancel").performClick()
@@ -176,16 +177,17 @@ class ScaffoldDocumentTest {
     fun projectCancellationAndFailureKeepEditorButSuccessfulReopenRefreshesIt() {
         val capabilities = Documents()
         val projects = Projects()
-        compose.setContent { ProjectScreen(projects, capabilities) }
-        compose.onNodeWithText("Open project").performClick()
+        val chrome = chrome()
+        compose.setContent { ProjectScreen(projects, capabilities, chrome = chrome) }
+        compose.menu(chrome, DesktopCommand.OpenProject)
         compose.onNodeWithText("Select directory").performClick()
         compose.onNodeWithText("Policy (Draft)").performClick()
         sourceField("Markdown body").performTextReplacement("unsaved before switch")
-        compose.onNodeWithText("Open project").performClick()
+        compose.menu(chrome, DesktopCommand.OpenProject)
         compose.onNodeWithText("Cancel").performClick()
         sourceField("Markdown body").assertTextContains("unsaved before switch")
         compose.runOnIdle { projects.failOpen = true }
-        compose.onNodeWithText("Open project").performClick()
+        compose.menu(chrome, DesktopCommand.OpenProject)
         compose.onNodeWithText("Select directory").performClick()
         compose.onNodeWithText("Verification failed").assertExists()
         sourceField("Markdown body").assertTextContains("unsaved before switch")
@@ -194,7 +196,7 @@ class ScaffoldDocumentTest {
             projects.failOpen = false
             capabilities.saved = capabilities.first.copy(title = "External policy", body = "external", revision = "second")
         }
-        compose.onNodeWithText("Open project").performClick()
+        compose.menu(chrome, DesktopCommand.OpenProject)
         compose.onNodeWithText("Select directory").performClick()
         compose.onNodeWithText("Unsaved changes").assertExists()
         compose.onNodeWithText("Discard changes").performClick()
@@ -223,7 +225,7 @@ class ScaffoldDocumentTest {
                 onCloseConfirmed = { exited = true }, chrome = chrome,
             )
         }
-        compose.onNodeWithText("Open project").performClick()
+        compose.menu(chrome, DesktopCommand.OpenProject)
         compose.onNodeWithText("Select directory").performClick()
         compose.onNodeWithText("Policy (Draft)").performClick()
         compose.runOnIdle { chrome.request(DesktopCommand.About) }
@@ -250,7 +252,7 @@ class ScaffoldDocumentTest {
             chrome.request(DesktopCommand.CloseProject)
         }
         compose.onNodeWithText("Your quality workspace").assertExists()
-        compose.onNodeWithText("Open project").performClick()
+        compose.menu(chrome, DesktopCommand.OpenProject)
         compose.onNodeWithText("Select directory").performClick()
         compose.onNodeWithText("Policy (Draft)").performClick()
         sourceField("Markdown body").performTextReplacement("keep edits")
