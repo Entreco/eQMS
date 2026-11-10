@@ -51,6 +51,20 @@ pub(crate) fn response(args: Vec<OsString>, input: &mut dyn Read) -> Response {
             Some(("audit", args)) => {
                 Response::from_result(audit::run(args, json), json, "audit.verify-ledger")
             }
+            Some(("approval", args)) => {
+                let command = args
+                    .subcommand_name()
+                    .map(|operation| format!("approval.{operation}"))
+                    .unwrap_or_else(|| "approval".to_owned());
+                Response::from_result(approval::run(args, json), json, &command)
+            }
+            Some(("module", args)) => {
+                let command = args
+                    .subcommand_name()
+                    .map(|operation| format!("module.{operation}"))
+                    .unwrap_or_else(|| "module".to_owned());
+                Response::from_result(module::run(args, json), json, &command)
+            }
             Some(("search", args)) => Response::from_result(
                 search::run(args, json),
                 json,
