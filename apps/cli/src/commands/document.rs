@@ -22,6 +22,16 @@ pub(crate) fn command() -> Command {
                 }),
         )
         .subcommand(page_arguments(operation("create").arg(title_argument())))
+        .subcommand(
+            operation("import")
+                .about("Import existing Markdown files as Draft documents (lossless, idempotent)")
+                .arg(
+                    Arg::new("source")
+                        .required(true)
+                        .num_args(1..)
+                        .help("UTF-8 Markdown file(s) to import; sources are only read"),
+                ),
+        )
         .subcommand(operation("list"))
         .subcommand(
             operation("show")
@@ -179,6 +189,9 @@ pub(crate) fn run(
             .as_str()
     };
     let docs = eqms_core::document::Documents::open(value("path")).map_err(|e| e.to_string())?;
+    if operation == "import" {
+        return import(&docs, args, json);
+    }
     let data = match operation {
         "create" | "save" => {
             let mut body = String::new();
@@ -244,6 +257,70 @@ pub(crate) fn run(
     }
     .map_err(|e| e.to_string())?;
     output::document(data, json)
+}
+
+fn import(
+    docs: &eqms_core::document::Documents,
+    args: &ArgMatches,
+    json: bool,
+) -> Result<String, String> {
+    let sources = args
+        .get_many::<String>("source")
+        .expect("required source")
+        .map(|path| {
+            std::fs::read(path)
+                .map(|bytes| eqms_core::import::ImportSource {
+                    name: path.clone(),
+                    bytes,
+                })
+                .map_err(|cause| format!("cannot read source {path}: {cause}"))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let outcomes = docs.import(&sources).map_err(|e| e.to_string())?;
+    if json {
+        let imported: Vec<_> = outcomes
+            .iter()
+            .map(|outcome| {
+                serde_json::json!({
+                    "source": outcome.source,
+                    "source_hash": outcome.source_hash,
+                    "id": outcome.document.id,
+                    "title": outcome.document.title,
+                    "status": outcome.document.status,
+                    "revision": outcome.document.revision,
+                    "content_hash": outcome.document.content_hash,
+                    "identifiers": outcome.identifiers,
+                    "line_endings_normalized": outcome.line_endings_normalized,
+                    "already_imported": outcome.already_imported,
+                })
+            })
+            .collect();
+        return serde_json::to_string(&serde_json::json!({ "imported": imported }))
+            .map_err(|e| e.to_string());
+    }
+    let created = outcomes.iter().filter(|o| !o.already_imported).count();
+    let mut lines: Vec<String> = outcomes
+        .iter()
+        .map(|outcome| {
+            format!(
+                "{} {} <- {} ({} identifiers, {})",
+                if outcome.already_imported {
+                    "exists "
+                } else {
+                    "created"
+                },
+                outcome.document.id,
+                outcome.source,
+                outcome.identifiers.len(),
+                outcome.document.status,
+            )
+        })
+        .collect();
+    lines.push(format!(
+        "Imported {created} new, {} already imported. Documents remain Draft; import is not review or approval.",
+        outcomes.len() - created
+    ));
+    Ok(lines.join("\n"))
 }
 
 #[cfg(test)]

@@ -30,6 +30,15 @@ This folder is reserved for architecture notes, module decisions, and other proj
 - [Markdown editing and paginated preview requirements](requirements/EQMS-104.md)
 - [Markdown editing and paginated preview test specification](testing/EQMS-104.md)
 - [Markdown editing and paginated preview automated evidence](testing/evidence/EQMS-104.md)
+- [Dogfood documentation design and risk assessment](architecture/EQMS-016.md)
+- [Dogfood documentation requirements](requirements/EQMS-016.md)
+- [Dogfood documentation test specification](testing/EQMS-016.md)
+- [Dogfood documentation automated evidence](testing/evidence/EQMS-016.md)
+- [Dogfood documentation workflow](operations/EQMS-016.md)
+- [Role model and approval matrix design and risk assessment](architecture/EQMS-013.md)
+- [Role model and approval matrix requirements](requirements/EQMS-013.md)
+- [Role model and approval matrix test specification](testing/EQMS-013.md)
+- [Role model and approval matrix automated evidence](testing/evidence/EQMS-013.md)
 
 Issue delivery follows the [contributor workflow](../AGENTS.md). Feature records
 remain drafts pending manual review and testing.
