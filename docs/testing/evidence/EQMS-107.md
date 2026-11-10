@@ -8,7 +8,7 @@ related: [EQMS-107]
 
 ## Tested revision and environment
 
-- Tested revision: `abf298c020aebff2b116f8bdedfb4e7eac67dfa0`
+- Tested revision: `e1f641861c0e6e78425652cfc14978b23deb81da`
 - Platform: macOS 26.6.2, arm64
 - Rust: `rustc 1.99.1 (58cf8f9c3 2026-10-13)`
 
