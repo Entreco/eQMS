@@ -6,4 +6,5 @@ pub(crate) mod module;
 pub(crate) mod project;
 mod render;
 pub(crate) mod search;
+pub(crate) mod template;
 pub(crate) mod workspace;

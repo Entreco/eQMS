@@ -93,6 +93,19 @@ Without recorded branding, `show` derives defaults from the directory name
 (`persisted:false`). Contrast warnings are advisory. See the
 [EQMS-107 design](../architecture/EQMS-107.md).
 
+Document templates (EQMS-112, CLI only; not yet bound to documents):
+
+```sh
+qms template validate template.json
+qms template list <project>
+qms template show <project> <id>
+qms template install <project> template.json [--asset logo.png ...]
+```
+
+`install` adds an immutable version (journaled `template.installed`); a built-in
+`generic` template is always listed. See the
+[EQMS-112 design](../architecture/EQMS-112.md).
+
 For an explicit page boundary, put `<!-- pagebreak -->` alone on a top-level
 line, separated from surrounding paragraphs by blank lines, or use **Insert
 page break** in Markdown/Markdown + Preview. Insertion preserves selected text
