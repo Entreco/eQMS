@@ -19,6 +19,7 @@ related: [EQMS-123]
 | R123-09 | Links typed in Edit are validated with the native allow-list rules; blocked links are flagged; raw HTML is never executed. |
 | R123-10 | Controls have accessibility labels, are keyboard operable and disabled when read-only; stale render results never overwrite newer buffers. |
 | R123-11 | Rendering and mode switching do not mutate canonical documents, refs or journals; changes persist only through explicit Save. |
+| R123-12 | Edit mode shows A4-proportioned sheets with millimetre rulers (top and left, margins marked), shows no transient status text while typing, shows a placeholder only in the focused empty field, and arrow keys move between blocks at field edges. |
 
 Risks, mitigations and limitations are in the
 [EQMS-123 design](../architecture/EQMS-123.md). Draft records, not approved

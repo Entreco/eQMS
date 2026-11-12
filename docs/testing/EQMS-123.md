@@ -29,6 +29,8 @@ as passing coverage.
 
 ## Manual checklist - pending
 
+- T123-13 (R123-12): `DocumentScreenTest.editModeSheetIsA4ArrowKeysCrossBlocksAndTypingDoesNotShowUpdating` and `editModeTypingReachesTheBody` (automated).
+- [ ] Human check of rulers, arrow-key navigation (including up/down across wrapped paragraphs and tables) and no UI jump while typing.
 - [ ] Human review of paper look in light and dark themes.
 - [ ] Human typing, IME, selection, undo and mode-switching checks across pages.
 - [ ] Human keyboard/focus and accessibility checks (toolbar, tables).

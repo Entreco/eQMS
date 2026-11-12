@@ -59,6 +59,39 @@ internal class WysiwygEditorState(private val tab: DocumentTab) {
         doc = next
     }
 
+    val layouts = HashMap<FieldId, androidx.compose.ui.text.TextLayoutResult>()
+
+    private fun fieldOrder(): List<FieldId> = buildList {
+        doc?.blocks?.forEachIndexed { i, b ->
+            when (val c = b.content) {
+                is BlockContent.Rich -> add(FieldId(i))
+                is BlockContent.Items -> c.items.indices.forEach { add(FieldId(i, it)) }
+                is BlockContent.Quote -> c.paragraphs.indices.forEach { add(FieldId(i, it)) }
+                is BlockContent.Table -> (0..c.rows.size).forEach { r -> c.header.indices.forEach { add(FieldId(i, r, it)) } }
+                else -> Unit
+            }
+        }
+    }
+
+    /** Moves the caret to the neighbouring text field; [x] keeps the horizontal position for vertical moves. */
+    fun navigate(from: FieldId, forward: Boolean, vertical: Boolean, x: Float): Boolean {
+        val order = fieldOrder()
+        val at = order.indexOf(from)
+        if (at < 0) return false
+        val target = order.getOrNull(at + if (forward) 1 else -1) ?: return false
+        val layout = layouts[target]
+        val offset = when {
+            !vertical -> if (forward) 0 else Int.MAX_VALUE
+            layout == null -> if (forward) 0 else Int.MAX_VALUE
+            else -> {
+                val line = if (forward) 0 else layout.lineCount - 1
+                layout.getOffsetForPosition(androidx.compose.ui.geometry.Offset(x, (layout.getLineTop(line) + layout.getLineBottom(line)) / 2f))
+            }
+        }
+        request(target, TextRange(offset))
+        return true
+    }
+
     fun request(id: FieldId, selection: TextRange = TextRange(0)) {
         focusRequest = FocusRequest(id, selection, ++serial)
     }

@@ -406,6 +406,33 @@ class DocumentScreenTest {
     }
 
     @Test
+    fun editModeSheetIsA4ArrowKeysCrossBlocksAndTypingDoesNotShowUpdating() {
+        val capabilities = Capabilities().apply {
+            renderNodes = listOf(
+                RenderNode("paragraph", children = listOf(RenderNode("text", "One")), start = 0, end = 3),
+                RenderNode("paragraph", children = listOf(RenderNode("text", "Two")), start = 5, end = 8),
+            )
+        }
+        val tab = DocumentTab(1, null).apply { body = "One\n\nTwo" }
+        compose.setContent {
+            IntUiTheme(isDark = false) {
+                DocumentPresentation("/project", tab, DocumentPageSetup(), capabilities, true,
+                    remember { DocumentBitmapCache() }, {}, Modifier.requiredSize(900.dp, 700.dp))
+            }
+        }
+        compose.waitUntil { compose.onAllNodesWithContentDescription("Page 1 sheet").fetchSemanticsNodes().isNotEmpty() }
+        val box = compose.onNodeWithContentDescription("Page 1 sheet").fetchSemanticsNode().size
+        assertEquals(297.0 / 210.0, box.height.toDouble() / box.width, 0.02)
+        compose.onNodeWithText("Type here").assertDoesNotExist()
+        val first = compose.onAllNodes(hasSetTextAction())[1]
+        first.performClick()
+        first.performKeyInput { pressKey(Key.DirectionRight); pressKey(Key.DirectionRight); pressKey(Key.DirectionRight); pressKey(Key.DirectionRight) }
+        compose.waitForIdle()
+        compose.onAllNodes(hasSetTextAction())[2].assertIsFocused()
+        compose.onNodeWithText("Updating...").assertDoesNotExist()
+    }
+
+    @Test
     fun wysiwygIsDefaultAndModesRetainUnsavedSourceCaretAndIndependentTabs() {
         val capabilities = Capabilities()
         compose.setContent {

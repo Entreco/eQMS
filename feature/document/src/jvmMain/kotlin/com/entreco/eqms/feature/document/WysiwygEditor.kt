@@ -103,8 +103,7 @@ internal fun WysiwygView(
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         FormatToolbar(tab, editor, editable, linkOpen, { linkOpen = it })
-        if (render.loading || doc == null) Text(if (doc == null && editor.unavailable == null) "Loading editor..." else "Updating...",
-            color = JewelTheme.globalColors.text.info)
+        if (doc == null && editor.unavailable == null) Text("Loading editor...", color = JewelTheme.globalColors.text.info)
         (render.error ?: editor.unavailable)?.let {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(it, color = JewelTheme.globalColors.text.error)
@@ -135,15 +134,15 @@ private fun Desk(
         if (block.content == BlockContent.PageBreak) sections += mutableListOf<Int>() else sections.last() += index
     }
     BoxWithConstraints(Modifier.fillMaxSize().background(Paper.desk())) {
-        val sheetWidth = maxWidth - 32.dp
+        val sheetWidth = maxWidth - 56.dp
         Column(
-            Modifier.fillMaxSize().verticalScroll(tab.editorScroll).padding(16.dp),
+            Modifier.fillMaxSize().verticalScroll(tab.editorScroll).padding(start = 40.dp, end = 16.dp, top = 32.dp, bottom = 16.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+            verticalArrangement = Arrangement.spacedBy(32.dp),
         ) {
             val breaks = doc.blocks.indices.filter { doc.blocks[it].content == BlockContent.PageBreak }
             sections.forEachIndexed { page, indices ->
-                PaperSheet(setup, sheetWidth) { margins ->
+                PaperSheet(setup, sheetWidth, Modifier.semantics { contentDescription = "Page ${page + 1} sheet" }, rulers = true) { margins ->
                     BasicText(
                         renderTemplate(setup.headerTemplate, tab.title, page + 1, sections.size),
                         Modifier.fillMaxWidth().padding(start = margins.left, end = margins.right, top = margins.top / 2),
@@ -315,6 +314,9 @@ private fun RichField(
             editor.changeText(id, updated)
         }
     }
+    var focused by remember(id) { mutableStateOf(false) }
+    var layout by remember(id) { mutableStateOf<TextLayoutResult?>(null) }
+    DisposableEffect(id) { onDispose { editor.layouts.remove(id) } }
     val request = editor.focusRequest
     LaunchedEffect(request) {
         if (request != null && request.id == id) {
@@ -343,7 +345,7 @@ private fun RichField(
                 publish()
             }
         },
-        modifier.focusRequester(requester).onFocusChanged { if (it.isFocused) publish() }
+        modifier.focusRequester(requester).onFocusChanged { focused = it.isFocused; if (it.isFocused) publish() }
             .semantics { contentDescription = description }
             .onPreviewKeyEvent { event ->
                 if (event.type != KeyEventType.KeyDown || !editable) false
@@ -351,6 +353,11 @@ private fun RichField(
                     event.key == Key.Enter && !event.isShiftPressed && !commandKey(event) ->
                         editor.enter(id, field.selection.start) || !multiline
                     event.key == Key.Enter && !multiline -> true
+                    plainNavigation(event) && navigationKey(event.key, field, layout)?.let { (forward, vertical) ->
+                        val l = layout
+                        val x = l?.getCursorRect(field.selection.start.coerceAtMost(field.text.length))?.left ?: 0f
+                        editor.navigate(id, forward, vertical, x)
+                    } == true -> true
                     event.key == Key.Backspace && field.selection.collapsed && field.selection.start == 0 &&
                         !event.isMetaPressed && !event.isCtrlPressed && !event.isAltPressed -> editor.backspaceAtStart(id)
                     else -> false
@@ -358,14 +365,31 @@ private fun RichField(
             },
         readOnly = !editable,
         textStyle = style,
+        onTextLayout = { layout = it; editor.layouts[id] = it },
         cursorBrush = SolidColor(Paper.ink),
         decorationBox = { inner ->
             Box {
-                if (text.length == 0 && placeholder.isNotEmpty() && editable) BasicText(placeholder, style = style.copy(color = Paper.muted.copy(alpha = 0.7f)))
+                if (text.length == 0 && placeholder.isNotEmpty() && editable && focused) BasicText(placeholder, style = style.copy(color = Paper.muted.copy(alpha = 0.7f)))
                 inner()
             }
         },
     )
+}
+
+private fun plainNavigation(event: KeyEvent) =
+    !event.isShiftPressed && !event.isMetaPressed && !event.isCtrlPressed && !event.isAltPressed
+
+/** Returns (forward, vertical) when the arrow key must leave the current field, otherwise null. */
+private fun navigationKey(key: Key, field: TextFieldValue, layout: TextLayoutResult?): Pair<Boolean, Boolean>? {
+    if (!field.selection.collapsed) return null
+    val caret = field.selection.start
+    return when (key) {
+        Key.DirectionLeft -> if (caret == 0) false to false else null
+        Key.DirectionRight -> if (caret >= field.text.length) true to false else null
+        Key.DirectionUp -> if (layout == null || layout.getLineForOffset(caret.coerceAtMost(field.text.length)) == 0) false to true else null
+        Key.DirectionDown -> if (layout == null || layout.getLineForOffset(caret.coerceAtMost(field.text.length)) >= layout.lineCount - 1) true to true else null
+        else -> null
+    }
 }
 
 @Composable
