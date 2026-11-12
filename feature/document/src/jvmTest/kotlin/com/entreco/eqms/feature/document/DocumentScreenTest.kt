@@ -387,6 +387,25 @@ class DocumentScreenTest {
     }
 
     @Test
+    fun editModeTypingReachesTheBody() {
+        val capabilities = Capabilities().apply {
+            renderNodes = listOf(RenderNode("paragraph", children = listOf(RenderNode("text", "Hello")), start = 0, end = 5))
+        }
+        val tab = DocumentTab(1, null).apply { body = "Hello" }
+        compose.setContent {
+            IntUiTheme(isDark = false) {
+                DocumentPresentation("/project", tab, DocumentPageSetup(), capabilities, true,
+                    remember { DocumentBitmapCache() }, {}, Modifier.requiredSize(900.dp, 700.dp))
+            }
+        }
+        compose.waitUntil { compose.onAllNodesWithContentDescription("Document editor").fetchSemanticsNodes().isNotEmpty() }
+        compose.waitUntil { compose.onAllNodes(hasSetTextAction()).fetchSemanticsNodes().size == 2 }
+        compose.onAllNodes(hasSetTextAction()).onLast().assertTextContains("Hello")
+        compose.onAllNodes(hasSetTextAction()).onLast().performTextInput("X")
+        compose.runOnIdle { assertEquals("XHello", tab.body) }
+    }
+
+    @Test
     fun wysiwygIsDefaultAndModesRetainUnsavedSourceCaretAndIndependentTabs() {
         val capabilities = Capabilities()
         compose.setContent {

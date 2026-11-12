@@ -33,11 +33,14 @@ import org.jetbrains.jewel.ui.component.OutlinedButton
 import org.jetbrains.jewel.ui.component.Text
 import org.jetbrains.jewel.ui.component.TextField
 
-internal fun InlineText.toAnnotated(): AnnotatedString = buildAnnotatedString {
+internal fun InlineText.toAnnotated(): AnnotatedString {
+    val source = this
+    val size = source.length
+    return buildAnnotatedString {
     var i = 0
-    while (i < length) {
+    while (i < size) {
         var j = i
-        while (j < length && bits[j] == bits[i] && links[j] == links[i]) j++
+        while (j < size && bits[j] == bits[i] && links[j] == links[i]) j++
         val bit = bits[i]
         val style = SpanStyle(
             fontWeight = if (bit and InlineMark.Bold != 0) FontWeight.Bold else null,
@@ -50,8 +53,9 @@ internal fun InlineText.toAnnotated(): AnnotatedString = buildAnnotatedString {
                 TextDecoration.Underline.takeIf { links[i] != null },
             ).takeIf { it.isNotEmpty() }?.let { TextDecoration.combine(it) },
         )
-        withStyle(style) { append(text.substring(i, j)) }
+        withStyle(style) { append(source.text.substring(i, j)) }
         i = j
+    }
     }
 }
 
