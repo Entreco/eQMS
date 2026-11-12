@@ -525,10 +525,11 @@ mod tests {
             ]
         );
         assert!(doc.nodes.windows(2).all(|w| w[0].end <= w[1].start));
-        assert!(doc
-            .nodes
-            .iter()
-            .all(|n| n.children.iter().all(|c| c.start.is_none() && c.end.is_none())));
+        assert!(doc.nodes.iter().all(|n| {
+            n.children
+                .iter()
+                .all(|c| c.start.is_none() && c.end.is_none())
+        }));
     }
 
     #[test]
