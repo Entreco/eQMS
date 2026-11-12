@@ -133,6 +133,39 @@ impl PageSetup {
     }
 }
 
+/// Pin to an immutable template version; part of the hashed canonical document.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TemplateBinding {
+    pub id: String,
+    pub version: u32,
+    /// Template content hash, `sha256:` plus 64 lowercase hex.
+    pub hash: String,
+}
+
+impl TemplateBinding {
+    pub fn validate(&self) -> Result<(), MarkdownError> {
+        let id_ok = (1..=40).contains(&self.id.len())
+            && self.id.starts_with(|c: char| c.is_ascii_lowercase())
+            && self
+                .id
+                .bytes()
+                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+            && !self.id.ends_with('-');
+        let hash_ok = self.hash.strip_prefix("sha256:").is_some_and(|hex| {
+            hex.len() == 64 && hex.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+        });
+        if !id_ok || self.version == 0 || !hash_ok {
+            return Err(error("invalid template binding"));
+        }
+        Ok(())
+    }
+
+    /// Journal label, e.g. `sop@v2`.
+    pub fn label(&self) -> String {
+        format!("{}@v{}", self.id, self.version)
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 struct Metadata {
@@ -147,6 +180,12 @@ struct Metadata {
     margin_left_mm: f64,
     header: String,
     footer: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    template_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    template_version: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    template_hash: Option<String>,
     status: String,
 }
 
@@ -156,6 +195,7 @@ pub struct Markdown {
     id: String,
     title: String,
     page: PageSetup,
+    template: Option<TemplateBinding>,
     body: String,
 }
 
@@ -182,7 +222,20 @@ impl Markdown {
         body: &str,
         page: PageSetup,
     ) -> Result<Self, MarkdownError> {
+        Self::with_template(id, title, body, page, None)
+    }
+
+    pub fn with_template(
+        id: &str,
+        title: &str,
+        body: &str,
+        page: PageSetup,
+        template: Option<TemplateBinding>,
+    ) -> Result<Self, MarkdownError> {
         validate_id(id)?;
+        if let Some(binding) = &template {
+            binding.validate()?;
+        }
         let title = title.trim();
         if title.is_empty() || title.chars().any(char::is_control) {
             return Err(error("document title must be a nonblank single line"));
@@ -191,6 +244,7 @@ impl Markdown {
             id: id.to_owned(),
             title: title.to_owned(),
             page: page.validated()?,
+            template,
             body: body.replace("\r\n", "\n").replace('\r', "\n"),
         })
     }
@@ -220,7 +274,16 @@ impl Markdown {
         if metadata.status != "Draft" {
             return Err(error("unsupported document status; expected Draft"));
         }
-        Self::with_page(
+        let template = match (
+            metadata.template_id,
+            metadata.template_version,
+            metadata.template_hash,
+        ) {
+            (None, None, None) => None,
+            (Some(id), Some(version), Some(hash)) => Some(TemplateBinding { id, version, hash }),
+            _ => return Err(error("incomplete template binding")),
+        };
+        Self::with_template(
             &metadata.id,
             &metadata.title,
             body,
@@ -234,6 +297,7 @@ impl Markdown {
                 header: metadata.header,
                 footer: metadata.footer,
             },
+            template,
         )
     }
 
@@ -260,6 +324,10 @@ impl Markdown {
         &self.page
     }
 
+    pub fn template(&self) -> Option<&TemplateBinding> {
+        self.template.as_ref()
+    }
+
     pub fn body(&self) -> &str {
         &self.body
     }
@@ -277,6 +345,9 @@ impl Markdown {
             margin_left_mm: self.page.margin_left_mm,
             header: self.page.header.clone(),
             footer: self.page.footer.clone(),
+            template_id: self.template.as_ref().map(|t| t.id.clone()),
+            template_version: self.template.as_ref().map(|t| t.version),
+            template_hash: self.template.as_ref().map(|t| t.hash.clone()),
             status: "Draft".to_owned(),
         };
         let line = serde_json::to_string(&metadata).map_err(|cause| error(cause.to_string()))?;
@@ -340,6 +411,63 @@ mod tests {
                 canonical
             );
         }
+    }
+
+    fn binding() -> TemplateBinding {
+        TemplateBinding {
+            id: "sop".to_owned(),
+            version: 2,
+            hash: format!("sha256:{}", "ab".repeat(32)),
+        }
+    }
+
+    #[test]
+    fn template_pin_round_trips_in_fixed_position_and_unbound_is_unchanged() {
+        let document =
+            Markdown::with_template(ID, "Policy", "Body", PageSetup::default(), Some(binding()))
+                .unwrap();
+        let bytes = document.canonical_bytes().unwrap();
+        let text = String::from_utf8(bytes.clone()).unwrap();
+        assert!(text.contains(&format!(
+            "\"footer\":\"Page {{page}} of {{total}}\",\"template_id\":\"sop\",\"template_version\":2,\"template_hash\":\"sha256:{}\",\"status\":\"Draft\"",
+            "ab".repeat(32)
+        )));
+        let parsed = Markdown::validate(&bytes).unwrap();
+        assert_eq!(parsed.template(), Some(&binding()));
+        assert_eq!(parsed, document);
+        let unbound = Markdown::new(ID, "Policy", "Body").unwrap();
+        assert_eq!(unbound.canonical_bytes().unwrap(), GOLDEN.as_bytes());
+        assert_eq!(
+            Markdown::validate(GOLDEN.as_bytes()).unwrap().template(),
+            None
+        );
+    }
+
+    #[test]
+    fn invalid_template_pins_are_rejected() {
+        let bad = |edit: &dyn Fn(&mut TemplateBinding)| {
+            let mut pin = binding();
+            edit(&mut pin);
+            assert!(Markdown::with_template(ID, "T", "", PageSetup::default(), Some(pin)).is_err());
+        };
+        bad(&|p| p.id = "Sop".to_owned());
+        bad(&|p| p.id = String::new());
+        bad(&|p| p.id = "sop-".to_owned());
+        bad(&|p| p.version = 0);
+        bad(&|p| p.hash = "ab".repeat(32));
+        bad(&|p| p.hash = format!("sha256:{}", "AB".repeat(32)));
+        bad(&|p| p.hash = "sha256:ab".to_owned());
+        let pinned =
+            Markdown::with_template(ID, "Policy", "Body", PageSetup::default(), Some(binding()))
+                .unwrap();
+        let text = String::from_utf8(pinned.canonical_bytes().unwrap()).unwrap();
+        let partial = text.replace("\"template_version\":2,", "");
+        assert!(Markdown::parse(partial.as_bytes()).is_err());
+        let reordered = text.replace(
+            "\"template_id\":\"sop\",\"template_version\":2,",
+            "\"template_version\":2,\"template_id\":\"sop\",",
+        );
+        assert!(Markdown::validate(reordered.as_bytes()).is_err());
     }
 
     #[test]
