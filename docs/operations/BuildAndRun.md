@@ -67,7 +67,7 @@ returns an unsaved body input digest, and never claims saved provenance.
 `--output html` returns escaped deterministic HTML (16 MiB output limit);
 local images use explicit unversioned/unavailable placeholders, not remote
 resource URLs. Native JSON uses outer schema 2 and semantic schema 2 with
-renderer `eqms-markdown-2`. PDF/DOCX generation remains separate roadmap work
+renderer `eqms-markdown-3`. PDF/DOCX generation remains separate roadmap work
 (#35/#33); desktop pagination does not implement those exports.
 
 Paginated preview is derived UI presentation. Since schema v2 (EQMS-106) page

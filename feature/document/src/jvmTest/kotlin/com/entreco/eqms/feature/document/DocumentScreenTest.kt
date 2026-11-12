@@ -334,7 +334,7 @@ class DocumentScreenTest {
     @Test
     fun threeModesKeepLongSourceEditableAndPageBreakInsertionIsUndoable() {
         val capabilities = Capabilities()
-        val tab = DocumentTab(1, null).apply { body = "Start\n\n" + "Long source line\n".repeat(300) + "End" }
+        val tab = DocumentTab(1, null).apply { viewMode = DocumentViewMode.Source; body = "Start\n\n" + "Long source line\n".repeat(300) + "End" }
         var interactive by mutableStateOf(true)
         compose.setContent {
             IntUiTheme(isDark = false) {
@@ -343,7 +343,7 @@ class DocumentScreenTest {
             }
         }
         val modes = compose.onAllNodes(hasContentDescription("View ", substring = true)).fetchSemanticsNodes()
-        assertEquals(3, modes.size)
+        assertEquals(4, modes.size)
         compose.onNodeWithContentDescription("View Markdown").assertIsSelected()
         val original = tab.body
         sourceField("Markdown body").performTextInputSelection(TextRange(original.length))
@@ -369,7 +369,71 @@ class DocumentScreenTest {
     }
 
     @Test
-    fun markdownIsDefaultAndModesRetainUnsavedSourceCaretAndIndependentTabs() {
+    fun editModeRendersTheDocumentEditorAndToolbarWithMappedBlocks() {
+        val capabilities = Capabilities().apply {
+            renderNodes = listOf(RenderNode("paragraph", children = listOf(RenderNode("text", "Hello")), start = 0, end = 5))
+        }
+        val tab = DocumentTab(1, null).apply { body = "Hello" }
+        compose.setContent {
+            IntUiTheme(isDark = false) {
+                DocumentPresentation("/project", tab, DocumentPageSetup(), capabilities, true,
+                    remember { DocumentBitmapCache() }, {}, Modifier.requiredSize(900.dp, 700.dp))
+            }
+        }
+        compose.onNodeWithContentDescription("View Edit").assertIsSelected()
+        compose.waitUntil { compose.onAllNodesWithContentDescription("Document editor").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithContentDescription("Document editor").assertExists()
+        compose.onNodeWithContentDescription("Markdown body").assertDoesNotExist()
+    }
+
+    @Test
+    fun editModeTypingReachesTheBody() {
+        val capabilities = Capabilities().apply {
+            renderNodes = listOf(RenderNode("paragraph", children = listOf(RenderNode("text", "Hello")), start = 0, end = 5))
+        }
+        val tab = DocumentTab(1, null).apply { body = "Hello" }
+        compose.setContent {
+            IntUiTheme(isDark = false) {
+                DocumentPresentation("/project", tab, DocumentPageSetup(), capabilities, true,
+                    remember { DocumentBitmapCache() }, {}, Modifier.requiredSize(900.dp, 700.dp))
+            }
+        }
+        compose.waitUntil { compose.onAllNodesWithContentDescription("Document editor").fetchSemanticsNodes().isNotEmpty() }
+        compose.waitUntil { compose.onAllNodes(hasSetTextAction()).fetchSemanticsNodes().size == 2 }
+        compose.onAllNodes(hasSetTextAction()).onLast().assertTextContains("Hello")
+        compose.onAllNodes(hasSetTextAction()).onLast().performTextInput("X")
+        compose.runOnIdle { assertEquals("XHello", tab.body) }
+    }
+
+    @Test
+    fun editModeSheetIsA4ArrowKeysCrossBlocksAndTypingDoesNotShowUpdating() {
+        val capabilities = Capabilities().apply {
+            renderNodes = listOf(
+                RenderNode("paragraph", children = listOf(RenderNode("text", "One")), start = 0, end = 3),
+                RenderNode("paragraph", children = listOf(RenderNode("text", "Two")), start = 5, end = 8),
+            )
+        }
+        val tab = DocumentTab(1, null).apply { body = "One\n\nTwo" }
+        compose.setContent {
+            IntUiTheme(isDark = false) {
+                DocumentPresentation("/project", tab, DocumentPageSetup(), capabilities, true,
+                    remember { DocumentBitmapCache() }, {}, Modifier.requiredSize(900.dp, 700.dp))
+            }
+        }
+        compose.waitUntil { compose.onAllNodesWithContentDescription("Page 1 sheet").fetchSemanticsNodes().isNotEmpty() }
+        val box = compose.onNodeWithContentDescription("Page 1 sheet").fetchSemanticsNode().size
+        assertEquals(297.0 / 210.0, box.height.toDouble() / box.width, 0.02)
+        compose.onNodeWithText("Type here").assertDoesNotExist()
+        val first = compose.onAllNodes(hasSetTextAction())[1]
+        first.performClick()
+        first.performKeyInput { pressKey(Key.DirectionRight); pressKey(Key.DirectionRight); pressKey(Key.DirectionRight); pressKey(Key.DirectionRight) }
+        compose.waitForIdle()
+        compose.onAllNodes(hasSetTextAction())[2].assertIsFocused()
+        compose.onNodeWithText("Updating...").assertDoesNotExist()
+    }
+
+    @Test
+    fun wysiwygIsDefaultAndModesRetainUnsavedSourceCaretAndIndependentTabs() {
         val capabilities = Capabilities()
         compose.setContent {
             IntUiTheme(isDark = true) {
@@ -379,7 +443,8 @@ class DocumentScreenTest {
             }
         }
         compose.onNodeWithText("Policy (Draft)").performClick()
-        compose.onNodeWithContentDescription("View Markdown").assertIsSelected()
+        compose.onNodeWithContentDescription("View Edit").assertIsSelected()
+        compose.onNodeWithContentDescription("View Markdown").performClick()
         sourceField("Markdown body").assertExists()
         sourceField("Markdown body").performTextReplacement("unsaved preview text")
         sourceField("Markdown body").performTextInputSelection(TextRange(5))
@@ -388,7 +453,7 @@ class DocumentScreenTest {
         compose.onNodeWithContentDescription("Resize source and preview; arrow keys adjust").assertExists()
         compose.onNodeWithContentDescription("View Preview").performClick()
         compose.onNodeWithText("New document").performClick()
-        compose.onNodeWithContentDescription("View Markdown").assertIsSelected()
+        compose.onNodeWithContentDescription("View Edit").assertIsSelected()
         sourceField("Document title").performTextReplacement("Other")
         compose.onNodeWithContentDescription("Document tab Policy").performClick()
         compose.onNodeWithContentDescription("View Preview").assertIsSelected()

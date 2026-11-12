@@ -11,8 +11,8 @@ internal fun bodyDigest(bytes: ByteArray): String =
 internal fun renderedDocument(data: JsonElement): RenderedDocument {
     val root = data.jsonObject
     require(!root.getValue("semantic_schema").jsonPrimitive.isString &&
-        root.getValue("semantic_schema").jsonPrimitive.int == 2 &&
-        root.getValue("renderer").jsonPrimitive.content == "eqms-markdown-2") { "Unsupported document renderer/schema." }
+        root.getValue("semantic_schema").jsonPrimitive.int == 3 &&
+        root.getValue("renderer").jsonPrimitive.content == "eqms-markdown-3") { "Unsupported document renderer/schema." }
     var count = 0
     val kinds = setOf("text", "paragraph", "h1", "h2", "h3", "h4", "h5", "h6",
         "quote", "code_block", "ordered", "unordered", "item", "emphasis", "strong",
@@ -39,10 +39,29 @@ internal fun renderedDocument(data: JsonElement): RenderedDocument {
                 "Page-break nodes must be empty and top-level."
             }
         }
-        return RenderNode(kind, text, target, anchor, children)
+        fun JsonObject.offset(name: String): Int {
+            val item = this[name] ?: return -1
+            val value = item.jsonPrimitive
+            require(!value.isString) { "$name must be a number." }
+            return requireNotNull(value.intOrNull) { "$name must be an integer." }.also {
+                require(it >= 0) { "$name must not be negative." }
+            }
+        }
+        val start = item.offset("start")
+        val end = item.offset("end")
+        require(topLevel || (start < 0 && end < 0)) { "Source ranges are only valid on top-level nodes." }
+        require((start < 0) == (end < 0) && (start < 0 || start <= end)) { "Invalid source range." }
+        return RenderNode(kind, text, target, anchor, children, start, end)
     }
     val source = root.getValue("source").jsonObject
     val nodes = root.getValue("nodes").jsonArray.map { node(it, 1, true) }
+    var previousEnd = 0
+    nodes.forEach {
+        if (it.start >= 0) {
+            require(it.start >= previousEnd) { "Source ranges overlap or are out of order." }
+            previousEnd = it.end
+        }
+    }
     val toc = root.getValue("toc").jsonArray.map {
         val value = it.jsonObject
         val level = value.getValue("level").jsonPrimitive.int

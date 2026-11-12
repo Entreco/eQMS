@@ -105,13 +105,15 @@ internal fun DocumentPresentation(
                     ) { ModeIcon(mode) }
                 }
             }
-            if (tab.viewMode != DocumentViewMode.Preview) {
+            if (tab.viewMode == DocumentViewMode.Source || tab.viewMode == DocumentViewMode.Split) {
                 OutlinedButton(onClick = tab::insertPageBreak, enabled = interactive && tab.editable) {
                     Text("Insert page break")
                 }
             }
         }
-        if (tab.viewMode == DocumentViewMode.Source) {
+        if (tab.viewMode == DocumentViewMode.Wysiwyg) {
+            WysiwygView(project, tab, pageSetup, capabilities, cache, interactive, Modifier.weight(1f).fillMaxWidth())
+        } else if (tab.viewMode == DocumentViewMode.Source) {
             sourceStates.SaveableStateProvider("markdown") {
                 Source(tab, interactive, Modifier.weight(1f).fillMaxWidth())
             }
@@ -151,6 +153,14 @@ internal fun DocumentPresentation(
 private fun ModeIcon(mode: DocumentViewMode) {
     val color = JewelTheme.globalColors.text.normal
     Canvas(Modifier.size(18.dp)) {
+        if (mode == DocumentViewMode.Wysiwyg) {
+            drawRect(color, Offset(3f, 1f), Size(size.width - 6f, size.height - 2f), style = Stroke(1.4f))
+            repeat(3) { line ->
+                val y = size.height * (0.3f + line * 0.2f)
+                drawLine(color, Offset(6f, y), Offset(size.width - 6f, y), strokeWidth = 1.4f)
+            }
+            return@Canvas
+        }
         if (mode != DocumentViewMode.Source) {
             val left = if (mode == DocumentViewMode.Split) size.width * 0.55f else 2f
             drawRect(color, Offset(left, 1f), Size(size.width - left - 1f, size.height - 2f), style = Stroke(1.4f))
@@ -193,32 +203,21 @@ private fun Source(tab: DocumentTab, interactive: Boolean, modifier: Modifier) {
     }
 }
 
+internal class RenderState(val current: RenderedDocument?, val loading: Boolean, val error: String?)
+
+/** Native render of the tab's current buffer; stale results are discarded. */
 @Composable
-private fun Preview(
-    project: String,
-    tab: DocumentTab,
-    pageSetup: DocumentPageSetup,
-    capabilities: DocumentCapabilities,
-    cache: DocumentBitmapCache,
-    onExternalLink: (String) -> Unit,
-    onRendered: (DocumentRenderTiming) -> Unit,
-    modifier: Modifier,
-) {
+internal fun rememberDocumentRender(project: String, tab: DocumentTab, capabilities: DocumentCapabilities): RenderState {
     val title = tab.title
     val body = tab.body
     val revision = tab.snapshot?.revision
     val dirty = tab.dirty || tab.snapshot == null
     var error by remember(tab) { mutableStateOf<String?>(null) }
     var loading by remember(tab) { mutableStateOf(false) }
-    var showContents by remember(tab) { mutableStateOf(false) }
-    var showSourceDetails by remember(tab) { mutableStateOf(false) }
-    var anchorPages by remember(tab) { mutableStateOf<Map<String, Int>>(emptyMap()) }
-    var imageRatios by remember(project, tab) { mutableStateOf<Map<String, Float>>(emptyMap()) }
     val current = tab.rendered?.takeIf {
         tab.renderedTitle == title && tab.renderedBody == body && tab.renderedRevision == revision &&
             (it.source.kind == "unsaved") == dirty
     }
-
     LaunchedEffect(tab, title, body, revision, dirty) {
         if (current != null) return@LaunchedEffect
         loading = true
@@ -238,16 +237,40 @@ private fun Preview(
         }
         loading = false
     }
+    return RenderState(current, loading, error)
+}
+
+@Composable
+private fun Preview(
+    project: String,
+    tab: DocumentTab,
+    pageSetup: DocumentPageSetup,
+    capabilities: DocumentCapabilities,
+    cache: DocumentBitmapCache,
+    onExternalLink: (String) -> Unit,
+    onRendered: (DocumentRenderTiming) -> Unit,
+    modifier: Modifier,
+) {
+    val dirty = tab.dirty || tab.snapshot == null
+    val render = rememberDocumentRender(project, tab, capabilities)
+    val current = render.current
+    val loading = render.loading
+    var navigationError by remember(tab) { mutableStateOf<String?>(null) }
+    val error = render.error ?: navigationError
+    var showContents by remember(tab) { mutableStateOf(false) }
+    var showSourceDetails by remember(tab) { mutableStateOf(false) }
+    var anchorPages by remember(tab) { mutableStateOf<Map<String, Int>>(emptyMap()) }
+    var imageRatios by remember(project, tab) { mutableStateOf<Map<String, Float>>(emptyMap()) }
     val scope = rememberCoroutineScope()
     val navigate: (String) -> Unit = { target ->
         if (target.startsWith("#")) {
             val anchor = target.drop(1)
             val index = anchorPages[anchor] ?: -1
             if (index >= 0) scope.launch { tab.previewScroll.animateScrollToItem(index + 1) }
-            else error = "Reference target was not found: $target"
+            else navigationError = "Reference target was not found: $target"
         } else if (target.startsWith("https://") || target.startsWith("http://") || target.startsWith("mailto:")) {
             onExternalLink(target)
-        } else error = "Unsupported link: $target"
+        } else navigationError = "Unsupported link: $target"
     }
     Column(modifier.semantics { contentDescription = "Rendered document" }) {
         if (loading) Text("Rendering document...", color = JewelTheme.globalColors.text.info)
@@ -265,7 +288,7 @@ private fun Preview(
                 }
                 SideEffect { anchorPages = layout.anchorPages }
                 LazyColumn(state = tab.previewScroll, modifier = Modifier.fillMaxSize()
-                    .background(JewelTheme.globalColors.borders.normal.copy(alpha = 0.08f)).onGloballyPositioned {
+                    .background(Paper.desk()).onGloballyPositioned {
                     if (tab.reportedRendering !== current) {
                         tab.reportedRendering = current
                         onRendered(DocumentRenderTiming(current.inputDigest,
@@ -325,15 +348,14 @@ private fun Preview(
 @Composable
 private fun Block(node: RenderNode, project: String, historical: Boolean, capabilities: DocumentCapabilities,
     cache: DocumentBitmapCache, navigate: (String) -> Unit, modifier: Modifier = Modifier) {
-    val colors = JewelTheme.globalColors
-    val base = JewelTheme.defaultTextStyle.copy(color = colors.text.normal, fontSize = 15.sp, lineHeight = 24.sp)
+    val base = JewelTheme.defaultTextStyle.copy(color = Paper.ink, fontSize = 15.sp, lineHeight = 24.sp)
     when (node.kind) {
-        "rule" -> Box(modifier.height(1.dp).background(colors.borders.normal))
+        "rule" -> Box(modifier.height(1.dp).background(Paper.rule))
         "image" -> DocumentImageView(node, project, historical, capabilities, cache, modifier)
         "unordered", "ordered" -> Column(modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
             node.children.forEachIndexed { index, item ->
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(if (node.kind == "ordered") "${(node.target.toLongOrNull() ?: 1) + index}." else "\u2022")
+                    Text(if (node.kind == "ordered") "${(node.target.toLongOrNull() ?: 1) + index}." else "\u2022", color = Paper.ink)
                     Column(Modifier.weight(1f)) {
                         item.children.ifEmpty { listOf(item.copy(kind = "paragraph")) }.forEach {
                             Block(it, project, historical, capabilities, cache, navigate)
@@ -347,12 +369,12 @@ private fun Block(node: RenderNode, project: String, historical: Boolean, capabi
             val cellWidth = maxOf(150.dp, maxWidth / columns.coerceAtLeast(1))
             Column(Modifier.horizontalScroll(rememberScrollState())
                 .semantics { contentDescription = "Rendered table with $columns columns" }
-                .border(1.dp, colors.borders.normal)) {
+                .border(1.dp, Paper.rule)) {
                 node.children.forEach { row ->
                     Row(Modifier.height(IntrinsicSize.Min)) {
                         row.children.forEach { cell ->
-                            BasicText(inlineText(cell.children, navigate, colors.text.normal),
-                                Modifier.width(cellWidth).fillMaxHeight().border(0.5.dp, colors.borders.normal).padding(10.dp),
+                            BasicText(inlineText(cell.children, navigate, Paper.ink),
+                                Modifier.width(cellWidth).fillMaxHeight().border(0.5.dp, Paper.rule).padding(10.dp),
                                 style = base.copy(fontWeight = if (row.kind == "table_header") FontWeight.SemiBold else FontWeight.Normal))
                         }
                     }
@@ -360,14 +382,14 @@ private fun Block(node: RenderNode, project: String, historical: Boolean, capabi
             }
         }
         "code_block", "literal" -> SelectionContainer {
-            BasicText(node.plainText(), modifier.background(colors.borders.normal.copy(alpha = 0.15f))
+            BasicText(node.plainText(), modifier.background(Paper.codeBackground)
                 .horizontalScroll(rememberScrollState()).padding(12.dp),
                 style = base.copy(fontFamily = FontFamily.Monospace, fontSize = 13.sp))
         }
         "quote", "section", "footnote", "item" -> Column(modifier
-            .border(1.dp, colors.borders.normal.copy(alpha = 0.4f)).padding(12.dp),
+            .border(1.dp, Paper.rule).padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            if (node.kind == "footnote") Text("Note ${node.text}", fontWeight = FontWeight.SemiBold)
+            if (node.kind == "footnote") Text("Note ${node.text}", fontWeight = FontWeight.SemiBold, color = Paper.ink)
             node.children.forEach { Block(it, project, historical, capabilities, cache, navigate) }
             if (node.kind == "footnote") OutlinedButton(onClick = { navigate("#reference-${node.anchor}") }) { Text("Back to reference") }
         }
@@ -375,7 +397,7 @@ private fun Block(node: RenderNode, project: String, historical: Boolean, capabi
             val level = node.kind.takeIf { it.matches(Regex("h[1-6]")) }?.last()?.digitToInt()
             val style = if (level != null) base.copy(fontSize = (29 - level * 2).sp, lineHeight = (37 - level * 2).sp,
                 fontWeight = FontWeight.SemiBold) else base
-            val text = inlineText(if (node.children.isEmpty()) listOf(node) else node.children, navigate, colors.text.normal)
+            val text = inlineText(if (node.children.isEmpty()) listOf(node) else node.children, navigate, Paper.ink)
             Column(modifier) {
                 SelectionContainer {
                     BasicText(text, Modifier.fillMaxWidth().then(if (level != null) Modifier.semantics { heading() } else Modifier),
@@ -415,7 +437,7 @@ internal fun inlineText(nodes: List<RenderNode>, navigate: (String) -> Unit, lin
 }
 
 @Composable
-private fun DocumentImageView(node: RenderNode, project: String, historical: Boolean, capabilities: DocumentCapabilities,
+internal fun DocumentImageView(node: RenderNode, project: String, historical: Boolean, capabilities: DocumentCapabilities,
     cache: DocumentBitmapCache, modifier: Modifier, onDimensions: (Int, Int) -> Unit = { _, _ -> }) {
     var bitmap by remember(project, node.target, historical) { mutableStateOf<ImageBitmap?>(null) }
     var error by remember(project, node.target, historical) { mutableStateOf<String?>(null) }
@@ -443,13 +465,13 @@ private fun DocumentImageView(node: RenderNode, project: String, historical: Boo
         }
     }
     Column(modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        if (bitmap == null && error == null) Text("Loading image: ${node.plainText()}", color = JewelTheme.globalColors.text.info)
+        if (bitmap == null && error == null) Text("Loading image: ${node.plainText()}", color = Paper.muted)
         bitmap?.let {
             Image(it, node.plainText().ifBlank { "Document image" }, Modifier.fillMaxWidth().heightIn(max = 400.dp)
                 .weight(1f, fill = false), contentScale = ContentScale.Fit)
             Text("Local unversioned image - not covered by the document hash", fontSize = 11.sp,
-                color = JewelTheme.globalColors.text.info)
+                color = Paper.muted)
         }
-        error?.let { Text("${node.plainText()}: $it", color = JewelTheme.globalColors.text.info) }
+        error?.let { Text("${node.plainText()}: $it", color = Paper.muted) }
     }
 }

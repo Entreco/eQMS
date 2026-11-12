@@ -6,7 +6,7 @@ Canonical Markdown, Git history, content hashes and lifecycle rules do not chang
 
 ## Contract
 
-Semantic schema 2 and renderer `eqms-markdown-2` sit inside the existing native
+Semantic schema 3 (EQMS-123 adds top-level UTF-16 source ranges) and renderer `eqms-markdown-3` sit inside the existing native
 schema-2 envelope. Nodes carry kind, optional text/target/anchor/level and children.
 Supported syntax: CommonMark plus tables, strikethrough and footnotes. Heading
 anchors use deterministic readable slugs with collision suffixes, including
