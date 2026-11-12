@@ -383,6 +383,7 @@ requirements and tests; targets are not claims of observed results.
 ## Milestone 7 — Plugin system
 
 ### EQMS-070: Define plugin API v1
+**Status:** Contract implemented on feature branch (`eqms_core::plugin`); no runtime, execution or call-site enforcement; manual review/testing pending
 **Type:** Feature  
 **Priority:** P0  
 **Description:** Create extension contracts for artifact types, commands, validators, reports, and migrations.  
