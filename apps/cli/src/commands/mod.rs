@@ -3,6 +3,7 @@ pub(crate) mod audit;
 pub(crate) mod document;
 mod markdown;
 pub(crate) mod module;
+mod pdf;
 pub(crate) mod project;
 mod render;
 pub(crate) mod search;

@@ -7,6 +7,7 @@ pub(crate) fn command() -> Command {
         .about("Create, save and inspect document drafts")
         .subcommand_required(true)
         .subcommands(super::render::commands())
+        .subcommands(super::pdf::commands())
         .subcommand(
             operation("validate")
                 .about("Check exact canonical v1 Markdown (no workspace)")
@@ -254,6 +255,9 @@ pub(crate) fn run_with_findings(
     let (operation, args) = matches.subcommand().expect("required document operation");
     if matches!(operation, "validate" | "format") {
         return super::markdown::run(operation, args, json, input).map(|text| (text, Vec::new()));
+    }
+    if matches!(operation, "export-pdf" | "export-pdf-batch") {
+        return super::pdf::run(operation, args, json).map(|text| (text, Vec::new()));
     }
     if matches!(operation, "render" | "render-buffer" | "render-asset") {
         return super::render::run(operation, args, json, input).map(|text| (text, Vec::new()));

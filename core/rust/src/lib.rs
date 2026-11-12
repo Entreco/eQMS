@@ -12,6 +12,7 @@ pub mod index;
 pub mod markdown;
 pub mod model;
 pub mod module;
+pub mod pdf;
 pub mod plugin;
 pub mod render;
 pub mod roles;
