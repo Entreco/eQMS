@@ -67,8 +67,25 @@ returns an unsaved body input digest, and never claims saved provenance.
 `--output html` returns escaped deterministic HTML (16 MiB output limit);
 local images use explicit unversioned/unavailable placeholders, not remote
 resource URLs. Native JSON uses outer schema 2 and semantic schema 2 with
-renderer `eqms-markdown-3`. PDF/DOCX generation remains separate roadmap work
-(#35/#33); desktop pagination does not implement those exports.
+renderer `eqms-markdown-3`. DOCX generation remains separate roadmap work
+(#33); desktop pagination does not implement DOCX export.
+
+### PDF export (EQMS-082)
+
+```sh
+qms document export-pdf <project> <document-id> [--revision <full-commit>] --file <out.pdf>
+qms document export-pdf-batch <project> <manifest.json> --output-dir <dir>
+```
+
+Exports exact saved revisions as deterministic text-only PDFs (base-14 fonts,
+WinAnsi; unsupported characters become `?` with a diagnostic) with a controlled
+output record: ID, revision, status, content hash and a lifecycle summary that
+states no cryptographic signature is recorded (EQMS-022 is not implemented).
+Outputs must be new files outside the project. The manifest is
+`{"schema_version":1,"release":"R-1","documents":[{"id":"DOC-…","revision":"<full-commit>"}]}`;
+batch export also writes `pdf-export-index.json` with manifest/PDF SHA-256 values
+and is not a signed release baseline (EQMS-042). PDFs are derived views, not
+approvals; see `docs/architecture/EQMS-082.md`.
 
 Paginated preview is derived UI presentation. Since schema v2 (EQMS-106) page
 setup is hashed document metadata: a metadata-only Save creates a new revision
