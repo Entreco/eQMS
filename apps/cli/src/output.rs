@@ -82,9 +82,17 @@ impl Response {
     }
 
     pub(crate) fn from_result(result: Result<String, String>, json: bool, command: &str) -> Self {
+        Self::from_result_with_findings(result.map(|text| (text, Vec::new())), json, command)
+    }
+
+    pub(crate) fn from_result_with_findings(
+        result: Result<(String, Vec<Value>), String>,
+        json: bool,
+        command: &str,
+    ) -> Self {
         match result {
-            Ok(text) if !json => Self::success(text),
-            Ok(text) => match success_envelope(&text, command) {
+            Ok((text, _)) if !json => Self::success(text),
+            Ok((text, findings)) => match success_envelope(&text, command, findings) {
                 Ok(text) => Self::success(text),
                 Err(message) => Self::failure(1, "INVALID_RESPONSE", &message, true, Some(command)),
             },
@@ -101,7 +109,7 @@ pub(crate) fn version(json: bool) -> String {
     }
 }
 
-fn success_envelope(text: &str, command: &str) -> Result<String, String> {
+fn success_envelope(text: &str, command: &str, findings: Vec<Value>) -> Result<String, String> {
     let data: Value = serde_json::from_str(text)
         .map_err(|error| format!("command produced invalid JSON output: {error}"))?;
     serde_json::to_string(&Envelope {
@@ -109,7 +117,7 @@ fn success_envelope(text: &str, command: &str) -> Result<String, String> {
         status: "ok",
         command: Some(command.to_owned()),
         timestamp_unix_ms: timestamp_unix_ms(),
-        findings: Vec::new(),
+        findings,
         references: Vec::new(),
         data: Some(data),
         error: None,

@@ -1,3 +1,4 @@
+use crate::conformance::{Finding, check_structure};
 use crate::markdown::{self, Markdown, PageSetup, TemplateBinding, hash};
 use crate::template::{StoredTemplate, Template, TemplateStore};
 use crate::workspace::{
@@ -115,6 +116,17 @@ pub struct LifecycleEvent {
 pub struct DocumentHistorySnapshot {
     pub revisions: Vec<Document>,
     pub lifecycle_events: Vec<LifecycleEvent>,
+}
+
+/// Advisory conformance of one revision to its pinned template (EQMS-114).
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+pub struct ConformanceReport {
+    pub id: String,
+    pub revision: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub template: Option<TemplateBinding>,
+    pub conforming: bool,
+    pub findings: Vec<Finding>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -674,6 +686,57 @@ impl Documents {
             None,
             Some(template.map(binding)),
         )
+    }
+
+    /// Conformance of a saved revision (default: latest) to the template it is pinned to.
+    pub fn conformance(
+        &self,
+        id: &str,
+        revision: Option<&str>,
+    ) -> Result<ConformanceReport, WorkspaceError> {
+        self.check_document(&self.show(id, revision)?)
+    }
+
+    /// Findings for `document` against its own pin; an unbound document yields one metadata finding.
+    pub fn check_document(&self, document: &Document) -> Result<ConformanceReport, WorkspaceError> {
+        let findings = match &document.template {
+            None => vec![Finding::warning(
+                "metadata.template_unbound",
+                "document is not bound to a template".to_owned(),
+                None,
+            )],
+            Some(pin) => {
+                let installed = TemplateStore::new(&self.workspace)
+                    .list()?
+                    .into_iter()
+                    .find(|stored| {
+                        stored.template.id == pin.id && stored.template.version == pin.version
+                    });
+                match installed {
+                    None => vec![Finding::warning(
+                        "metadata.template_missing",
+                        format!("pinned template {} is not installed", pin.label()),
+                        None,
+                    )],
+                    Some(stored) if stored.content_hash != pin.hash => vec![Finding::warning(
+                        "metadata.template_hash_mismatch",
+                        format!(
+                            "installed template {} differs from the pinned content hash",
+                            pin.label()
+                        ),
+                        None,
+                    )],
+                    Some(stored) => check_structure(&stored.template, &document.body),
+                }
+            }
+        };
+        Ok(ConformanceReport {
+            id: document.id.clone(),
+            revision: document.revision.clone(),
+            template: document.template.clone(),
+            conforming: findings.is_empty(),
+            findings,
+        })
     }
 
     /// Save content and metadata; a metadata-only change is a new revision.
@@ -2115,6 +2178,50 @@ mod tests {
             .is_err()
         );
         assert!(docs.create("Plain", "").unwrap().template.is_none());
+    }
+
+    #[test]
+    fn conformance_reports_metadata_and_structure_findings_per_revision() {
+        let f = Fixture::new();
+        let sop = install_template(&f, "sop", 1, "SOP");
+        let docs = f.docs();
+        let plain = docs.create("Plain", "x").unwrap();
+        let report = docs.conformance(&plain.id, None).unwrap();
+        assert!(!report.conforming);
+        assert_eq!(report.findings[0].code, "metadata.template_unbound");
+
+        let bound = docs
+            .create_with_template("SOP", "## Purpose\n", None, &sop)
+            .unwrap();
+        let report = docs.conformance(&bound.id, None).unwrap();
+        assert_eq!(report.findings.len(), 2);
+        assert!(!report.conforming);
+        let saved = docs
+            .save(
+                &bound.id,
+                &bound.revision,
+                "SOP",
+                "## Purpose\n## Scope\n## Content\n",
+            )
+            .unwrap();
+        assert!(docs.conformance(&bound.id, None).unwrap().conforming);
+        let old = docs.conformance(&bound.id, Some(&bound.revision)).unwrap();
+        assert_eq!(old.findings.len(), 2);
+        assert_eq!(old.revision, bound.revision);
+        assert!(docs.conformance(&bound.id, Some("deadbeef")).is_err());
+
+        let mut forged = saved.clone();
+        forged.template.as_mut().unwrap().hash = format!("sha256:{}", "0".repeat(64));
+        assert_eq!(
+            docs.check_document(&forged).unwrap().findings[0].code,
+            "metadata.template_hash_mismatch"
+        );
+        let mut missing = saved;
+        missing.template.as_mut().unwrap().version = 9;
+        assert_eq!(
+            docs.check_document(&missing).unwrap().findings[0].code,
+            "metadata.template_missing"
+        );
     }
 
     #[test]

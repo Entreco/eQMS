@@ -5,6 +5,7 @@ pub const fn version() -> &'static str {
 
 pub mod audit;
 pub mod branding;
+pub mod conformance;
 pub mod document;
 pub mod import;
 pub mod index;

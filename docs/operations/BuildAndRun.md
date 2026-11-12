@@ -118,6 +118,18 @@ page setup and (for an empty body) the scaffold; explicit page options win.
 `set-template` is a Draft-only, journaled change. See the
 [EQMS-113 design](../architecture/EQMS-113.md).
 
+Template structure conformance (EQMS-114):
+
+```sh
+qms document check <project> <doc-id> [--revision <rev>]
+```
+
+Reports advisory warnings (missing required section, wrong level or order,
+unbound/missing/changed template pin) in the `findings` array of the `--json`
+envelope. `create`, `save` and `set-template` of a pinned document add the same
+warnings but still succeed. Warnings are not approval or compliance evidence.
+See the [EQMS-114 design](../architecture/EQMS-114.md).
+
 For an explicit page boundary, put `<!-- pagebreak -->` alone on a top-level
 line, separated from surrounding paragraphs by blank lines, or use **Insert
 page break** in Markdown/Markdown + Preview. Insertion preserves selected text
