@@ -1184,7 +1184,8 @@ fn validate_content_hashes(
     for (path, hash) in content_hashes {
         let valid_path = (path.starts_with("documents/")
             || path.starts_with("modules/")
-            || path.starts_with("branding/"))
+            || path.starts_with("branding/")
+            || path.starts_with("templates/"))
             && !path.contains('\\')
             && path
                 .split('/')

@@ -614,6 +614,16 @@ requirements and tests; targets are not claims of observed results.
 - Contrast issues are reported without blocking.
 - Design, requirements, tests and evidence are recorded under `docs/`.
 
+### EQMS-112: Template model and schema v1 (#84)
+**Type:** Feature  
+**Priority:** P1  
+**Description:** Rust core and `qms` CLI template model: versioned, hashed, Git-tracked per-document-type templates with a structure part and a declarative style part, plus a built-in generic template. Document binding, conformance, the style engine, UI and standards packs are separate issues (#85-#89).  
+**Acceptance criteria:**
+- Templates are validated, canonically encoded and hashed; decoding is strict.
+- Installing a version is immutable, journaled and tamper-evident; assets are validated PNGs.
+- Style is a closed declarative schema, not CSS or code; fonts are bundled families only.
+- Design, requirements, tests and evidence are recorded under `docs/`.
+
 ---
 
 ## Execution sequence and first feature

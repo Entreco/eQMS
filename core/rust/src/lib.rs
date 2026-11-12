@@ -15,6 +15,7 @@ pub mod plugin;
 pub mod render;
 pub mod roles;
 pub mod search;
+pub mod template;
 pub mod workspace;
 
 #[cfg(test)]
