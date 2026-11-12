@@ -21,7 +21,42 @@ pub(crate) fn command() -> Command {
                     arg.help("v1 Markdown file, or - for UTF-8 stdin")
                 }),
         )
-        .subcommand(page_arguments(operation("create").arg(title_argument())))
+        .subcommand(page_arguments(
+            operation("create")
+                .arg(title_argument())
+                .arg(
+                    Arg::new("type")
+                        .long("type")
+                        .conflicts_with("template")
+                        .help("Scaffold from the installed template for this document type"),
+                )
+                .arg(
+                    Arg::new("template")
+                        .long("template")
+                        .help("Scaffold from this installed template id (latest version)"),
+                )
+                .arg(template_version_argument().requires("template")),
+        ))
+        .subcommand(
+            operation("set-template")
+                .about("Change or clear a Draft's template pin (journaled; content is kept)")
+                .arg(Arg::new("id").required(true))
+                .arg(Arg::new("expected").long("expected").required(true))
+                .arg(
+                    Arg::new("template")
+                        .long("template")
+                        .required_unless_present("clear")
+                        .help("Installed template id (latest version unless --template-version)"),
+                )
+                .arg(template_version_argument().requires("template"))
+                .arg(
+                    Arg::new("clear")
+                        .long("clear")
+                        .action(clap::ArgAction::SetTrue)
+                        .conflicts_with("template")
+                        .help("Remove the template pin"),
+                ),
+        )
         .subcommand(
             operation("import")
                 .about("Import existing Markdown files as Draft documents (lossless, idempotent)")
@@ -65,6 +100,13 @@ pub(crate) fn command() -> Command {
                 .arg(Arg::new("from").required(true))
                 .arg(Arg::new("to").required(true)),
         )
+}
+
+fn template_version_argument() -> Arg {
+    Arg::new("template-version")
+        .long("template-version")
+        .value_parser(clap::value_parser!(u32).range(1..))
+        .help("Exact template version instead of the latest")
 }
 
 fn title_argument() -> Arg {
@@ -167,6 +209,22 @@ fn page_override(
     Some(page)
 }
 
+fn has_template(args: &ArgMatches) -> bool {
+    args.contains_id("type") || args.contains_id("template")
+}
+
+fn selector(args: &ArgMatches) -> eqms_core::document::TemplateSelector<'_> {
+    match args.get_one::<String>("template") {
+        Some(id) => eqms_core::document::TemplateSelector::Id {
+            id,
+            version: args.get_one::<u32>("template-version").copied(),
+        },
+        None => eqms_core::document::TemplateSelector::DocumentType(
+            args.get_one::<String>("type").expect("type or template"),
+        ),
+    }
+}
+
 fn operation(name: &'static str) -> Command {
     Command::new(name).arg(Arg::new("path").required(true))
 }
@@ -198,7 +256,14 @@ pub(crate) fn run(
             input
                 .read_to_string(&mut body)
                 .map_err(|e| format!("cannot read UTF-8 document body: {e}"))?;
-            let document = if operation == "create" {
+            let document = if operation == "create" && has_template(args) {
+                let stored = docs
+                    .resolve_template(selector(args))
+                    .map_err(|e| e.to_string())?;
+                let seeded = eqms_core::document::Documents::seed_page(&stored.template);
+                let page = page_override(args, seeded);
+                docs.create_with_template(value("title"), &body, page.as_ref(), &stored)
+            } else if operation == "create" {
                 match page_override(args, Default::default()) {
                     Some(page) => docs.create_with_page(value("title"), &body, &page),
                     None => docs.create(value("title"), &body),
@@ -220,6 +285,20 @@ pub(crate) fn run(
             }
             .map_err(|e| e.to_string())?;
             serde_json::to_value(document)
+        }
+        "set-template" => {
+            let stored = if args.get_flag("clear") {
+                None
+            } else {
+                Some(
+                    docs.resolve_template(selector(args))
+                        .map_err(|e| e.to_string())?,
+                )
+            };
+            serde_json::to_value(
+                docs.set_template(value("id"), value("expected"), stored.as_ref())
+                    .map_err(|e| e.to_string())?,
+            )
         }
         "transition" => {
             let target = value("to").parse::<eqms_core::document::LifecycleState>()?;

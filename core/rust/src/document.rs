@@ -1,4 +1,5 @@
-use crate::markdown::{self, Markdown, PageSetup, hash};
+use crate::markdown::{self, Markdown, PageSetup, TemplateBinding, hash};
+use crate::template::{StoredTemplate, Template, TemplateStore};
 use crate::workspace::{
     JournalRecord, Workspace, WorkspaceError, ensure_git_identity, error, git, git_text,
     parse_and_verify_journal, read_git_blobs, timestamp, with_hash,
@@ -121,6 +122,8 @@ pub struct Document {
     pub id: String,
     pub title: String,
     pub page: PageSetup,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub template: Option<TemplateBinding>,
     pub body: String,
     pub status: String,
     pub revision: String,
@@ -163,6 +166,21 @@ fn created_payload(
     Ok(payload)
 }
 
+/// How `resolve_template` picks an installed template.
+#[derive(Clone, Copy, Debug)]
+pub enum TemplateSelector<'a> {
+    Id { id: &'a str, version: Option<u32> },
+    DocumentType(&'a str),
+}
+
+fn binding(stored: &StoredTemplate) -> TemplateBinding {
+    TemplateBinding {
+        id: stored.template.id.clone(),
+        version: stored.template.version,
+        hash: stored.content_hash.clone(),
+    }
+}
+
 fn validate_id(id: &str) -> Result<(), WorkspaceError> {
     markdown::validate_id(id).map_err(|cause| error(cause.to_string()))
 }
@@ -172,13 +190,33 @@ fn canonical(
     title: &str,
     body: &str,
     page: &PageSetup,
+    template: Option<&TemplateBinding>,
 ) -> Result<Vec<u8>, WorkspaceError> {
-    Markdown::with_page(id, title, body, page.clone())
+    Markdown::with_template(id, title, body, page.clone(), template.cloned())
         .and_then(|document| document.canonical_bytes())
         .map_err(|cause| error(cause.to_string()))
 }
 
-fn decode(bytes: &[u8], id: &str) -> Result<(String, String, PageSetup), WorkspaceError> {
+type Decoded = (String, String, PageSetup, Option<TemplateBinding>);
+
+/// Saved-event payload; a pin change must be explained by `template_from`/`template_to`.
+fn saved_payload(
+    id: &str,
+    previous: Option<&TemplateBinding>,
+    current: Option<&TemplateBinding>,
+) -> BTreeMap<String, String> {
+    let mut payload = BTreeMap::from([("document_id".to_owned(), id.to_owned())]);
+    if previous != current {
+        let label = |pin: Option<&TemplateBinding>| {
+            pin.map_or_else(|| "none".to_owned(), TemplateBinding::label)
+        };
+        payload.insert("template_from".to_owned(), label(previous));
+        payload.insert("template_to".to_owned(), label(current));
+    }
+    payload
+}
+
+fn decode(bytes: &[u8], id: &str) -> Result<Decoded, WorkspaceError> {
     let document = Markdown::validate(bytes).map_err(|cause| error(cause.to_string()))?;
     if document.id() != id {
         return Err(error("document ID differs from expected document"));
@@ -187,6 +225,7 @@ fn decode(bytes: &[u8], id: &str) -> Result<(String, String, PageSetup), Workspa
         document.title().to_owned(),
         document.body().to_owned(),
         document.page().clone(),
+        document.template().cloned(),
     ))
 }
 
@@ -441,6 +480,106 @@ impl Documents {
         body: &str,
         page: &PageSetup,
     ) -> Result<Document, WorkspaceError> {
+        self.create_inner(title, body, page, None)
+    }
+
+    /// Latest installed version (or the requested one) selected by template id or document type.
+    pub fn resolve_template(
+        &self,
+        selector: TemplateSelector<'_>,
+    ) -> Result<StoredTemplate, WorkspaceError> {
+        let all = TemplateStore::new(&self.workspace).list()?;
+        match selector {
+            TemplateSelector::Id { id, version } => all
+                .into_iter()
+                .filter(|stored| {
+                    stored.template.id == id
+                        && version.is_none_or(|wanted| stored.template.version == wanted)
+                })
+                .max_by_key(|stored| stored.template.version)
+                .ok_or_else(|| match version {
+                    Some(version) => error(format!("unknown template `{id}` version {version}")),
+                    None => error(format!("unknown template `{id}`")),
+                }),
+            TemplateSelector::DocumentType(document_type) => {
+                let mut latest: BTreeMap<String, StoredTemplate> = BTreeMap::new();
+                for stored in all {
+                    let newer = latest
+                        .get(&stored.template.id)
+                        .is_none_or(|known| known.template.version < stored.template.version);
+                    if newer {
+                        latest.insert(stored.template.id.clone(), stored);
+                    }
+                }
+                let mut matches: Vec<_> = latest
+                    .into_values()
+                    .filter(|stored| stored.template.document_type == document_type)
+                    .collect();
+                match matches.len() {
+                    0 => Err(error(format!(
+                        "no installed template for document type `{document_type}`"
+                    ))),
+                    1 => Ok(matches.remove(0)),
+                    _ => Err(error(format!(
+                        "several templates match document type `{document_type}` ({}); choose one with --template",
+                        matches
+                            .iter()
+                            .map(|stored| stored.template.id.as_str())
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    ))),
+                }
+            }
+        }
+    }
+
+    /// Page setup a new document gets from a template: built-in defaults overlaid with the
+    /// template's optional page defaults. Explicit per-document options are applied on top.
+    pub fn seed_page(template: &Template) -> PageSetup {
+        let mut page = PageSetup::default();
+        if let Some(defaults) = &template.page {
+            let [top, right, bottom, left] =
+                defaults.margins_tenths_mm.map(|m| f64::from(m) / 10.0);
+            page.size = defaults.size;
+            page.orientation = defaults.orientation;
+            page.margin_top_mm = top;
+            page.margin_right_mm = right;
+            page.margin_bottom_mm = bottom;
+            page.margin_left_mm = left;
+        }
+        page
+    }
+
+    /// Create a Draft pinned to `template`. An empty body is replaced by the template scaffold;
+    /// `page` defaults to the template-seeded page setup.
+    pub fn create_with_template(
+        &self,
+        title: &str,
+        body: &str,
+        page: Option<&PageSetup>,
+        template: &StoredTemplate,
+    ) -> Result<Document, WorkspaceError> {
+        let seeded = Self::seed_page(&template.template);
+        let body = if body.is_empty() {
+            template.template.structure.body_placeholder.as_str()
+        } else {
+            body
+        };
+        self.create_inner(
+            title,
+            body,
+            page.unwrap_or(&seeded),
+            Some(binding(template)),
+        )
+    }
+
+    fn create_inner(
+        &self,
+        title: &str,
+        body: &str,
+        page: &PageSetup,
+        template: Option<TemplateBinding>,
+    ) -> Result<Document, WorkspaceError> {
         let _lock = self.workspace.acquire_lock()?;
         self.verify_baseline()?;
         let seed = format!(
@@ -453,7 +592,7 @@ impl Documents {
         let base = git_text(self.root(), &["rev-parse", "HEAD"])?
             .trim()
             .to_owned();
-        let content = canonical(&id, title, body, page)?;
+        let content = canonical(&id, title, body, page, template.as_ref())?;
         self.record(&id, &base, None, &content, None, &BTreeMap::new())
     }
 
@@ -471,7 +610,7 @@ impl Documents {
         let base = git_text(self.root(), &["rev-parse", "HEAD"])?
             .trim()
             .to_owned();
-        let content = canonical(id, title, body, &PageSetup::default())?;
+        let content = canonical(id, title, body, &PageSetup::default(), None)?;
         self.record(id, &base, None, &content, None, provenance)
     }
 
@@ -515,7 +654,26 @@ impl Documents {
         title: &str,
         body: &str,
     ) -> Result<Document, WorkspaceError> {
-        self.save_inner(id, expected, title, body, None)
+        self.save_inner(id, expected, title, body, None, None)
+    }
+
+    /// Explicitly change or clear a Draft's template pin; content and page setup are kept.
+    /// The change is journaled as `template_from`/`template_to` on a `document.saved` event.
+    pub fn set_template(
+        &self,
+        id: &str,
+        expected: &str,
+        template: Option<&StoredTemplate>,
+    ) -> Result<Document, WorkspaceError> {
+        let current = self.show(id, None)?;
+        self.save_inner(
+            id,
+            expected,
+            &current.title,
+            &current.body,
+            None,
+            Some(template.map(binding)),
+        )
     }
 
     /// Save content and metadata; a metadata-only change is a new revision.
@@ -527,7 +685,7 @@ impl Documents {
         body: &str,
         page: &PageSetup,
     ) -> Result<Document, WorkspaceError> {
-        self.save_inner(id, expected, title, body, Some(page))
+        self.save_inner(id, expected, title, body, Some(page), None)
     }
 
     fn save_inner(
@@ -537,6 +695,7 @@ impl Documents {
         title: &str,
         body: &str,
         page: Option<&PageSetup>,
+        template: Option<Option<TemplateBinding>>,
     ) -> Result<Document, WorkspaceError> {
         let _lock = self.workspace.acquire_lock()?;
         self.verify_baseline()?;
@@ -553,17 +712,26 @@ impl Documents {
                 "document content cannot be saved after leaving Draft; lifecycle rework is not supported",
             ));
         }
-        let content = canonical(id, title, body, page.unwrap_or(&previous.page))?;
+        let pin = template.unwrap_or_else(|| previous.template.clone());
+        let content = canonical(
+            id,
+            title,
+            body,
+            page.unwrap_or(&previous.page),
+            pin.as_ref(),
+        )?;
         if previous.content_hash == hash(&content) {
             return Ok(previous.clone());
         }
+        let mut change = saved_payload(id, previous.template.as_ref(), pin.as_ref());
+        change.remove("document_id");
         self.record(
             id,
             &current,
             Some(expected),
             &content,
             Some(&verified),
-            &BTreeMap::new(),
+            &change,
         )
     }
 
@@ -699,6 +867,9 @@ impl Documents {
         let parent_length = journal.len();
         let path = format!("documents/{id}.md");
         let mut payload = BTreeMap::from([("document_id".to_owned(), id.to_owned())]);
+        if expected.is_some() {
+            payload.extend(provenance.clone());
+        }
         if expected.is_none() {
             payload.insert("base_revision".to_owned(), parent.to_owned());
             payload.extend(provenance.clone());
@@ -991,11 +1162,15 @@ impl Documents {
                     .get(&change.new_oid)
                     .ok_or_else(|| error("missing document content blob"))?
                     .clone();
-                let (title, body, page) = decode(&bytes, id)?;
+                let (title, body, page, template) = decode(&bytes, id)?;
                 let expected_payload = if created {
                     created_payload(id, &commit.parent, &event.payload)?
                 } else {
-                    BTreeMap::from([("document_id".to_owned(), id.to_owned())])
+                    let previous = match &previous_document_bytes {
+                        Some(previous) => decode(previous, id)?.3,
+                        None => None,
+                    };
+                    saved_payload(id, previous.as_ref(), template.as_ref())
                 };
                 if event.payload != expected_payload {
                     return Err(error("invalid document revision payload"));
@@ -1014,6 +1189,7 @@ impl Documents {
                     id: id.to_owned(),
                     title,
                     page,
+                    template,
                     body,
                     status: "Draft".to_owned(),
                     revision: commit.revision.clone(),
@@ -1051,11 +1227,12 @@ impl Documents {
                 {
                     return Err(error("invalid document revision or audit linkage"));
                 }
-                let (title, body, page) = decode(bytes, id)?;
+                let (title, body, page, template) = decode(bytes, id)?;
                 Document {
                     id: id.to_owned(),
                     title,
                     page,
+                    template,
                     body,
                     status: "Draft".to_owned(),
                     revision: commit.revision.clone(),
@@ -1147,7 +1324,7 @@ impl Documents {
                 return Err(error("document and journal must be regular Git blobs"));
             }
         }
-        let (title, body, page) = decode(&bytes, id)?;
+        let (title, body, page, template) = decode(&bytes, id)?;
         if blob(self.root(), parent, JOURNAL)? != parent_journal {
             return Err(error("ancestor journal differs from verified head prefix"));
         }
@@ -1157,7 +1334,8 @@ impl Documents {
         let expected_payload = if created {
             created_payload(id, parent, &event.payload)?
         } else if saved {
-            BTreeMap::from([("document_id".to_owned(), id.to_owned())])
+            let previous = decode(&blob(self.root(), parent, &path)?, id)?.3;
+            saved_payload(id, previous.as_ref(), template.as_ref())
         } else if lifecycle {
             BTreeMap::from([
                 ("document_id".to_owned(), id.to_owned()),
@@ -1225,6 +1403,7 @@ impl Documents {
             id: id.to_owned(),
             title,
             page,
+            template,
             body,
             status: "Draft".to_owned(),
             revision: revision.to_owned(),
@@ -1494,17 +1673,25 @@ mod tests {
     #[test]
     fn canonical_metadata_is_strict_and_roundtrips() {
         let id = "DOC-00000000000000000000000000000000";
-        let bytes = canonical(id, " Quoted \"title\" ", "a\r\nb\r", &PageSetup::default()).unwrap();
+        let bytes = canonical(
+            id,
+            " Quoted \"title\" ",
+            "a\r\nb\r",
+            &PageSetup::default(),
+            None,
+        )
+        .unwrap();
         assert_eq!(
             decode(&bytes, id).unwrap(),
             (
                 "Quoted \"title\"".into(),
                 "a\nb\n".into(),
-                PageSetup::default()
+                PageSetup::default(),
+                None
             )
         );
-        assert!(canonical(id, " \n ", "", &PageSetup::default()).is_err());
-        assert!(canonical("../escape", "title", "", &PageSetup::default()).is_err());
+        assert!(canonical(id, " \n ", "", &PageSetup::default(), None).is_err());
+        assert!(canonical("../escape", "title", "", &PageSetup::default(), None).is_err());
         let invalid = String::from_utf8(bytes)
             .unwrap()
             .replace("\"schema_version\":2", "\"schema_version\":1");
@@ -1808,6 +1995,7 @@ mod tests {
                         "tampered"
                     },
                     &PageSetup::default(),
+                    None,
                 )
                 .unwrap();
                 let oid = input_git(&f.0, &["hash-object", "-w", "--stdin"], &bytes).unwrap();
@@ -1866,5 +2054,171 @@ mod tests {
                 .is_err()
         );
         assert_eq!(docs.head(&first.id).unwrap(), first.revision);
+    }
+
+    fn install_template(
+        f: &Fixture,
+        id: &str,
+        version: u32,
+        document_type: &str,
+    ) -> StoredTemplate {
+        let mut template = Template::builtin_generic();
+        template.id = id.to_owned();
+        template.version = version;
+        template.document_type = document_type.to_owned();
+        template.page = Some(crate::template::Page {
+            size: markdown::PageSize::Letter,
+            orientation: markdown::Orientation::Landscape,
+            margins_tenths_mm: [200, 210, 220, 230],
+        });
+        let workspace = Workspace::open(&f.0).unwrap();
+        TemplateStore::new(&workspace)
+            .install(&template, &BTreeMap::new())
+            .unwrap()
+    }
+
+    #[test]
+    fn create_from_template_pins_seeds_page_and_scaffold_with_overrides() {
+        let f = Fixture::new();
+        let sop = install_template(&f, "sop", 1, "SOP");
+        let docs = f.docs();
+        let resolved = docs
+            .resolve_template(TemplateSelector::DocumentType("SOP"))
+            .unwrap();
+        assert_eq!(resolved, sop);
+        let created = docs
+            .create_with_template("Cleaning", "", None, &resolved)
+            .unwrap();
+        assert_eq!(created.template, Some(binding(&sop)));
+        assert_eq!(created.page.size, markdown::PageSize::Letter);
+        assert_eq!(created.page.margin_left_mm, 23.0);
+        assert_eq!(created.body, sop.template.structure.body_placeholder);
+        let own = PageSetup {
+            size: markdown::PageSize::A4,
+            ..PageSetup::default()
+        };
+        let overridden = docs
+            .create_with_template("Own", "custom", Some(&own), &resolved)
+            .unwrap();
+        assert_eq!(overridden.page, own);
+        assert_eq!(overridden.body, "custom");
+        assert_eq!(docs.show(&created.id, None).unwrap(), created);
+        assert!(
+            docs.resolve_template(TemplateSelector::DocumentType("Nope"))
+                .is_err()
+        );
+        assert!(
+            docs.resolve_template(TemplateSelector::Id {
+                id: "sop",
+                version: Some(9)
+            })
+            .is_err()
+        );
+        assert!(docs.create("Plain", "").unwrap().template.is_none());
+    }
+
+    #[test]
+    fn ambiguous_document_type_requires_an_explicit_template() {
+        let f = Fixture::new();
+        install_template(&f, "sop-a", 1, "SOP");
+        install_template(&f, "sop-b", 1, "SOP");
+        let error = f
+            .docs()
+            .resolve_template(TemplateSelector::DocumentType("SOP"))
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("sop-a, sop-b"), "{error}");
+    }
+
+    #[test]
+    fn template_changes_are_explicit_journaled_and_historical_pins_persist() {
+        let f = Fixture::new();
+        let v1 = install_template(&f, "sop", 1, "SOP");
+        let v2 = install_template(&f, "sop", 2, "SOP");
+        let docs = f.docs();
+        let plain = docs.create("Policy", "body").unwrap();
+        let bound = docs
+            .set_template(&plain.id, &plain.revision, Some(&v1))
+            .unwrap();
+        assert_eq!(bound.template, Some(binding(&v1)));
+        assert_eq!(bound.body, "body");
+        assert_eq!(bound.page, plain.page);
+        let kept = docs
+            .save(&bound.id, &bound.revision, "Policy", "edited")
+            .unwrap();
+        assert_eq!(kept.template, Some(binding(&v1)));
+        assert_eq!(
+            docs.set_template(&kept.id, &kept.revision, Some(&v1))
+                .unwrap(),
+            kept
+        );
+        let moved = docs
+            .set_template(&kept.id, &kept.revision, Some(&v2))
+            .unwrap();
+        let cleared = docs.set_template(&moved.id, &moved.revision, None).unwrap();
+        assert_eq!(cleared.template, None);
+        let history = docs.history(&plain.id).unwrap();
+        let pins: Vec<_> = history.iter().rev().map(|d| d.template.clone()).collect();
+        assert_eq!(
+            pins,
+            [
+                None,
+                Some(binding(&v1)),
+                Some(binding(&v1)),
+                Some(binding(&v2)),
+                None
+            ]
+        );
+        assert_eq!(
+            docs.show(&plain.id, Some(&bound.revision))
+                .unwrap()
+                .template,
+            Some(binding(&v1))
+        );
+        let head = docs.head(&plain.id).unwrap();
+        let journal = String::from_utf8(blob(&f.0, &head, JOURNAL).unwrap()).unwrap();
+        assert!(journal.contains("\"template_from\":\"none\""));
+        assert!(journal.contains("\"template_to\":\"sop@v1\""));
+        assert!(journal.contains("\"template_from\":\"sop@v1\""));
+        assert!(journal.contains("\"template_to\":\"sop@v2\""));
+        assert!(journal.contains("\"template_from\":\"sop@v2\",\"template_to\":\"none\""));
+        assert!(
+            docs.set_template(&plain.id, &plain.revision, Some(&v1))
+                .is_err()
+        );
+        let approved = docs
+            .transition(&cleared.id, &cleared.revision, LifecycleState::InReview)
+            .unwrap();
+        assert!(
+            docs.set_template(&approved.id, &approved.revision, Some(&v1))
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn silent_template_pin_change_fails_history_verification() {
+        let f = Fixture::new();
+        let v1 = install_template(&f, "sop", 1, "SOP");
+        let docs = f.docs();
+        let plain = docs.create("Policy", "body").unwrap();
+        let content = canonical(
+            &plain.id,
+            "Policy",
+            "body",
+            &plain.page,
+            Some(&binding(&v1)),
+        )
+        .unwrap();
+        // record() verifies the candidate revision, so an unexplained pin change is refused.
+        let _lock = docs.workspace.acquire_lock().unwrap();
+        docs.record(
+            &plain.id,
+            &plain.revision,
+            Some(&plain.revision),
+            &content,
+            None,
+            &BTreeMap::new(),
+        )
+        .unwrap_err();
     }
 }

@@ -93,7 +93,7 @@ Without recorded branding, `show` derives defaults from the directory name
 (`persisted:false`). Contrast warnings are advisory. See the
 [EQMS-107 design](../architecture/EQMS-107.md).
 
-Document templates (EQMS-112, CLI only; not yet bound to documents):
+Document templates (EQMS-112, CLI only):
 
 ```sh
 qms template validate template.json
@@ -105,6 +105,18 @@ qms template install <project> template.json [--asset logo.png ...]
 `install` adds an immutable version (journaled `template.installed`); a built-in
 `generic` template is always listed. See the
 [EQMS-112 design](../architecture/EQMS-112.md).
+
+Binding documents to templates (EQMS-113):
+
+```sh
+qms document create <project> --title T --type SOP        # or --template <id> [--template-version N]
+qms document set-template <project> <doc-id> --expected <rev> --template <id>   # or --clear
+```
+
+`create` pins the template version and hash in the document metadata and seeds
+page setup and (for an empty body) the scaffold; explicit page options win.
+`set-template` is a Draft-only, journaled change. See the
+[EQMS-113 design](../architecture/EQMS-113.md).
 
 For an explicit page boundary, put `<!-- pagebreak -->` alone on a top-level
 line, separated from surrounding paragraphs by blank lines, or use **Insert

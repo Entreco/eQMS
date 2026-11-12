@@ -624,6 +624,15 @@ requirements and tests; targets are not claims of observed results.
 - Style is a closed declarative schema, not CSS or code; fonts are bundled families only.
 - Design, requirements, tests and evidence are recorded under `docs/`.
 
+### EQMS-113: Document-template binding (#85)
+**Type:** Feature  
+**Priority:** P1  
+**Description:** Documents pin a template id, version and hash in their hashed metadata (additive to schema 2). `qms document create --type|--template` scaffolds from a template; changing a Draft's template is an explicit journaled metadata change; historical revisions keep their pin. Explicit EQMS-106 page overrides win over template page defaults. Conformance, rendering and UI are separate issues (#86-#88).  
+**Acceptance criteria:**
+- The pin is validated, hashed with the document and absent for unbound documents.
+- Template changes are Draft-only and recorded as `template_from`/`template_to`; unexplained pin changes fail verification.
+- Design, requirements, tests and evidence are recorded under `docs/`.
+
 ---
 
 ## Execution sequence and first feature
