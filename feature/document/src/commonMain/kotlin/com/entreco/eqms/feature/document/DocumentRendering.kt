@@ -6,6 +6,8 @@ data class RenderNode(
     val target: String = "",
     val anchor: String = "",
     val children: List<RenderNode> = emptyList(),
+    val start: Int = -1,
+    val end: Int = -1,
 ) {
     fun plainText(): String = text + children.joinToString("") { it.plainText() }
 }
@@ -23,7 +25,7 @@ data class RenderedDocument(
 data class DocumentImage(val bytes: ByteArray, val width: Int, val height: Int)
 
 enum class DocumentViewMode(val label: String) {
-    Source("Markdown"), Split("Markdown + Preview"), Preview("Preview"),
+    Wysiwyg("Edit"), Source("Markdown"), Split("Markdown + Preview"), Preview("Preview"),
 }
 
 enum class PageSize(val label: String, val widthMm: Double, val heightMm: Double) {

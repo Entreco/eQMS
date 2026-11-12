@@ -269,13 +269,13 @@ mod tests {
             value["input_digest"],
             eqms_core::markdown::hash(b"# Purpose")
         );
-        assert_eq!(value["semantic_schema"], 2);
-        assert_eq!(value["renderer"], "eqms-markdown-2");
+        assert_eq!(value["semantic_schema"], 3);
+        assert_eq!(value["renderer"], "eqms-markdown-3");
         let envelope =
             crate::output::Response::from_result(Ok(result), true, "document.render-buffer");
         let envelope: serde_json::Value = serde_json::from_str(&envelope.text).unwrap();
         assert_eq!(envelope["schema_version"], 2);
-        assert_eq!(envelope["data"]["semantic_schema"], 2);
+        assert_eq!(envelope["data"]["semantic_schema"], 3);
         for input in [
             r#"{"title":"A"}"#,
             r#"{"title":"A","body":"","approved":true}"#,
@@ -310,8 +310,8 @@ mod tests {
     fn render_model_uses_versioned_semantics() {
         let result = render::parse("A", "Before\n\n<!-- pagebreak -->\n\nAfter").unwrap();
         let value = serde_json::to_value(result).unwrap();
-        assert_eq!(value["semantic_schema"], 2);
-        assert_eq!(value["renderer"], "eqms-markdown-2");
+        assert_eq!(value["semantic_schema"], 3);
+        assert_eq!(value["renderer"], "eqms-markdown-3");
         assert_eq!(
             value["nodes"]
                 .as_array()

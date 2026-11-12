@@ -46,6 +46,7 @@ class DocumentPaginationTest {
         assertTrue(result.text.startsWith(value.text.substring(0, value.selection.end)))
         assertTrue(result.text.endsWith(value.text.substring(value.selection.end)))
         val tab = DocumentTab(1, null)
+        tab.viewMode = DocumentViewMode.Source
         tab.bodyField.value = value
         tab.insertPageBreak()
         assertTrue(tab.dirty)

@@ -476,6 +476,14 @@ requirements and tests; targets are not claims of observed results.
 - Existing save/conflict/history/lifecycle/dirty navigation behavior remains intact.
 - Mapped requirements/tests/evidence and a draft PR are produced; manual review/testing remains required.
 
+### EQMS-123: WYSIWYG document editing on canonical Markdown
+**Status:** Implemented on draft PR (see GitHub issue #96); manual review/testing pending
+**Type:** Feature  
+**Priority:** P1  
+**Dependencies:** EQMS-104, EQMS-083  
+**Description:** Make visual editing on white paper sheets the default document view while Markdown stays the canonical buffer. Follows up the rich-table gap left open in EQMS-104.
+**Acceptance criteria:** See `docs/requirements/EQMS-123.md` (R123-01..11); merged table cells are out of scope.
+
 ---
 
 ## Milestone 9 — Desktop and web clients

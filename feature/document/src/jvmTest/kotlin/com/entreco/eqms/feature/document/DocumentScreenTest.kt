@@ -334,7 +334,7 @@ class DocumentScreenTest {
     @Test
     fun threeModesKeepLongSourceEditableAndPageBreakInsertionIsUndoable() {
         val capabilities = Capabilities()
-        val tab = DocumentTab(1, null).apply { body = "Start\n\n" + "Long source line\n".repeat(300) + "End" }
+        val tab = DocumentTab(1, null).apply { viewMode = DocumentViewMode.Source; body = "Start\n\n" + "Long source line\n".repeat(300) + "End" }
         var interactive by mutableStateOf(true)
         compose.setContent {
             IntUiTheme(isDark = false) {
@@ -343,7 +343,7 @@ class DocumentScreenTest {
             }
         }
         val modes = compose.onAllNodes(hasContentDescription("View ", substring = true)).fetchSemanticsNodes()
-        assertEquals(3, modes.size)
+        assertEquals(4, modes.size)
         compose.onNodeWithContentDescription("View Markdown").assertIsSelected()
         val original = tab.body
         sourceField("Markdown body").performTextInputSelection(TextRange(original.length))
@@ -369,7 +369,25 @@ class DocumentScreenTest {
     }
 
     @Test
-    fun markdownIsDefaultAndModesRetainUnsavedSourceCaretAndIndependentTabs() {
+    fun editModeRendersTheDocumentEditorAndToolbarWithMappedBlocks() {
+        val capabilities = Capabilities().apply {
+            renderNodes = listOf(RenderNode("paragraph", children = listOf(RenderNode("text", "Hello")), start = 0, end = 5))
+        }
+        val tab = DocumentTab(1, null).apply { body = "Hello" }
+        compose.setContent {
+            IntUiTheme(isDark = false) {
+                DocumentPresentation("/project", tab, DocumentPageSetup(), capabilities, true,
+                    remember { DocumentBitmapCache() }, {}, Modifier.requiredSize(900.dp, 700.dp))
+            }
+        }
+        compose.onNodeWithContentDescription("View Edit").assertIsSelected()
+        compose.waitUntil { compose.onAllNodesWithContentDescription("Document editor").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithContentDescription("Document editor").assertExists()
+        compose.onNodeWithContentDescription("Markdown body").assertDoesNotExist()
+    }
+
+    @Test
+    fun wysiwygIsDefaultAndModesRetainUnsavedSourceCaretAndIndependentTabs() {
         val capabilities = Capabilities()
         compose.setContent {
             IntUiTheme(isDark = true) {
@@ -379,7 +397,8 @@ class DocumentScreenTest {
             }
         }
         compose.onNodeWithText("Policy (Draft)").performClick()
-        compose.onNodeWithContentDescription("View Markdown").assertIsSelected()
+        compose.onNodeWithContentDescription("View Edit").assertIsSelected()
+        compose.onNodeWithContentDescription("View Markdown").performClick()
         sourceField("Markdown body").assertExists()
         sourceField("Markdown body").performTextReplacement("unsaved preview text")
         sourceField("Markdown body").performTextInputSelection(TextRange(5))
@@ -388,7 +407,7 @@ class DocumentScreenTest {
         compose.onNodeWithContentDescription("Resize source and preview; arrow keys adjust").assertExists()
         compose.onNodeWithContentDescription("View Preview").performClick()
         compose.onNodeWithText("New document").performClick()
-        compose.onNodeWithContentDescription("View Markdown").assertIsSelected()
+        compose.onNodeWithContentDescription("View Edit").assertIsSelected()
         sourceField("Document title").performTextReplacement("Other")
         compose.onNodeWithContentDescription("Document tab Policy").performClick()
         compose.onNodeWithContentDescription("View Preview").assertIsSelected()

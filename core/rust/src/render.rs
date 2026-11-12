@@ -5,8 +5,8 @@ use serde::{Deserialize, Serialize};
 pub const MAX_BODY: usize = 1024 * 1024;
 pub const MAX_NODES: usize = 100_000;
 pub const MAX_DEPTH: usize = 64;
-pub const SEMANTIC_SCHEMA: u32 = 2;
-pub const RENDERER: &str = "eqms-markdown-2";
+pub const SEMANTIC_SCHEMA: u32 = 3;
+pub const RENDERER: &str = "eqms-markdown-3";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Node {
@@ -19,6 +19,45 @@ pub struct Node {
     pub anchor: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub children: Vec<Node>,
+    /// UTF-16 offsets into the submitted body; set on top-level nodes only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub start: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub end: Option<u32>,
+}
+
+/// Monotonic byte-to-UTF-16 offset conversion without rescanning the body.
+struct Utf16Offsets<'a> {
+    body: &'a str,
+    byte: usize,
+    units: usize,
+}
+
+impl<'a> Utf16Offsets<'a> {
+    fn new(body: &'a str) -> Self {
+        Self {
+            body,
+            byte: 0,
+            units: 0,
+        }
+    }
+
+    fn at(&mut self, byte: usize) -> Option<u32> {
+        if byte < self.byte {
+            self.byte = 0;
+            self.units = 0;
+        }
+        self.units += self.body.get(self.byte..byte)?.encode_utf16().count();
+        self.byte = byte;
+        u32::try_from(self.units).ok()
+    }
+}
+
+fn block_end(body: &str, mut end: usize) -> usize {
+    while end > 0 && matches!(body.as_bytes().get(end - 1), Some(b'\n' | b'\r')) {
+        end -= 1;
+    }
+    end
 }
 
 impl Node {
@@ -29,6 +68,8 @@ impl Node {
             target: String::new(),
             anchor: String::new(),
             children: Vec::new(),
+            start: None,
+            end: None,
         }
     }
 
@@ -132,6 +173,7 @@ pub fn parse(title: &str, body: &str) -> Result<Document, String> {
         Options::ENABLE_TABLES | Options::ENABLE_FOOTNOTES | Options::ENABLE_STRIKETHROUGH;
     let mut pending_page_break = false;
     let mut skip_html_block_end = false;
+    let mut offsets = Utf16Offsets::new(body);
     for (event, range) in Parser::new_ext(body, options).into_offset_iter() {
         count += 1;
         if count > MAX_NODES || stack.len() > MAX_DEPTH {
@@ -197,10 +239,16 @@ pub fn parse(title: &str, body: &str) -> Result<Document, String> {
                     _ => diagnostics
                         .push("Unsupported Markdown container shown as plain content.".into()),
                 }
+                if stack.len() == 1 {
+                    node.start = offsets.at(range.start);
+                }
                 stack.push(node);
             }
             Event::End(_) => {
                 let mut node = stack.pop().ok_or("Unbalanced Markdown tree")?;
+                if stack.len() == 1 {
+                    node.end = offsets.at(block_end(body, range.end));
+                }
                 if node.kind == "item" {
                     let mut children = Vec::new();
                     let mut paragraph = Node::new("paragraph");
@@ -277,14 +325,17 @@ pub fn parse(title: &str, body: &str) -> Result<Document, String> {
             | Event::InlineHtml(ref text) => {
                 if matches!(event, Event::Html(_))
                     && pending_page_break
-                    && is_exact_page_break(body, range, text)
+                    && is_exact_page_break(body, range.clone(), text)
                 {
-                    stack.pop().ok_or("Unbalanced Markdown tree")?;
+                    let html = stack.pop().ok_or("Unbalanced Markdown tree")?;
+                    let mut page_break = Node::new("page_break");
+                    page_break.start = html.start;
+                    page_break.end = offsets.at(block_end(body, range.end));
                     stack
                         .last_mut()
                         .ok_or("Unbalanced Markdown tree")?
                         .children
-                        .push(Node::new("page_break"));
+                        .push(page_break);
                     pending_page_break = false;
                     skip_html_block_end = true;
                     continue;
@@ -308,7 +359,14 @@ pub fn parse(title: &str, body: &str) -> Result<Document, String> {
                 node.text = "\n".into();
                 leaf = Some(node);
             }
-            Event::Rule => leaf = Some(Node::new("rule")),
+            Event::Rule => {
+                let mut node = Node::new("rule");
+                if stack.len() == 1 {
+                    node.start = offsets.at(range.start);
+                    node.end = offsets.at(block_end(body, range.end));
+                }
+                leaf = Some(node);
+            }
             Event::FootnoteReference(label) => {
                 pending_page_break = false;
                 let mut node = Node::new("note_link");
@@ -443,11 +501,42 @@ mod tests {
     }
 
     #[test]
+    fn top_level_nodes_report_utf16_source_ranges_without_line_endings() {
+        let body = "# T\u{1F600}\n\nA \u{1F600} b\r\n\n---\n\n<!-- pagebreak -->\n\n- x\n- y\n\n| a | b |\n|---|---|\n| 1 | 2 |\n";
+        let doc = parse("D", body).unwrap();
+        let units: Vec<u16> = body.encode_utf16().collect();
+        let slices: Vec<(String, String)> = doc
+            .nodes
+            .iter()
+            .map(|n| {
+                let (s, e) = (n.start.unwrap() as usize, n.end.unwrap() as usize);
+                (n.kind.clone(), String::from_utf16(&units[s..e]).unwrap())
+            })
+            .collect();
+        assert_eq!(
+            slices,
+            [
+                ("h1".into(), "# T\u{1F600}".into()),
+                ("paragraph".into(), "A \u{1F600} b".into()),
+                ("rule".into(), "---".into()),
+                ("page_break".into(), "<!-- pagebreak -->".into()),
+                ("unordered".into(), "- x\n- y".into()),
+                ("table".into(), "| a | b |\n|---|---|\n| 1 | 2 |".into()),
+            ]
+        );
+        assert!(doc.nodes.windows(2).all(|w| w[0].end <= w[1].start));
+        assert!(doc
+            .nodes
+            .iter()
+            .all(|n| n.children.iter().all(|c| c.start.is_none() && c.end.is_none())));
+    }
+
+    #[test]
     fn page_break_is_an_exact_top_level_html_block_and_preserves_input_digest() {
         let body = "Before\n\n<!-- pagebreak -->\n\nAfter\r\n";
         let doc = parse("Document", body).unwrap();
-        assert_eq!(doc.semantic_schema, 2);
-        assert_eq!(doc.renderer, "eqms-markdown-2");
+        assert_eq!(doc.semantic_schema, 3);
+        assert_eq!(doc.renderer, "eqms-markdown-3");
         assert_eq!(doc.input_digest, crate::markdown::hash(body.as_bytes()));
         assert_eq!(
             doc.nodes

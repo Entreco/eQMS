@@ -32,7 +32,9 @@ internal class DocumentTab(
         )
     val editable get() = !historical && (snapshot == null || snapshot?.status == DocumentStatus.Draft)
     val scroll = ScrollState(0)
-    var viewMode by mutableStateOf(DocumentViewMode.Source)
+    val editorScroll = ScrollState(0)
+    var viewMode by mutableStateOf(DocumentViewMode.Wysiwyg)
+    val editor = WysiwygEditorState(this)
     val previewScroll = androidx.compose.foundation.lazy.LazyListState()
     var splitFraction by mutableFloatStateOf(0.5f)
     var rendered by mutableStateOf<RenderedDocument?>(null)
@@ -82,8 +84,23 @@ internal class DocumentTab(
         message = null
     }
 
+    /** Replaces the whole buffer with [newBody] as one undoable edit; used by the WYSIWYG view. */
+    fun applyBodyEdit(newBody: String) {
+        val before = bodyField.value
+        val after = before.copy(
+            text = newBody,
+            selection = androidx.compose.ui.text.TextRange(minOf(before.selection.end, newBody.length)),
+            composition = null,
+        )
+        recordBodyEdit(before, after)
+        bodyField.value = after
+        renderRequestedAt = System.nanoTime()
+        message = null
+    }
+
     fun insertPageBreak() {
         if (!editable || viewMode == DocumentViewMode.Preview) return
+        if (viewMode == DocumentViewMode.Wysiwyg) { editor.insertPageBreakBlock(); return }
         val before = bodyField.value
         val after = insertPageBreak(before)
         recordBodyEdit(before, after)

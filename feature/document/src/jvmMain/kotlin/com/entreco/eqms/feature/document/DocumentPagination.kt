@@ -22,6 +22,8 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.RectangleShape
 import org.jetbrains.jewel.foundation.theme.JewelTheme
 import org.jetbrains.jewel.ui.component.Text
 import kotlin.math.ceil
@@ -113,9 +115,8 @@ internal fun rememberPaginatedLayout(
 ): Result<PaginatedLayout> {
     val density = LocalDensity.current
     val measurer = rememberTextMeasurer(cacheSize = 128)
-    val colors = JewelTheme.globalColors
-    val base = JewelTheme.defaultTextStyle.copy(color = colors.text.normal, fontSize = 15.sp, lineHeight = 24.sp)
-    val linkColor = colors.text.normal
+    val base = JewelTheme.defaultTextStyle.copy(color = Paper.ink, fontSize = 15.sp, lineHeight = 24.sp)
+    val linkColor = Paper.ink
     return remember(document, setup, availableWidth, density, base, linkColor, imageRatios) {
         try {
             setup.validate()
@@ -303,14 +304,15 @@ internal fun DocumentPage(
     val density = LocalDensity.current
     fun px(value: Float) = with(density) { value.toDp() }
     val base = JewelTheme.defaultTextStyle.copy(
-        color = JewelTheme.globalColors.text.info,
+        color = Paper.muted,
         fontSize = 11.sp,
         lineHeight = 16.sp
     )
     Column(
         Modifier.width(px(layout.width)).height(px(layout.height))
-            .background(JewelTheme.globalColors.panelBackground)
-            .border(1.dp, JewelTheme.globalColors.borders.normal)
+            .shadow(3.dp, RectangleShape)
+            .background(Paper.sheet)
+            .border(1.dp, Paper.rule)
             .padding(start = px(layout.left), end = px(layout.right), top = px(layout.top), bottom = px(layout.bottom))
             .semantics { contentDescription = "Preview page ${index + 1} of ${layout.pages.size}" },
     ) {
@@ -339,7 +341,7 @@ internal fun DocumentPage(
                                 fragment.text,
                                 Modifier.fillMaxWidth()
                                     .then(if (fragment.style.fontFamily == FontFamily.Monospace)
-                                        Modifier.background(JewelTheme.globalColors.borders.normal.copy(alpha = 0.15f)) else Modifier)
+                                        Modifier.background(Paper.codeBackground) else Modifier)
                                     .then(if (fragment.style.fontWeight == FontWeight.SemiBold) Modifier.semantics { heading() } else Modifier),
                                 style = fragment.style)
                         } else fragment.node?.let { renderBlock(it, Modifier.fillMaxWidth()) }
