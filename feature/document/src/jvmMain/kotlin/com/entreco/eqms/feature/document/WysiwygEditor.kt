@@ -12,6 +12,11 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.unit.toSize
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.SolidColor
@@ -25,7 +30,12 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.unit.dp
+import org.jetbrains.jewel.ui.component.Icon
+import org.jetbrains.jewel.ui.component.SelectableIconButton
+import org.jetbrains.jewel.ui.component.Tooltip
 import androidx.compose.ui.unit.sp
 import org.jetbrains.jewel.foundation.theme.JewelTheme
 import org.jetbrains.jewel.ui.component.DefaultButton
@@ -133,16 +143,20 @@ private fun Desk(
     doc.blocks.forEachIndexed { index, block ->
         if (block.content == BlockContent.PageBreak) sections += mutableListOf<Int>() else sections.last() += index
     }
-    BoxWithConstraints(Modifier.fillMaxSize().background(Paper.desk())) {
-        val sheetWidth = maxWidth - 56.dp
+    val sheets = remember { mutableStateOf<Map<Int, Rect>>(emptyMap()) }
+    LaunchedEffect(sections.size) { sheets.value = sheets.value.filterKeys { it < sections.size } }
+    var deskOrigin by remember { mutableStateOf(Offset.Zero) }
+    BoxWithConstraints(Modifier.fillMaxSize().background(Paper.desk()).onGloballyPositioned { deskOrigin = it.positionInRoot() }) {
+        val sheetWidth = maxWidth - RulerThickness * 2 - 48.dp
         Column(
-            Modifier.fillMaxSize().verticalScroll(tab.editorScroll).padding(start = 40.dp, end = 16.dp, top = 32.dp, bottom = 16.dp),
+            Modifier.fillMaxSize().padding(RulerThickness).verticalScroll(tab.editorScroll).padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(32.dp),
+            verticalArrangement = Arrangement.spacedBy(28.dp),
         ) {
             val breaks = doc.blocks.indices.filter { doc.blocks[it].content == BlockContent.PageBreak }
             sections.forEachIndexed { page, indices ->
-                PaperSheet(setup, sheetWidth, Modifier.semantics { contentDescription = "Page ${page + 1} sheet" }, rulers = true) { margins ->
+                PaperSheet(setup, sheetWidth, Modifier.semantics { contentDescription = "Page ${page + 1} sheet" }
+                    .onGloballyPositioned { sheets.value = sheets.value + (page to Rect(it.positionInRoot() - deskOrigin, it.size.toSize())) }) { margins ->
                     BasicText(
                         renderTemplate(setup.headerTemplate, tab.title, page + 1, sections.size),
                         Modifier.fillMaxWidth().padding(start = margins.left, end = margins.right, top = margins.top / 2),
@@ -180,6 +194,7 @@ private fun Desk(
             Text("Pages follow explicit page breaks. Automatic page fit is shown in Markdown + Preview and Preview.",
                 color = JewelTheme.globalColors.text.info, fontSize = 11.sp)
         }
+        DeskRulers(setup, sheets, Modifier.fillMaxSize())
     }
 }
 
@@ -412,32 +427,72 @@ private fun FormatToolbar(
     val inline = editable && editor.focus != null && block != null && block !is BlockContent.Raw
     val inTable = editable && block is BlockContent.Table
     val level = (block as? BlockContent.Rich)?.level
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp),
-            verticalAlignment = Alignment.CenterVertically) {
-            ToolButton("Undo", "Undo", editable) { tab.undoBodyEdit() }
-            ToolButton("Redo", "Redo", editable) { tab.undoBodyEdit(redo = true) }
-            ToolButton("Text", "Paragraph style", convertible, level == 0) { editor.convert(BlockTarget.Paragraph) }
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(
+            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+                .background(JewelTheme.globalColors.panelBackground, RoundedCornerShape(6.dp))
+                .border(1.dp, JewelTheme.globalColors.borders.normal, RoundedCornerShape(6.dp))
+                .padding(horizontal = 6.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically,
+        ) {
+            ToolIcon(EditorIcons.Undo, "Undo", editable) { tab.undoBodyEdit() }
+            ToolIcon(EditorIcons.Redo, "Redo", editable) { tab.undoBodyEdit(redo = true) }
+            ToolDivider()
+            ToolIcon(null, "Paragraph style", convertible, level == 0, "Aa") { editor.convert(BlockTarget.Paragraph) }
             listOf(1 to BlockTarget.Heading1, 2 to BlockTarget.Heading2, 3 to BlockTarget.Heading3).forEach { (n, target) ->
-                ToolButton("H$n", "Heading $n", convertible, level == n) { editor.convert(target) }
+                ToolIcon(null, "Heading $n", convertible, level == n, "H$n") { editor.convert(target) }
             }
-            ToolButton("Bullets", "Bulleted list", convertible, (block as? BlockContent.Items)?.ordered == false) { editor.convert(BlockTarget.Bullets) }
-            ToolButton("Numbered", "Numbered list", convertible, (block as? BlockContent.Items)?.ordered == true) { editor.convert(BlockTarget.Numbered) }
-            ToolButton("Quote", "Quote", convertible, block is BlockContent.Quote) { editor.convert(BlockTarget.Quote) }
-            ToolButton("Bold", "Bold", inline, editor.markActive(InlineMark.Bold)) { editor.toggleMark(InlineMark.Bold) }
-            ToolButton("Italic", "Italic", inline, editor.markActive(InlineMark.Italic)) { editor.toggleMark(InlineMark.Italic) }
-            ToolButton("Strike", "Strikethrough", inline, editor.markActive(InlineMark.Strike)) { editor.toggleMark(InlineMark.Strike) }
-            ToolButton("Code", "Inline code", inline, editor.markActive(InlineMark.Code)) { editor.toggleMark(InlineMark.Code) }
-            ToolButton("Link", "Link", inline, linkOpen) { setLinkOpen(!linkOpen) }
-            ToolButton("Table", "Insert table", editable) { editor.insertTable() }
-            ToolButton("Rule", "Insert horizontal rule", editable) { editor.insertRule() }
-            ToolButton("Page break", "Insert page break", editable) { editor.insertPageBreakBlock() }
-            ToolButton("+Row", "Add table row", inTable) { editor.addRow() }
-            ToolButton("-Row", "Remove table row", inTable) { editor.removeRow() }
-            ToolButton("+Col", "Add table column", inTable) { editor.addColumn() }
-            ToolButton("-Col", "Remove table column", inTable) { editor.removeColumn() }
+            ToolDivider()
+            ToolIcon(EditorIcons.Bold, "Bold", inline, editor.markActive(InlineMark.Bold)) { editor.toggleMark(InlineMark.Bold) }
+            ToolIcon(EditorIcons.Italic, "Italic", inline, editor.markActive(InlineMark.Italic)) { editor.toggleMark(InlineMark.Italic) }
+            ToolIcon(EditorIcons.Strike, "Strikethrough", inline, editor.markActive(InlineMark.Strike)) { editor.toggleMark(InlineMark.Strike) }
+            ToolIcon(EditorIcons.Code, "Inline code", inline, editor.markActive(InlineMark.Code)) { editor.toggleMark(InlineMark.Code) }
+            ToolIcon(EditorIcons.Link, "Link", inline, linkOpen) { setLinkOpen(!linkOpen) }
+            ToolDivider()
+            ToolIcon(EditorIcons.Bullets, "Bulleted list", convertible, (block as? BlockContent.Items)?.ordered == false) { editor.convert(BlockTarget.Bullets) }
+            ToolIcon(EditorIcons.Numbered, "Numbered list", convertible, (block as? BlockContent.Items)?.ordered == true) { editor.convert(BlockTarget.Numbered) }
+            ToolIcon(EditorIcons.Quote, "Quote", convertible, block is BlockContent.Quote) { editor.convert(BlockTarget.Quote) }
+            ToolDivider()
+            ToolIcon(EditorIcons.Table, "Insert table", editable) { editor.insertTable() }
+            ToolIcon(EditorIcons.Rule, "Insert horizontal rule", editable) { editor.insertRule() }
+            ToolIcon(EditorIcons.PageBreak, "Insert page break", editable) { editor.insertPageBreakBlock() }
+            if (inTable) {
+                ToolDivider()
+                ToolIcon(null, "Add table row", true, label = "+ Row") { editor.addRow() }
+                ToolIcon(null, "Remove table row", true, label = "- Row") { editor.removeRow() }
+                ToolIcon(null, "Add table column", true, label = "+ Col") { editor.addColumn() }
+                ToolIcon(null, "Remove table column", true, label = "- Col") { editor.removeColumn() }
+            }
         }
         if (linkOpen) LinkBar(editor, editable) { setLinkOpen(false) }
+    }
+}
+
+@Composable
+private fun ToolDivider() {
+    Box(Modifier.padding(horizontal = 4.dp).width(1.dp).height(18.dp).background(JewelTheme.globalColors.borders.normal))
+}
+
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@Composable
+private fun ToolIcon(
+    icon: ImageVector?,
+    description: String,
+    enabled: Boolean,
+    active: Boolean = false,
+    label: String = "",
+    onClick: () -> Unit,
+) {
+    val colors = JewelTheme.globalColors
+    Tooltip(tooltip = { Text(description) }) {
+        SelectableIconButton(
+            selected = active, enabled = enabled, onClick = onClick,
+            modifier = Modifier.defaultMinSize(minWidth = 30.dp).height(30.dp).semantics { contentDescription = description },
+        ) {
+            val tint = if (enabled) colors.text.normal else colors.text.disabled
+            if (icon != null) Icon(icon, null, Modifier.size(18.dp), tint = tint)
+            else Text(label, color = tint, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(horizontal = 6.dp))
+        }
     }
 }
 
