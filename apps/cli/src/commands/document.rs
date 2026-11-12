@@ -38,6 +38,12 @@ pub(crate) fn command() -> Command {
                 .arg(template_version_argument().requires("template")),
         ))
         .subcommand(
+            operation("check")
+                .about("Report template structure findings for a document (advisory, read-only)")
+                .arg(Arg::new("id").required(true))
+                .arg(Arg::new("revision").long("revision")),
+        )
+        .subcommand(
             operation("set-template")
                 .about("Change or clear a Draft's template pin (journaled; content is kept)")
                 .arg(Arg::new("id").required(true))
@@ -229,17 +235,28 @@ fn operation(name: &'static str) -> Command {
     Command::new(name).arg(Arg::new("path").required(true))
 }
 
+#[cfg(test)]
 pub(crate) fn run(
     matches: &ArgMatches,
     json: bool,
     input: &mut dyn Read,
 ) -> Result<String, String> {
+    run_with_findings(matches, json, input).map(|(text, _)| text)
+}
+
+/// Like `run`, also returning advisory findings for the JSON envelope. In text mode the
+/// findings are appended to the output as `warning:` lines instead.
+pub(crate) fn run_with_findings(
+    matches: &ArgMatches,
+    json: bool,
+    input: &mut dyn Read,
+) -> Result<(String, Vec<serde_json::Value>), String> {
     let (operation, args) = matches.subcommand().expect("required document operation");
     if matches!(operation, "validate" | "format") {
-        return super::markdown::run(operation, args, json, input);
+        return super::markdown::run(operation, args, json, input).map(|text| (text, Vec::new()));
     }
     if matches!(operation, "render" | "render-buffer" | "render-asset") {
-        return super::render::run(operation, args, json, input);
+        return super::render::run(operation, args, json, input).map(|text| (text, Vec::new()));
     }
     let value = |name: &str| {
         args.get_one::<String>(name)
@@ -248,8 +265,9 @@ pub(crate) fn run(
     };
     let docs = eqms_core::document::Documents::open(value("path")).map_err(|e| e.to_string())?;
     if operation == "import" {
-        return import(&docs, args, json);
+        return import(&docs, args, json).map(|text| (text, Vec::new()));
     }
+    let mut findings = Vec::new();
     let data = match operation {
         "create" | "save" => {
             let mut body = String::new();
@@ -284,6 +302,7 @@ pub(crate) fn run(
                 }
             }
             .map_err(|e| e.to_string())?;
+            findings = pinned_findings(&docs, &document)?;
             serde_json::to_value(document)
         }
         "set-template" => {
@@ -295,10 +314,21 @@ pub(crate) fn run(
                         .map_err(|e| e.to_string())?,
                 )
             };
-            serde_json::to_value(
-                docs.set_template(value("id"), value("expected"), stored.as_ref())
-                    .map_err(|e| e.to_string())?,
-            )
+            let document = docs
+                .set_template(value("id"), value("expected"), stored.as_ref())
+                .map_err(|e| e.to_string())?;
+            findings = pinned_findings(&docs, &document)?;
+            serde_json::to_value(document)
+        }
+        "check" => {
+            let report = docs
+                .conformance(
+                    value("id"),
+                    args.get_one::<String>("revision").map(String::as_str),
+                )
+                .map_err(|e| e.to_string())?;
+            findings = finding_values(&report.findings)?;
+            serde_json::to_value(report)
         }
         "transition" => {
             let target = value("to").parse::<eqms_core::document::LifecycleState>()?;
@@ -335,7 +365,39 @@ pub(crate) fn run(
         _ => unreachable!("known document operation"),
     }
     .map_err(|e| e.to_string())?;
-    output::document(data, json)
+    let mut text = output::document(data, json)?;
+    if json {
+        return Ok((text, findings));
+    }
+    for finding in &findings {
+        text.push_str(&format!(
+            "\nwarning: {}: {}",
+            finding["code"].as_str().unwrap_or_default(),
+            finding["message"].as_str().unwrap_or_default()
+        ));
+    }
+    Ok((text, Vec::new()))
+}
+
+fn finding_values(
+    findings: &[eqms_core::conformance::Finding],
+) -> Result<Vec<serde_json::Value>, String> {
+    findings
+        .iter()
+        .map(|finding| serde_json::to_value(finding).map_err(|e| e.to_string()))
+        .collect()
+}
+
+/// Warnings for a saved document; unbound documents behave as before and add none.
+fn pinned_findings(
+    docs: &eqms_core::document::Documents,
+    document: &eqms_core::document::Document,
+) -> Result<Vec<serde_json::Value>, String> {
+    if document.template.is_none() {
+        return Ok(Vec::new());
+    }
+    let report = docs.check_document(document).map_err(|e| e.to_string())?;
+    finding_values(&report.findings)
 }
 
 fn import(
