@@ -258,6 +258,10 @@ class DesktopJewelPreviewTest {
         for (panel in listOf("Documents", "Review")) {
             val toggle = compose.onNodeWithContentDescription("Toggle $panel panel")
             toggle.assertIsSelected().activate()
+            compose.waitUntil(5_000) {
+                compose.onAllNodes(hasContentDescription("Toggle $panel panel") and isNotSelected())
+                    .fetchSemanticsNodes().size == 1
+            }
             toggle.assertIsNotSelected()
         }
         compose.onNodeWithContentDescription("Resize left panel").assertDoesNotExist()
