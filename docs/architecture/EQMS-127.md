@@ -33,6 +33,12 @@ Report discovery, failures and unexpected skips; missing prerequisites are
 failures, never passing native coverage. Upload diagnostic reports/artifacts
 even on failure. Main's existing ruleset must require all three check contexts.
 
+The Gradle wrapper JAR must be tracked despite the generic JAR ignore rule.
+Initial CI demonstrated that scripts/properties alone could not launch Gradle
+in a fresh checkout. The restored JAR matches Gradle 9.6.1's published SHA-256
+`497c8c2a7e5031f6aa847f88104aa80a93532ec32ee17bdb8d1d2f67a194a9c7`;
+CI's setup-gradle wrapper validation remains enabled.
+
 ## Native reliability
 
 The existing failure report times out waiting for appearance to change after
