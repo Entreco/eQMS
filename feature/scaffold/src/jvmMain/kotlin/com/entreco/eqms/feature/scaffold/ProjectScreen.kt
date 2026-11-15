@@ -25,6 +25,9 @@ import org.jetbrains.jewel.ui.Orientation
 import org.jetbrains.jewel.ui.component.DefaultButton
 import org.jetbrains.jewel.ui.component.OutlinedButton
 import org.jetbrains.jewel.ui.component.Divider
+import org.jetbrains.jewel.ui.component.Icon
+import org.jetbrains.jewel.ui.component.IconButton
+import org.jetbrains.jewel.ui.icons.AllIconsKeys
 import org.jetbrains.jewel.ui.component.Text
 
 typealias ProjectScreenLayout =
@@ -74,7 +77,8 @@ fun ProjectScreen(
     var chromeDialog by remember { mutableStateOf<DesktopCommand?>(null) }
     var aboutVisible by remember { mutableStateOf(false) }
     var aboutRequest by remember { mutableIntStateOf(0) }
-    var brand by remember { mutableStateOf<BrandTokens?>(null) }
+    var branding by remember { mutableStateOf<BrandingPreview?>(null) }
+    val brand = branding?.tokens
     var brandError by remember { mutableStateOf<String?>(null) }
     val interactive = !busy && !documentBusy && creating == null && identityFor == null &&
         chromeDialog == null && !savingAppearance
@@ -192,11 +196,11 @@ fun ProjectScreen(
     }
 
     LaunchedEffect(project, projectGeneration) {
-        brand = null
+        branding = null
         brandError = null
         project?.let { opened ->
-            capabilities.brandTokens(opened).fold(
-                onSuccess = { brand = it },
+            capabilities.projectBranding(opened).fold(
+                onSuccess = { branding = it },
                 onFailure = { brandError = "Project branding unavailable: ${it.message ?: "unknown error"}" },
             )
         }
@@ -218,12 +222,18 @@ fun ProjectScreen(
             {
                 Row(
                     Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(2.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text("DutchDoxx", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                    val openPath = project
+                    val shown = branding
+                    if (openPath != null && shown != null) {
+                        LogoPreview(shown, storedLogoPath(openPath, shown), Modifier.padding(4.dp), size = 24.dp)
+                    }
                     Text(
-                        project?.substringAfterLast('/')?.substringAfterLast('\\') ?: "Quality workspace",
+                        shown?.tokens?.name?.takeIf { openPath != null }
+                            ?: project?.substringAfterLast('/')?.substringAfterLast('\\') ?: "Quality workspace",
                         Modifier.weight(1f),
                         color = JewelTheme.globalColors.text.info,
                         maxLines = 1, overflow = TextOverflow.Ellipsis,
@@ -232,7 +242,9 @@ fun ProjectScreen(
             },
             {
                 Row(headerActionsModifier, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    OutlinedButton(enabled = interactive, onClick = { changeAppearance(!dark) }) { Text(if (dark) "Light theme" else "Dark theme") }
+                    IconButton(enabled = interactive, onClick = { chromeDialog = DesktopCommand.Settings }) {
+                        Icon(AllIconsKeys.General.Settings, contentDescription = "Settings", modifier = Modifier.size(18.dp))
+                    }
                 }
             },
             {
@@ -290,7 +302,12 @@ fun ProjectScreen(
                         }
                         chromeDialog?.let { command ->
                             key(command) {
-                                ChromeDialog(
+                                if (command == DesktopCommand.Settings) ProjectSettingsDialog(
+                                    project, capabilities, branding, dark, savingAppearance, appearanceError,
+                                    onAppearance = ::changeAppearance,
+                                    onBrandingSaved = { branding = it },
+                                    onDismiss = { chromeDialog = null },
+                                ) else ChromeDialog(
                                     command, chrome, dark, savingAppearance, appearanceError,
                                     onAppearance = ::changeAppearance,
                                     onDismiss = { chromeDialog = null },

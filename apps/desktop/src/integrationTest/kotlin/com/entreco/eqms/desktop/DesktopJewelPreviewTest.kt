@@ -29,6 +29,18 @@ class DesktopJewelPreviewTest {
 
     @get:Rule val compose = createComposeRule()
 
+    private fun toggleAppearance(label: String) {
+        compose.waitUntil(5_000) {
+            compose.onAllNodes(hasContentDescription("Settings") and isEnabled()).fetchSemanticsNodes().size == 1
+        }
+        compose.onNodeWithContentDescription("Settings").activate()
+        compose.waitUntil(5_000) { compose.onAllNodesWithText(label).fetchSemanticsNodes().size == 1 }
+        compose.onNodeWithText(label).activate()
+        compose.waitUntil(5_000) { compose.onAllNodesWithText("Close").fetchSemanticsNodes().size == 1 }
+        compose.onNodeWithText("Close").activate()
+        compose.waitUntil(5_000) { compose.onAllNodesWithText("Close").fetchSemanticsNodes().isEmpty() }
+    }
+
     private fun SemanticsNodeInteraction.activate() =
         performSemanticsAction(SemanticsActions.OnClick) { it() }
 
@@ -212,7 +224,7 @@ class DesktopJewelPreviewTest {
         move(MouseEvent.MOUSE_EXITED, -10, -10)
         captureTooltip("jewel-tooltip-dark.png")
         captureTooltip("jewel-tooltip-right-dark.png", "History", 4)
-        compose.onNodeWithText("Light theme").activate()
+        toggleAppearance("Use light appearance")
         sourceField("Markdown body").assertTextContains("## Working practices", substring = true)
         capture("jewel-light.png")
         move(MouseEvent.MOUSE_MOVED, ((inactiveTab.left + 30) / density).toInt(),
@@ -289,7 +301,7 @@ class DesktopJewelPreviewTest {
             }
         }
         for (theme in listOf("light", "dark")) {
-            if (theme == "dark") compose.onNodeWithText("Dark theme").activate()
+            if (theme == "dark") toggleAppearance("Use dark appearance")
             for (mode in listOf("Preview", "Markdown + Preview", "Markdown")) {
                 selectMode(mode)
                 capture("native-document-${mode.lowercase().replace(" + ", "-")}-$theme.png")

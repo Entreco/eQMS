@@ -18,6 +18,14 @@ interface ProjectCapabilities {
     /** Brand tokens of the project at [path]; `null` when the capability has none. */
     suspend fun brandTokens(path: String): Result<BrandTokens?> = Result.success(null)
 
+    /** Stored branding of the project at [path], including how to draw a generated logo. */
+    suspend fun projectBranding(path: String): Result<BrandingPreview?> =
+        brandTokens(path).map { tokens -> tokens?.let { BrandingPreview(it, null) } }
+
+    /** Records [draft] as the branding of the project at [path] (journaled by core). */
+    suspend fun saveBranding(path: String, draft: BrandingDraft): Result<BrandingPreview> =
+        Result.failure(UnsupportedOperationException("Saving branding is not available."))
+
     /** Asks core what it would record for [draft]; never writes. */
     suspend fun previewBranding(draft: BrandingDraft): Result<BrandingPreview> =
         Result.failure(UnsupportedOperationException("Branding preview is not available."))

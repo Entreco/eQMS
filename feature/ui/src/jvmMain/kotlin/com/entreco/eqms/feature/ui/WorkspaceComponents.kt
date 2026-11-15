@@ -134,13 +134,15 @@ fun WorkspaceDialog(
         },
     ) {
         SideEffect { window.minimumSize = java.awt.Dimension(420, 260) }
-        Column(Modifier.fillMaxSize().background(JewelTheme.globalColors.panelBackground).padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            title()
-            Divider(Orientation.Horizontal)
-            Box(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())) { text() }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, androidx.compose.ui.Alignment.End)) {
-                dismissButton()
-                confirmButton()
+        ThemedWindowContent(windowTitle) {
+            Column(Modifier.fillMaxSize().background(JewelTheme.globalColors.panelBackground).padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                title()
+                Divider(Orientation.Horizontal)
+                Box(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())) { text() }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, androidx.compose.ui.Alignment.End)) {
+                    dismissButton()
+                    confirmButton()
+                }
             }
         }
     }

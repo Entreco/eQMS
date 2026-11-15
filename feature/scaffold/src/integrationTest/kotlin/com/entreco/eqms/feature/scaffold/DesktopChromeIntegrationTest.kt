@@ -20,7 +20,13 @@ class DesktopChromeIntegrationTest : ScaffoldDocumentTestSupport(nativeIntegrati
         compose.menu(chrome, DesktopCommand.OpenProject)
         compose.onNodeWithText("Select directory").performClick()
         compose.onNodeWithText("Project verified and opened.").assertExists()
+        compose.onNodeWithContentDescription("Settings").performClick()
+        compose.onNodeWithText("Use light appearance").performClick()
+        compose.onNodeWithText("Appearance: Light").assertExists()
+        compose.onNodeWithText("Close").performClick()
+        compose.waitUntil(5_000) { compose.onAllNodesWithText("Appearance: Light").fetchSemanticsNodes().isEmpty() }
         compose.runOnIdle { chrome.request(DesktopCommand.About) }
+        compose.waitUntil(5_000) { compose.onAllNodesWithText("DutchDoxx 1.0.0-dev").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithText("DutchDoxx 1.0.0-dev").assertIsDisplayed()
         fun aboutFrames() = java.awt.Window.getWindows().filterIsInstance<java.awt.Frame>()
             .filter { it.isShowing && it.title == "About DutchDoxx" }
@@ -34,8 +40,6 @@ class DesktopChromeIntegrationTest : ScaffoldDocumentTestSupport(nativeIntegrati
             chrome.request(DesktopCommand.About)
         }
         compose.runOnIdle { assertSame(about, aboutFrames().single()) }
-        compose.onNodeWithText("Light theme").performClick()
-        compose.onNodeWithText("Dark theme").assertExists()
         compose.onNodeWithText("DutchDoxx 1.0.0-dev").assertIsDisplayed()
         compose.runOnIdle {
             about!!.extendedState = about!!.extendedState or java.awt.Frame.ICONIFIED
@@ -52,6 +56,7 @@ class DesktopChromeIntegrationTest : ScaffoldDocumentTestSupport(nativeIntegrati
         compose.onNodeWithText("DutchDoxx 1.0.0-dev").assertDoesNotExist()
         compose.onNodeWithText("Project verified and opened.").assertExists()
         compose.runOnIdle { chrome.request(DesktopCommand.About) }
+        compose.waitUntil(5_000) { compose.onAllNodesWithText("DutchDoxx 1.0.0-dev").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithText("DutchDoxx 1.0.0-dev").assertIsDisplayed()
         compose.runOnIdle { assertNotSame(about, aboutFrames().single()) }
         compose.onNodeWithText("Close").performSemanticsAction(SemanticsActions.OnClick) { it() }

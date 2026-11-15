@@ -33,7 +33,11 @@ class DesktopAboutIntegrationTest {
             compose.onNodeWithText("DutchDoxx ${desktopVersion()}").assertIsDisplayed()
             compose.onNodeWithText("An eQMS quality workspace. Drafts are not approvals.").assertIsDisplayed()
             compose.onNodeWithText("Close").performSemanticsAction(SemanticsActions.OnClick) { it() }
-            if (theme == 0) compose.onNodeWithText("Light theme").performClick()
+            if (theme == 0) {
+                compose.onNodeWithContentDescription("Settings").performClick()
+                compose.onNodeWithText("Use light appearance").performClick()
+                compose.onNodeWithText("Close").performClick()
+            }
         }
     }
 }

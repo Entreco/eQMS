@@ -85,8 +85,10 @@ class DesktopWindowNativeTest {
                         }
                         input.mousePress(InputEvent.BUTTON1_DOWN_MASK)
                         input.mouseRelease(InputEvent.BUTTON1_DOWN_MASK)
-                        awaitNative("native title-bar click changes appearance") { !chrome.dark }
-                        assertFalse(chrome.dark)
+                        awaitNative("native title-bar click opens Project Settings") { !chrome.enabled }
+                        input.keyPress(java.awt.event.KeyEvent.VK_ESCAPE)
+                        input.keyRelease(java.awt.event.KeyEvent.VK_ESCAPE)
+                        awaitNative("Escape closes Project Settings") { chrome.enabled }
                         val before = window.locationOnScreen
                         input.mouseMove(before.x + 550, before.y + 20)
                         delay(100)

@@ -128,7 +128,7 @@ class ScaffoldDocumentTest : ScaffoldDocumentTestSupport() {
         val chrome = chrome()
         compose.setContent { ProjectScreen(ProjectsRemembered(), capabilities, chrome = chrome) }
         compose.onNodeWithText("Your quality workspace").assertExists()
-        compose.onNodeWithText("Light theme").assertExists()
+        compose.onNodeWithContentDescription("Settings").assertExists()
         compose.menu(chrome, DesktopCommand.OpenProject)
         compose.onNodeWithText("Select directory").performClick()
         compose.onNodeWithText("Policy (Draft)").performClick()
@@ -136,7 +136,7 @@ class ScaffoldDocumentTest : ScaffoldDocumentTestSupport() {
         searchField().performTextReplacement("policy")
         compose.waitUntil(3000) { capabilities.queries.isNotEmpty() }
         repeat(2) {
-            compose.onNodeWithText(if (it == 0) "Light theme" else "Dark theme").performClick()
+            compose.toggleAppearanceFromSettings()
             compose.runOnIdle { assertEquals(it != 0, chrome.dark) }
             sourceField("Markdown body").assertTextContains("keep these edits")
             searchField().assertTextContains("policy")
@@ -239,7 +239,7 @@ class ScaffoldDocumentTest : ScaffoldDocumentTestSupport() {
         compose.onNodeWithText("Use light appearance").performClick()
         compose.onNodeWithText("Appearance: Light").assertExists()
         compose.onNodeWithText("Close").performClick()
-        compose.onNodeWithText("Dark theme").assertExists()
+        compose.onNodeWithContentDescription("Settings").assertExists()
         sourceField("Markdown body").assertTextContains("keep edits")
         searchField().assertTextContains("policy")
         compose.runOnIdle {

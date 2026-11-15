@@ -27,7 +27,7 @@ internal fun createProjectFolder(parent: Path, name: String): Path {
 /** `=` form so values starting with `-` are never read as options; a PNG logo replaces the seed. */
 internal fun brandingArguments(draft: BrandingDraft): List<String> = buildList {
     add("--name=${draft.name}")
-    if (draft.logoFile != null) add("--logo-file=${draft.logoFile}") else add("--seed=${draft.seed}")
+    if (draft.logoFile != null) add("--logo-file=${draft.logoFile}") else if (draft.seed.isNotEmpty()) add("--seed=${draft.seed}")
     if (draft.accent != "auto" || draft.logoFile == null) add("--accent=${draft.accent}")
 }
 
@@ -60,6 +60,15 @@ internal class DesktopProjectCapabilities(
     override suspend fun brandTokens(path: String): Result<BrandTokens?> = withContext(Dispatchers.IO) {
         cli.brandingData(Paths.get(path)).mapCatching(::brandTokensFrom)
     }
+
+    override suspend fun projectBranding(path: String): Result<BrandingPreview?> = withContext(Dispatchers.IO) {
+        cli.brandingData(Paths.get(path)).mapCatching(::brandingPreviewFrom)
+    }
+
+    override suspend fun saveBranding(path: String, draft: BrandingDraft): Result<BrandingPreview> =
+        withContext(Dispatchers.IO) {
+            cli.brandingSet(Paths.get(path), brandingArguments(draft)).mapCatching(::brandingPreviewFrom)
+        }
 
     override suspend fun previewBranding(draft: BrandingDraft): Result<BrandingPreview> =
         withContext(Dispatchers.IO) {
