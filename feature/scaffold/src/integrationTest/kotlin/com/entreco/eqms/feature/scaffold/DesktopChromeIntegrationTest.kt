@@ -21,6 +21,7 @@ class DesktopChromeIntegrationTest : ScaffoldDocumentTestSupport(nativeIntegrati
         compose.onNodeWithText("Select directory").performClick()
         compose.onNodeWithText("Project verified and opened.").assertExists()
         compose.runOnIdle { chrome.request(DesktopCommand.About) }
+        compose.waitUntil(5_000) { compose.onAllNodesWithText("DutchDoxx 1.0.0-dev").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithText("DutchDoxx 1.0.0-dev").assertIsDisplayed()
         fun aboutFrames() = java.awt.Window.getWindows().filterIsInstance<java.awt.Frame>()
             .filter { it.isShowing && it.title == "About DutchDoxx" }
