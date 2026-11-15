@@ -20,3 +20,4 @@ Issue: #107. Defined before implementation.
 | R127-08 | Main's effective ruleset requires the successful Kotlin/native contexts and existing Rust check, preserving unrelated rules and bypass settings. |
 | R127-09 | Revision-bound evidence records actual results, failures/exclusions and limits; draft PR and human review/testing remain explicit delivery gates. |
 | R127-10 | Shared source helpers select current Markdown mode; undo input matches the platform; native preview verifies current panel-toggle collapse. All nine failures from run 43702620205 must pass without production UI changes, weakened assertions or new skips. |
+| R127-11 | Native execution has a ten-minute CI step deadline and five-minute per-module integration-task deadlines with case start/result logging. Timeout or incomplete execution fails visibly; available artifacts remain diagnostic, not passing coverage. |

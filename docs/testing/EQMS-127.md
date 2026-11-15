@@ -23,6 +23,7 @@ Issue: #107. Defined before implementation. Requirements:
 | T127-10 | R127-04, R127-10 | Execute the five failed ScaffoldDocumentTest navigation/editor methods with current Markdown selection; retain dirty/editor/project/menu assertions. Execute both ScaffoldAboutIntegrationTest methods only in macOS CI with the same helper. |
 | T127-11 | R127-04, R127-10 | Execute DocumentScreenTest.threeModesKeepLongSourceEditableAndPageBreakInsertionIsUndoable with platform-correct undo, including Linux CI; assert exact original body plus edit after undo. |
 | T127-12 | R127-05, R127-07, R127-10 | Execute complete DesktopJewelPreviewTest.realNativeWorkspaceRendersInBothThemes in macOS CI; assert Documents/Review selected before toggling and deselected before collapsed capture; reach the lazy image placeholder, await decoded image and verify its viewport bounds; preserve mode/tab checks. |
+| T127-13 | R127-05, R127-07, R127-11 | Verify ten-minute native step and five-minute module task deadlines and started/passed/failed/skipped logging. Observe normal CI completion within limits; if timeout occurs record incomplete coverage and available logs/artifacts without masking the failure. |
 
 ## Required manual review/testing
 

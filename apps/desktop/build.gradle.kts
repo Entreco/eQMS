@@ -1,4 +1,5 @@
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
+import java.time.Duration
 
 plugins {
     id("org.jetbrains.compose")
@@ -43,6 +44,8 @@ tasks.register<Test>("integrationTest") {
     classpath = integrationTestSourceSet.runtimeClasspath
     maxParallelForks = 1
     forkEvery = 1
+    timeout.set(Duration.ofMinutes(5))
+    testLogging.events("started", "passed", "failed", "skipped")
     outputs.upToDateWhen { false }
     doFirst {
         check(System.getenv("GITHUB_ACTIONS") == "true" && System.getenv("RUNNER_OS") == "macOS") {

@@ -77,6 +77,17 @@ asynchronous image decoding only after that page is reached. Keep the decoded
 image and viewport assertions; loading alone is not passing image coverage.
 Newly reached failures require diagnosis, not skips or weaker assertions.
 
+Run 43710293154 stalled in desktop integration execution. Bound the native
+workflow step to ten minutes within the existing thirty-minute job ceiling and
+each Gradle integration task to five minutes. Log individual case starts and
+results to identify stalled execution. Deadlines fail the check; partial or
+missing reports are not coverage, and available failure artifacts are retained.
+The preview's image search traverses the reported finite lazy item count using
+indexed scroll actions instead of `performScrollToNode`, whose content-driven
+search can fail to terminate while image decoding changes pagination. Require
+the exact placeholder/image node, then decoded semantics and viewport bounds.
+Case and image-stage logs distinguish this path from setup or cleanup stalls.
+
 ## Risk Management and Security Risk Management
 
 Both apply proportionately.

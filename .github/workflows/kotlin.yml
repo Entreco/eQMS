@@ -62,6 +62,7 @@ jobs:
       - name: Build native CLI for synthetic workspace
         run: cargo build --release --locked -p eqms-cli
       - name: Native desktop integration
+        timeout-minutes: 10
         env:
           EQMS_QMS_PATH: ${{ github.workspace }}/target/release/qms
           EQMS_JEWEL_PREVIEW_DIR: ${{ runner.temp }}/native-preview

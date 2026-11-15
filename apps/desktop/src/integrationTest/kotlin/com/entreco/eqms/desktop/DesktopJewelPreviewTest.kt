@@ -4,6 +4,7 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.awt.ComposeWindow
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import com.entreco.eqms.feature.scaffold.ProjectScreen
@@ -16,6 +17,7 @@ import java.io.File
 import java.nio.file.Files
 import javax.imageio.ImageIO
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
 import org.junit.Rule
 import org.junit.Test
@@ -294,10 +296,18 @@ class DesktopJewelPreviewTest {
             }
         }
         selectMode("Preview")
-        compose.onNodeWithContentDescription("Rendered document content").performScrollToNode(
-            hasContentDescription("Synthetic workflow") or hasText("Loading image: Synthetic workflow")
-        )
+        val content = compose.onNodeWithContentDescription("Rendered document content")
+        val imageOrPlaceholder = hasContentDescription("Synthetic workflow") or hasText("Loading image: Synthetic workflow")
+        val pageCount = content.fetchSemanticsNode().config[SemanticsProperties.CollectionInfo].rowCount
+        assertTrue(pageCount > 0, "Expected paginated preview items")
+        println("Native preview: locating workflow image across $pageCount lazy items")
+        for (index in 0 until pageCount) {
+            content.performScrollToIndex(index)
+            if (compose.onAllNodes(imageOrPlaceholder).fetchSemanticsNodes().isNotEmpty()) break
+        }
+        compose.onNode(imageOrPlaceholder).assertExists()
         compose.waitUntil(10_000) { compose.onAllNodesWithContentDescription("Synthetic workflow").fetchSemanticsNodes().isNotEmpty() }
+        println("Native preview: workflow image decoded")
         // Decoding replaces the shorter loading placeholder; position again with the real image dimensions.
         compose.onNodeWithContentDescription("Synthetic workflow").performScrollTo()
         compose.waitUntil(10_000) {
