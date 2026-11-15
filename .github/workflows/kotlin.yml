@@ -51,6 +51,14 @@ jobs:
           java-version: '25'
           force-download: true
       - uses: gradle/actions/setup-gradle@v4
+      - name: Reserve usable display space for native windows
+        run: |
+          defaults write com.apple.dock autohide -bool true
+          dock_pid=$(pgrep -u "$(id -u)" -x Dock)
+          case "$dock_pid" in
+            ''|*[!0-9]*) echo "Expected one Dock PID in the isolated CI session"; exit 1 ;;
+          esac
+          kill "$dock_pid"
       - name: Build native CLI for synthetic workspace
         run: cargo build --release --locked -p eqms-cli
       - name: Native desktop integration

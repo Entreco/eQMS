@@ -56,6 +56,10 @@ Fail explicitly if the display cannot fit that minimum or the click target is
 outside the usable screen. A second CI run computed x=1035 for the original
 1100-pixel default window and failed to position the pointer; real screen/pointer
 diagnostics distinguish this display constraint from input permission failures.
+CI confirmed 1024 x 684 usable space with the Dock visible, below the 960 x 720
+minimum. The disposable native CI session enables Dock autohide and restarts
+only its own validated Dock PID before testing. This changes no developer
+desktop preferences and does not bypass OS input permissions.
 
 ## Risk Management and Security Risk Management
 
