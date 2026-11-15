@@ -8,7 +8,8 @@ related: [EQMS-127]
 
 Issue: #107. Draft PR: #108, verified draft targeting `main`. Automated
 observations only; not approved compliance evidence. Manual review/testing
-remains pending. Delivery is incomplete while required checks fail.
+remains pending. The final remediation below has green automated checks;
+historical failed and cancelled runs remain recorded, not rewritten as passes.
 
 ## Tested revisions and environment
 
@@ -173,7 +174,7 @@ Strict required checks, deletion/non-fast-forward rules, PR rules, conditions
 and bypass actors were compared with the prior record and preserved.
 Failures now block merge; rules are not evidence that manual review occurred.
 
-## Remaining limitations and human gates
+## Historical limitations and human gates before remediation
 
 | Test mapping | Observed result |
 |---|---|
@@ -198,3 +199,148 @@ and manual review/testing.
 - [ ] Confirm local unit runs do not interrupt desktop work.
 - [ ] Review native interactions, keyboard/focus, accessibility and visuals.
 - [ ] Review failing tests, CI artifacts and effective required-check policy.
+
+## Approved CI repair refinement
+
+Historical failures above remain observations at their recorded revisions.
+Run [43702620205](https://github.com/Entreco/eQMS/actions/runs/43702620205)
+tested `68e103822341878809c21a100c2ae9488e196c74` and repeated six JVM and
+three native failures. The user approved repairing these in the same draft PR
+without production UI changes, new skips or local native execution.
+
+Revision `695cd309eff0e0233647fc72d0ac22fc0a7966bf` corrected the shared
+`View Markdown` helper, platform undo modifier and obsolete panel selectors.
+Its code was tested locally before committing: macOS/JBR 25/Gradle 9.6.1.
+No native integration execution or CI environment overrides occurred locally.
+
+```sh
+./gradlew --console=plain :feature:scaffold:jvmTest \
+  --tests '*ScaffoldDocumentTest' :feature:document:jvmTest \
+  --tests '*DocumentScreenTest.threeModesKeepLongSourceEditableAndPageBreakInsertionIsUndoable' \
+  :apps:desktop:compileIntegrationTestKotlin \
+  :feature:scaffold:compileIntegrationTestKotlinJvm
+./gradlew --quiet --continue :apps:desktop:test :feature:scaffold:jvmTest \
+  :feature:ui:jvmTest :feature:document:jvmTest :feature:search:jvmTest
+./gradlew --quiet -I scripts/verify_local_native_guards.gradle \
+  :apps:desktop:verifyLocalNativeClassGuards \
+  :feature:scaffold:verifyLocalNativeClassGuards
+python3 -m unittest discover -s scripts/tests -p 'test_verify_native_reports.py'
+./gradlew --console=plain :apps:desktop:test :feature:scaffold:jvmTest --dry-run
+```
+
+| Local suite/check | Cases | Failures | Skips |
+|---|---:|---:|---:|
+| Desktop unit | 54 | 0 | 3 |
+| Scaffold JVM | 24 | 0 | 0 |
+| UI JVM | 6 | 0 | 0 |
+| Document JVM | 74 | 0 | 0 |
+| Search JVM | 8 | 0 | 0 |
+| Report-verifier fixtures | 8 | 0 | 0 |
+| Direct native-class guards | 9 | 0 | 0 |
+
+Unit XML contained no native integration cases. The dry-run included only
+ordinary test execution, not integration tasks. Both integration sources
+compiled; targeted IDE builds and error-severity inspections passed with
+existing Compose test-rule deprecation warnings. The nine guard cases were
+explicit initialization rejections before native UI, not native feature passes.
+
+[Run 43708326777](https://github.com/Entreco/eQMS/actions/runs/43708326777)
+tested that revision on hosted Ubuntu/macOS 15 with JBR 25. Linux Kotlin:
+166 cases, zero failures/errors, three unchanged opt-in performance exclusions.
+Native: nine executed cases, eight passed, one failure, zero skips. Both
+scaffold About cases now pass; the preview reached its new toggle control but
+an immediate deselected assertion preceded native recomposition. Rust checks
+passed. Reports were downloaded and their XML inspected; no failures were
+excluded. This run is not passing native preview evidence.
+
+Revision `02f406a612c9eff8573c52ff403f6ebd8ef7da48` adds a bounded wait for
+the actual deselected native state before the unchanged collapse assertions.
+It compiled locally through Gradle and the IDE, with no error-severity
+inspection findings. Its native behavior must be verified in isolated CI.
+
+[Run 43709234737](https://github.com/Entreco/eQMS/actions/runs/43709234737)
+tested `02f406a612c9eff8573c52ff403f6ebd8ef7da48`: Kotlin and Rust checks
+passed; native XML again contained nine cases, one failure and zero skips.
+The preview passed collapse and subsequent theme/mode/tab assertions, reaching
+the final image scroll for the first time. It failed to find decoded-image
+semantics while scanning lazy pages. Production exposes a loading Text before
+async decoding completes; image content-description semantics exist only
+after decoding. This is a readiness prerequisite, not passing image coverage.
+
+The next repair accepts the exact loading placeholder or decoded-image
+semantics only as the scroll target, then retains the decoded-image wait,
+repositioning, viewport bounds and final capture assertions. No production
+rendering changes, exclusions or timeout increases were introduced.
+
+Run [43710293154](https://github.com/Entreco/eQMS/actions/runs/43710293154)
+tested `216ee52a9a996338bfc4333ae0452787239664bc`. Kotlin and Rust passed,
+but desktop integration stalled and the run was cancelled after more than
+23 minutes. Available scaffold XML records four passing cases with zero skips;
+desktop XML is absent. The verifier failed on missing native reports as
+required. Synthetic captures exist through both themes/modes, but the final
+decoded-image capture is absent. These partial artifacts are not passing
+desktop integration coverage. The exact blocked stack was not captured.
+
+Revision `073e0641f0ec216fafb569a959bf542ad682cfd0` bounds the native workflow
+execution step to ten minutes, both Gradle integration tasks to five minutes,
+and logs individual case starts/results. The image search now traverses the
+finite reported lazy item count through indexed scroll actions, avoiding
+content-driven searching during asynchronous pagination changes; exact
+placeholder/image, decoded-image and viewport assertions remain. Stage logs
+identify image readiness. Gradle integration compilation, targeted IDE build,
+and all nine direct local initialization guards passed before committing.
+An initial build-script attempt used a shadowed `java.time` reference and failed;
+explicit Duration imports corrected it, and both builds subsequently passed.
+No native tests were launched locally. Timeout failure is not passing coverage.
+
+[Run 43712402563](https://github.com/Entreco/eQMS/actions/runs/43712402563)
+tested that revision. Rust and Kotlin passed, but native failed after 9m41s.
+The Gradle log explicitly reports desktop integration exceeding its five-minute
+deadline; the step finished below ten minutes, retaining available artifacts.
+Case-start logs identify DesktopJewelPreviewTest. Buffered stdout records both
+"locating workflow image across 3 lazy items" and "workflow image decoded".
+The final image capture is absent: the subsequent `performScrollTo` helper
+stalled, not image decoding. This demonstrates task-timeout containment, not
+passing native coverage.
+
+Revision `fa13afac747d523393bcb31038e21b869eaf629b` uses one measured ScrollBy
+action to reposition the decoded image and retains the bounded full-viewport
+assertion. It also streams case diagnostics immediately. IDE and Gradle
+integration compilation passed before committing. An initial compile attempt
+used nonexistent DpRect height properties; explicit bottom-minus-top
+measurements corrected them. No production changes or local native execution.
+
+## Final automated remediation outcome
+
+Tested implementation: `fa13afac747d523393bcb31038e21b869eaf629b`.
+[Kotlin/native run 43713403808](https://github.com/Entreco/eQMS/actions/runs/43713403808)
+is successful on hosted Ubuntu/macOS 15, JBR 25, Gradle 9.6.1.
+Native job duration: 3m20s, within the configured task/step limits.
+Rust checks [43713399350](https://github.com/Entreco/eQMS/actions/runs/43713399350)
+and [43713403857](https://github.com/Entreco/eQMS/actions/runs/43713403857)
+also passed at that revision.
+
+Downloaded `native-integration-evidence` and `kotlin-test-reports` XML confirms:
+
+| CI coverage | Cases | Failures/errors | Skips | Result |
+|---|---:|---:|---:|---|
+| Linux Kotlin JVM | 166 | 0 | 3 | All executed cases pass; unchanged opt-in performance exclusions |
+| macOS native integration | 9 | 0 | 0 | All required cases pass |
+
+The native report verifier also passed on the downloaded artifact directories.
+The final `native-document-image-dark.png` is present after the decoded image
+and full-viewport assertions. Screenshots are synthetic diagnostic artifacts,
+not human visual approval.
+
+| Test mapping | Final observed result |
+|---|---|
+| T127-03, T127-10 | All five scaffold source/navigation regressions and both native About cases pass |
+| T127-11 | Exact page-break undo body equality passes on Linux with Ctrl; local macOS Meta path also passed |
+| T127-05, T127-12 | Complete native preview passes panel collapse, tab retention, both-theme modes and decoded-image viewport checks |
+| T127-04, T127-06 | All nine native cases pass without skips, including genuine title-bar click/drag/minimize/restore; report gate passes |
+| T127-13 | Five-minute Gradle timeout failed explicitly in run 43712402563; final normal native run completes within limits; ten-minute step ceiling remains configured |
+
+No test skips, relaxed native coverage or production UI changes were introduced.
+Historical timing/failure observations are preserved above. Evidence is committed
+separately from the tested implementation. Main requires all three check names;
+manual review/testing remains unchecked, #107 open/In progress and #108 draft.
