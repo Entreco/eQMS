@@ -255,8 +255,13 @@ class DesktopJewelPreviewTest {
             compose.onNodeWithText("Save").assertIsNotEnabled()
             capture(captureName)
         }
-        compose.onNodeWithContentDescription("Hide Documents panel").activate()
-        compose.onNodeWithContentDescription("Hide Review panel").activate()
+        for (panel in listOf("Documents", "Review")) {
+            val toggle = compose.onNodeWithContentDescription("Toggle $panel panel")
+            toggle.assertIsSelected().activate()
+            toggle.assertIsNotSelected()
+        }
+        compose.onNodeWithContentDescription("Resize left panel").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Resize right panel").assertDoesNotExist()
         capture("jewel-collapsed.png")
         compose.onNodeWithContentDescription("Document tab Risk management plan (sample)").activate()
         compose.waitUntil(5_000) {

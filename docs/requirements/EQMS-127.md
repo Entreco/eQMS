@@ -19,3 +19,4 @@ Issue: #107. Defined before implementation.
 | R127-07 | CI retains reports and sanitized synthetic captures on failure/success and verifies expected native discovery/execution. |
 | R127-08 | Main's effective ruleset requires the successful Kotlin/native contexts and existing Rust check, preserving unrelated rules and bypass settings. |
 | R127-09 | Revision-bound evidence records actual results, failures/exclusions and limits; draft PR and human review/testing remain explicit delivery gates. |
+| R127-10 | Shared source helpers select current Markdown mode; undo input matches the platform; native preview verifies current panel-toggle collapse. All nine failures from run 43702620205 must pass without production UI changes, weakened assertions or new skips. |

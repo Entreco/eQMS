@@ -61,6 +61,18 @@ minimum. The disposable native CI session enables Dock autohide and restarts
 only its own validated Dock PID before testing. This changes no developer
 desktop preferences and does not bypass OS input permissions.
 
+## CI regression repair refinement
+
+Run 43702620205 exposed six Kotlin and three native failures after separation.
+Repair test contracts, not production behavior: the shared scaffold source
+helper must select the current `View Markdown` mode; undo input must use Meta
+on macOS and Ctrl elsewhere; the real-workspace preview must activate current
+`Toggle Documents panel`/`Toggle Review panel` controls and verify selected to
+deselected state before capture. Keep exact editor/navigation/undo assertions,
+all nine native cases, genuine OS-input coverage and CI-only guards unchanged.
+Verify the undo path in Linux CI and About/preview paths only in isolated macOS
+CI. Newly reached failures require diagnosis, not skips or weaker assertions.
+
 ## Risk Management and Security Risk Management
 
 Both apply proportionately.
@@ -69,6 +81,7 @@ Both apply proportionately.
 |---|---|---|
 | Shared pointer or foreground windows affect user work | Separate source set; task and class guards before UI initialization; CI-only native execution | Environment markers are an execution policy, not a security sandbox |
 | Green Rust CI conceals Kotlin/native defects | Distinct required checks; expected test coverage; reject skips/prerequisite failures | New required contexts must be verified and configured server-side |
+| Stale selectors or platform input hide UI regressions | Current production semantics, exact state assertions, Linux JVM and isolated macOS native checks | Green automation does not establish human usability or approval |
 | Timing/focus/permissions cause false results | Dedicated macOS session, supported JBR, bounded observable readiness and diagnostics | Hosted runner capability must be demonstrated; no permission bypass |
 | CI artifacts expose user data | Synthetic temporary workspaces; no local captures; minimal permissions | Generated artifacts still require review before external sharing |
 | Test failure leaves input pressed or windows running | Finally cleanup; serial native tests and isolated test JVMs | Human OS interaction/accessibility review is still necessary |

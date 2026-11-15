@@ -26,8 +26,8 @@ abstract class ScaffoldDocumentTestSupport(nativeIntegration: Boolean = false) {
 
     protected fun sourceField(name: String): SemanticsNodeInteraction {
         if (compose.onAllNodesWithContentDescription(name).fetchSemanticsNodes().isEmpty() &&
-            compose.onAllNodesWithContentDescription("View Source").fetchSemanticsNodes().isNotEmpty()) {
-            compose.onNodeWithContentDescription("View Source").performClick()
+            compose.onAllNodesWithContentDescription("View Markdown").fetchSemanticsNodes().isNotEmpty()) {
+            compose.onNodeWithContentDescription("View Markdown").performClick()
         }
         return compose.onNodeWithContentDescription(name)
     }

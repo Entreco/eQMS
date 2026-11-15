@@ -352,8 +352,9 @@ class DocumentScreenTest {
         compose.onNodeWithText("Insert page break").performClick()
         compose.runOnIdle { assertTrue(tab.body.endsWith("<!-- pagebreak -->\n\n")) }
         sourceField("Markdown body").performSemanticsAction(SemanticsActions.RequestFocus) { it() }
+        val undoModifier = if (System.getProperty("os.name").startsWith("Mac")) Key.MetaLeft else Key.CtrlLeft
         sourceField("Markdown body").performKeyInput {
-            keyDown(Key.MetaLeft); pressKey(Key.Z); keyUp(Key.MetaLeft)
+            keyDown(undoModifier); pressKey(Key.Z); keyUp(undoModifier)
         }
         compose.runOnIdle { assertEquals("$original edited", tab.body) }
         compose.onNodeWithContentDescription("View Markdown + Preview").performClick()
