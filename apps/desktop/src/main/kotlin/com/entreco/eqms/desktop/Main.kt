@@ -4,6 +4,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.window.application
 import com.entreco.eqms.feature.scaffold.ProjectScreen
 import com.entreco.eqms.feature.scaffold.DesktopChrome
+import com.entreco.eqms.feature.ui.LocalDialogWindows
 import java.io.IOException
 import java.nio.file.Path
 import kotlinx.serialization.SerializationException
@@ -34,11 +35,15 @@ internal class WorkspaceCli(
         executeProcess(command, arguments)
     },
 ) {
-    fun execute(operation: WorkspaceOperation, path: Path): WorkspaceCommandResult {
+    fun execute(
+        operation: WorkspaceOperation,
+        path: Path,
+        extraArguments: List<String> = emptyList(),
+    ): WorkspaceCommandResult {
         val result = try {
             processExecutor.execute(
                 executable,
-                listOf(operation.command, "--json", path.toString()),
+                listOf(operation.command, "--json", path.toString()) + extraArguments,
             )
         } catch (error: IOException) {
             return WorkspaceCommandResult.Failure(
@@ -89,9 +94,16 @@ internal class WorkspaceCli(
     }
 
     /** Runs `qms project branding show` and returns its validated `data` object. */
-    fun brandingData(path: Path): Result<JsonObject> {
+    fun brandingData(path: Path): Result<JsonObject> =
+        brandingCommand("show", listOf("--json", path.toString()))
+
+    /** Runs the workspace-free `qms project branding preview`; nothing is written. */
+    fun brandingPreview(arguments: List<String>): Result<JsonObject> =
+        brandingCommand("preview", listOf("--json") + arguments)
+
+    private fun brandingCommand(operation: String, arguments: List<String>): Result<JsonObject> {
         val result = try {
-            processExecutor.execute(executable, listOf("project", "branding", "show", "--json", path.toString()))
+            processExecutor.execute(executable, listOf("project", "branding", operation) + arguments)
         } catch (error: IOException) {
             return Result.failure(IOException("Could not start qms: ${error.message ?: "I/O error"}"))
         } catch (error: SecurityException) {
@@ -105,9 +117,9 @@ internal class WorkspaceCli(
             return Result.failure(IOException("qms returned an invalid JSON response."))
         }
         if (result.exitCode != 0 || response.stringValue("status") != "ok") {
-            return Result.failure(IOException(response.errorMessage() ?: "qms project branding show failed."))
+            return Result.failure(IOException(response.errorMessage() ?: "qms project branding $operation failed."))
         }
-        if (response.stringValue("command") != "project.branding.show") {
+        if (response.stringValue("command") != "project.branding.$operation") {
             return Result.failure(IOException("qms returned a response for an unexpected command."))
         }
         val data = response["data"] as? JsonObject
@@ -201,13 +213,15 @@ private fun launchDesktop(chrome: DesktopChrome) = application {
         onCloseRequest = requestClose,
     ) { layout ->
         DesktopMenus(chrome, requestClose)
-        ProjectScreen(
-            capabilities, documents, closeRequested,
-            onCloseHandled = { closeRequested = false },
-            onCloseConfirmed = ::exitApplication,
-            chrome = chrome,
-            headerActionsModifier = workspaceActionsModifier(),
-            layout = layout,
-        )
+        CompositionLocalProvider(LocalDialogWindows provides true) {
+            ProjectScreen(
+                capabilities, documents, closeRequested,
+                onCloseHandled = { closeRequested = false },
+                onCloseConfirmed = ::exitApplication,
+                chrome = chrome,
+                headerActionsModifier = workspaceActionsModifier(),
+                layout = layout,
+            )
+        }
     }
 }

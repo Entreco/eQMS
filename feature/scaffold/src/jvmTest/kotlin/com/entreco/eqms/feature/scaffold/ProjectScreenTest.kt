@@ -33,6 +33,8 @@ class ProjectScreenTest {
             return Result.success("$parent/$name")
         }
 
+        override suspend fun previewBranding(draft: BrandingDraft) = testBrandingPreview(draft)
+
         override suspend fun openProject(path: String, create: Boolean): Result<String> {
             operations += path to create
             return workspaceResult?.await() ?: Result.success(path)
@@ -54,6 +56,7 @@ class ProjectScreenTest {
             assertTrue(capabilities.operations.isEmpty())
         }
         compose.onNodeWithText("Select directory").performClick()
+        compose.confirmIdentity()
         compose.onNodeWithText("Project created successfully.").assertExists()
         compose.runOnIdle {
             assertEquals(listOf("/home/project with spaces" to true), capabilities.operations)

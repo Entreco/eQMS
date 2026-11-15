@@ -280,6 +280,7 @@ fun DocumentScreen(
             WorkspaceDialog(
                 onDismissRequest = { if (!linkBusy) externalLink = null },
                 title = { Text("Open external link?") },
+                windowTitle = "Open external link",
                 text = { Text("This opens your default application outside DutchDoxx:\n$target") },
                 confirmButton = {
                     DefaultButton(enabled = !linkBusy, onClick = {
@@ -307,6 +308,7 @@ fun DocumentScreen(
             WorkspaceDialog(
                 onDismissRequest = { confirmation = null },
                 title = { Text(actionLabel(target)) },
+                windowTitle = actionLabel(target),
                 text = {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text("${source.title}: ${source.snapshot?.status?.label} -> ${target.label}")
@@ -329,6 +331,7 @@ fun DocumentScreen(
             WorkspaceDialog(
                 onDismissRequest = { if (!state.busy) state.cancelClose() },
                 title = { Text("Unsaved changes") },
+                windowTitle = "Unsaved changes",
                 text = { Text("Save changes to ${affected.joinToString { it.title.ifBlank { "Untitled" } }}?") },
                 confirmButton = {
                     DefaultButton(enabled = !state.busy, onClick = { scope.launch { state.saveAndContinue() } }) {

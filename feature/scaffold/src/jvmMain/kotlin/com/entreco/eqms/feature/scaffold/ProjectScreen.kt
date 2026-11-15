@@ -15,6 +15,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
@@ -61,6 +62,7 @@ fun ProjectScreen(
     var error by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var creating by remember { mutableStateOf<Boolean?>(null) }
+    var identityFor by remember { mutableStateOf<String?>(null) }
     var documentDirty by remember { mutableStateOf(false) }
     var documentBusy by remember { mutableStateOf(false) }
     val documentNavigation = remember { DocumentNavigationController() }
@@ -74,7 +76,7 @@ fun ProjectScreen(
     var aboutRequest by remember { mutableIntStateOf(0) }
     var brand by remember { mutableStateOf<BrandTokens?>(null) }
     var brandError by remember { mutableStateOf<String?>(null) }
-    val interactive = !busy && !documentBusy && creating == null &&
+    val interactive = !busy && !documentBusy && creating == null && identityFor == null &&
         chromeDialog == null && !savingAppearance
 
     fun changeAppearance(value: Boolean) {
@@ -105,12 +107,17 @@ fun ProjectScreen(
         }
     }
 
-    fun openProject(path: String, create: Boolean, restoring: Boolean = false) {
+    fun openProject(path: String, create: Boolean, restoring: Boolean = false, branding: BrandingDraft? = null) {
         busy = true
         message = null
         scope.launch {
             try {
-                capabilities.openProject(path, create).fold(
+                val outcome = if (create && branding != null) {
+                    capabilities.createProject(path, branding)
+                } else {
+                    capabilities.openProject(path, create)
+                }
+                outcome.fold(
                     onSuccess = { opened ->
                         navigate {
                             project = opened
@@ -240,7 +247,7 @@ fun ProjectScreen(
                                         path, documents,
                                         onStateChanged = { dirty, working -> documentDirty = dirty; documentBusy = working },
                                         modifier = Modifier.fillMaxSize(),
-                                        workspaceBusy = busy || creating != null || chromeDialog != null || savingAppearance,
+                                        workspaceBusy = busy || creating != null || identityFor != null || chromeDialog != null || savingAppearance,
                                         navigation = documentNavigation,
                                     )
                                 }
@@ -302,7 +309,22 @@ fun ProjectScreen(
                             },
                             onSelect = { path ->
                                 creating = null
-                                openProject(path, create)
+                                if (create) identityFor = path else openProject(path, create)
+                            },
+                        )
+                    }
+                    identityFor?.let { path ->
+                        BrandingDialog(
+                            capabilities = capabilities,
+                            folderName = path.substringAfterLast('/').substringAfterLast('\\'),
+                            onCancel = {
+                                identityFor = null
+                                error = false
+                                message = "Project selection cancelled."
+                            },
+                            onCreate = { draft ->
+                                identityFor = null
+                                openProject(path, create = true, branding = draft)
                             },
                         )
                     }
@@ -348,8 +370,10 @@ private fun DirectoryDialog(
     WorkspaceDialog(
         onDismissRequest = { if (!busy) onCancel() },
         title = { Text(if (create) "Create project" else "Open project") },
+        windowTitle = if (create) "Create project" else "Open project",
+        size = DpSize(680.dp, 580.dp),
         text = {
-            Column(Modifier.width(560.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 WorkspaceTextField(
                     value = path,
                     onValueChange = { path = it },
@@ -403,6 +427,7 @@ private fun DirectoryDialog(
         WorkspaceDialog(
             onDismissRequest = { if (!busy) newFolder = false },
             title = { Text("New folder") },
+            windowTitle = "New folder",
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     WorkspaceTextField(

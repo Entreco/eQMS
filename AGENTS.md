@@ -67,3 +67,21 @@ Rust core/domain logic must not depend on CLI or UI frameworks. The native
 `qms` CLI is authoritative; the Kotlin CLI remains a prototype. Retain Kotlin
 desktop/web shells. Canonical documents are compact Markdown; planned Git and
 audit-journal controls must not be represented as already implemented.
+
+## End-to-end delivery (core + UI)
+
+Every Rust core feature must ship with an equivalent in the desktop
+application UI, in the same issue. Do not add core capabilities that can only
+be exercised through tests or the CLI. Non-technical reviewers must be able to
+launch the desktop app and validate each feature manually.
+
+- Wire each new or changed core capability through to the UI end to end;
+  do not leave it unreachable, stubbed, or hidden behind unreleased flags.
+- Requirements and tests in `docs/` must include the UI path (where to click
+  and the expected result) so manual testing is possible without technical
+  knowledge. Add it to the PR manual review/testing checklist.
+- Validate speed and ease of use: actions should feel fast, need few steps,
+  and show clear results and errors. Record observed limitations; do not
+  claim performance or usability measurements that were not made.
+- If a UI equivalent is genuinely out of scope, state why in the issue and PR
+  and create a linked follow-up issue; do not silently skip it.
