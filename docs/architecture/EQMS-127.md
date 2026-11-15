@@ -71,7 +71,11 @@ on macOS and Ctrl elsewhere; the real-workspace preview must activate current
 deselected state before capture. Keep exact editor/navigation/undo assertions,
 all nine native cases, genuine OS-input coverage and CI-only guards unchanged.
 Verify the undo path in Linux CI and About/preview paths only in isolated macOS
-CI. Newly reached failures require diagnosis, not skips or weaker assertions.
+CI. The preview must scroll to the image's loading placeholder or decoded
+image before awaiting decoded-image semantics: lazy page composition starts
+asynchronous image decoding only after that page is reached. Keep the decoded
+image and viewport assertions; loading alone is not passing image coverage.
+Newly reached failures require diagnosis, not skips or weaker assertions.
 
 ## Risk Management and Security Risk Management
 

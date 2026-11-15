@@ -22,7 +22,7 @@ Issue: #107. Defined before implementation. Requirements:
 | T127-09 | R127-01, R127-02, R127-03, R127-05 | Five audited About-window methods run only in desktop/scaffold integration; non-window tests remain local; both task/class guards reject local GUI execution. |
 | T127-10 | R127-04, R127-10 | Execute the five failed ScaffoldDocumentTest navigation/editor methods with current Markdown selection; retain dirty/editor/project/menu assertions. Execute both ScaffoldAboutIntegrationTest methods only in macOS CI with the same helper. |
 | T127-11 | R127-04, R127-10 | Execute DocumentScreenTest.threeModesKeepLongSourceEditableAndPageBreakInsertionIsUndoable with platform-correct undo, including Linux CI; assert exact original body plus edit after undo. |
-| T127-12 | R127-05, R127-07, R127-10 | Execute complete DesktopJewelPreviewTest.realNativeWorkspaceRendersInBothThemes in macOS CI; assert Documents/Review selected before toggling and deselected before collapsed capture; preserve subsequent mode, tab and image checks. |
+| T127-12 | R127-05, R127-07, R127-10 | Execute complete DesktopJewelPreviewTest.realNativeWorkspaceRendersInBothThemes in macOS CI; assert Documents/Review selected before toggling and deselected before collapsed capture; reach the lazy image placeholder, await decoded image and verify its viewport bounds; preserve mode/tab checks. |
 
 ## Required manual review/testing
 

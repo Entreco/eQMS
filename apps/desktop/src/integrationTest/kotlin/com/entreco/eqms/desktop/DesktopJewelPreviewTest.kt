@@ -294,7 +294,9 @@ class DesktopJewelPreviewTest {
             }
         }
         selectMode("Preview")
-        compose.onNodeWithContentDescription("Rendered document content").performScrollToNode(hasContentDescription("Synthetic workflow"))
+        compose.onNodeWithContentDescription("Rendered document content").performScrollToNode(
+            hasContentDescription("Synthetic workflow") or hasText("Loading image: Synthetic workflow")
+        )
         compose.waitUntil(10_000) { compose.onAllNodesWithContentDescription("Synthetic workflow").fetchSemanticsNodes().isNotEmpty() }
         // Decoding replaces the shorter loading placeholder; position again with the real image dimensions.
         compose.onNodeWithContentDescription("Synthetic workflow").performScrollTo()
