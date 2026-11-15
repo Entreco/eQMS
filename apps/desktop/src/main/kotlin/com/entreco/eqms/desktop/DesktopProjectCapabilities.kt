@@ -1,9 +1,12 @@
 package com.entreco.eqms.desktop
 
+import com.entreco.eqms.feature.scaffold.BrandingDraft
+import com.entreco.eqms.feature.scaffold.BrandingPreview
 import com.entreco.eqms.feature.scaffold.DirectoryListing
 import com.entreco.eqms.feature.scaffold.ProjectCapabilities
 import com.entreco.eqms.feature.scaffold.ProjectDirectory
 import com.entreco.eqms.feature.ui.BrandTokens
+import java.awt.FileDialog
 import java.io.IOException
 import java.io.UncheckedIOException
 import java.nio.file.Files
@@ -19,6 +22,13 @@ internal fun createProjectFolder(parent: Path, name: String): Path {
             name.none { it.code < 32 } && !Path.of(name).isAbsolute,
     ) { "Enter a single folder name, not a path." }
     return Files.createDirectory(parent.resolve(name))
+}
+
+/** `=` form so values starting with `-` are never read as options; a PNG logo replaces the seed. */
+internal fun brandingArguments(draft: BrandingDraft): List<String> = buildList {
+    add("--name=${draft.name}")
+    if (draft.logoFile != null) add("--logo-file=${draft.logoFile}") else add("--seed=${draft.seed}")
+    if (draft.accent != "auto" || draft.logoFile == null) add("--accent=${draft.accent}")
 }
 
 internal class DesktopProjectCapabilities(
@@ -49,6 +59,28 @@ internal class DesktopProjectCapabilities(
 
     override suspend fun brandTokens(path: String): Result<BrandTokens?> = withContext(Dispatchers.IO) {
         cli.brandingData(Paths.get(path)).mapCatching(::brandTokensFrom)
+    }
+
+    override suspend fun previewBranding(draft: BrandingDraft): Result<BrandingPreview> =
+        withContext(Dispatchers.IO) {
+            cli.brandingPreview(brandingArguments(draft)).mapCatching(::brandingPreviewFrom)
+        }
+
+    override suspend fun createProject(path: String, draft: BrandingDraft): Result<String> =
+        filesystemOperation {
+            when (val result = cli.execute(WorkspaceOperation.Create, Paths.get(path), brandingArguments(draft))) {
+                is WorkspaceCommandResult.Success -> result.path
+                is WorkspaceCommandResult.Failure -> throw IOException(
+                    "${result.message} The folder may already be initialised; use File > Open project to continue.",
+                )
+            }
+        }
+
+    override suspend fun chooseLogoFile(): String? = withContext(Dispatchers.IO) {
+        val dialog = FileDialog(null as java.awt.Frame?, "Choose a PNG logo", FileDialog.LOAD)
+        dialog.setFilenameFilter { _, name -> name.endsWith(".png", ignoreCase = true) }
+        dialog.isVisible = true
+        dialog.file?.let { java.io.File(dialog.directory, it).path }.also { dialog.dispose() }
     }
 
     private suspend fun <T> filesystemOperation(operation: () -> T): Result<T> = withContext(Dispatchers.IO) {

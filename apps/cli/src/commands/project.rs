@@ -26,7 +26,10 @@ pub(crate) fn command() -> Command {
                     Command::new("set")
                         .about("Record branding as a hashed, journaled change")
                         .arg(Arg::new("path").required(true)),
-                )),
+                ))
+                .subcommand(branding_options(Command::new("preview").about(
+                    "Preview the branding for --name without a workspace; writes nothing",
+                ))),
         )
 }
 
@@ -138,6 +141,36 @@ pub(crate) fn run(matches: &ArgMatches, json: bool) -> Result<String, String> {
     let (operation, args) = branding_args
         .subcommand()
         .expect("required branding operation");
+    if operation == "preview" {
+        let name = args
+            .get_one::<String>("name")
+            .ok_or("--name is required for preview")?;
+        let (next, _) = apply_options(
+            Branding::default_for(name).map_err(|e| e.to_string())?,
+            args,
+        )?;
+        let preview = ProjectBranding {
+            branding: next,
+            persisted: false,
+            content_hash: None,
+        };
+        let data = describe(&preview, &preview.branding);
+        return Ok(if json {
+            data.to_string()
+        } else {
+            format!(
+                "Branding preview (nothing written)\nName: {}\nAccent: {}\nLogo: {}",
+                data["name"].as_str().unwrap_or_default(),
+                data["accent"].as_str().unwrap_or_default(),
+                data["logo"]["kind"].as_str().unwrap_or_default(),
+            ) + &data["warnings"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .map(|w| format!("\nWarning: {}", w.as_str().unwrap_or_default()))
+                .collect::<String>()
+        });
+    }
     let path = Path::new(args.get_one::<String>("path").expect("required path"));
     let workspace = Workspace::open(path).map_err(|e| e.to_string())?;
     let store = BrandingStore::new(&workspace);
@@ -186,6 +219,32 @@ mod tests {
     fn run_args(args: &[&str]) -> Result<Value, String> {
         let matches = command().try_get_matches_from(args).unwrap();
         run(&matches, true).map(|text| serde_json::from_str(&text).unwrap())
+    }
+
+    #[test]
+    fn preview_needs_no_workspace_and_validates_like_set() {
+        let p = |extra: &[&str]| {
+            let mut args = vec!["project", "branding", "preview"];
+            args.extend_from_slice(extra);
+            run_args(&args)
+        };
+        let data = p(&["--name", "Acme Quality"]).unwrap();
+        assert_eq!(data["persisted"], false);
+        assert_eq!(data["logo"]["kind"], "generated");
+        assert_eq!(data["logo"]["generated"]["initials"], "AQ");
+        assert_eq!(data["accent"], data["logo"]["generated"]["color"]);
+        let seeded = p(&["--name", "Acme", "--seed", "other", "--accent", "auto"]).unwrap();
+        assert_eq!(seeded["logo"]["seed"], "other");
+        assert_eq!(seeded["accent"], seeded["logo"]["generated"]["color"]);
+        let pale = p(&["--name", "Acme", "--accent", "#FFFF00"]).unwrap();
+        assert!(!pale["warnings"].as_array().unwrap().is_empty());
+        assert!(p(&[]).is_err());
+        assert!(p(&["--name", "Acme", "--accent", "red"]).is_err());
+        assert!(p(&["--name", "Acme", "--logo-file", "/nonexistent"]).is_err());
+        let fake = std::env::temp_dir().join(format!("eqms-preview-{}.png", std::process::id()));
+        std::fs::write(&fake, b"not a png").unwrap();
+        assert!(p(&["--name", "Acme", "--logo-file", fake.to_str().unwrap()]).is_err());
+        std::fs::remove_file(fake).unwrap();
     }
 
     #[test]

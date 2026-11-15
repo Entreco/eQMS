@@ -774,3 +774,85 @@ fn concurrent_cli_initialization_creates_exactly_one_workspace() {
     assert_eq!(verify.status.code(), Some(0));
     std::fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn branding_preview_matches_what_init_records() {
+    let json = |output: Output| {
+        let body = if output.status.success() {
+            &output.stdout
+        } else {
+            &output.stderr
+        };
+        let value: serde_json::Value = serde_json::from_slice(body).unwrap();
+        assert_cli_envelope(
+            &value,
+            if output.status.success() {
+                "ok"
+            } else {
+                "error"
+            },
+        );
+        (output.status.success(), value)
+    };
+    let name = "--Acme -Quality";
+    let preview = json(
+        Command::new(env!("CARGO_BIN_EXE_qms"))
+            .args(["--json", "project", "branding", "preview"])
+            .args([
+                format!("--name={name}"),
+                "--seed=-shuffled".into(),
+                "--accent=#112233".into(),
+            ])
+            .output()
+            .unwrap(),
+    );
+    assert!(preview.0);
+    assert_eq!(preview.1["command"], "project.branding.preview");
+    assert_eq!(preview.1["data"]["persisted"], false);
+
+    let missing = json(
+        Command::new(env!("CARGO_BIN_EXE_qms"))
+            .args(["--json", "project", "branding", "preview"])
+            .output()
+            .unwrap(),
+    );
+    assert!(!missing.0);
+
+    let workspace = std::env::temp_dir().join(format!(
+        "eqms-cli-preview-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    std::fs::create_dir_all(&workspace).unwrap();
+    assert!(
+        Command::new("git")
+            .arg("-C")
+            .arg(&workspace)
+            .args(["init", "--quiet"])
+            .status()
+            .unwrap()
+            .success()
+    );
+    let init = qms_with_test_identity()
+        .args(["--json", "init"])
+        .arg(&workspace)
+        .args([
+            format!("--name={name}"),
+            "--seed=-shuffled".into(),
+            "--accent=#112233".into(),
+        ])
+        .output()
+        .unwrap();
+    assert!(json(init).0);
+    let shown = json(
+        Command::new(env!("CARGO_BIN_EXE_qms"))
+            .args(["--json", "project", "branding", "show"])
+            .arg(&workspace)
+            .output()
+            .unwrap(),
+    );
+    for field in ["name", "accent", "on_accent", "logo"] {
+        assert_eq!(shown.1["data"][field], preview.1["data"][field], "{field}");
+    }
+    std::fs::remove_dir_all(workspace).unwrap();
+}

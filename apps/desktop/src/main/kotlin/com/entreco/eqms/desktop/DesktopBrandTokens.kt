@@ -1,5 +1,8 @@
 package com.entreco.eqms.desktop
 
+import com.entreco.eqms.feature.scaffold.BrandingPreview
+import com.entreco.eqms.feature.scaffold.GeneratedLogo
+import com.entreco.eqms.feature.scaffold.GeneratedLogoShape
 import com.entreco.eqms.feature.ui.BrandLogo
 import com.entreco.eqms.feature.ui.BrandTokens
 import java.io.IOException
@@ -26,4 +29,24 @@ internal fun brandTokensFrom(data: JsonObject): BrandTokens {
         logo = brandLogo,
         warnings = warnings,
     ).getOrElse { throw IOException("qms returned invalid branding data: ${it.message}") }
+}
+
+/** Maps the `data` of `qms project branding preview --json`; generated logos carry core's drawing instructions. */
+internal fun brandingPreviewFrom(data: JsonObject): BrandingPreview {
+    val tokens = brandTokensFrom(data)
+    val generated = (data["logo"] as? JsonObject)?.get("generated") as? JsonObject
+    val logo = generated?.let {
+        val shape = when (it.stringValue("shape")) {
+            "circle" -> GeneratedLogoShape.Circle
+            "square" -> GeneratedLogoShape.Square
+            "hexagon" -> GeneratedLogoShape.Hexagon
+            else -> throw IOException("qms returned an invalid logo shape.")
+        }
+        GeneratedLogo(
+            it.stringValue("initials")?.takeIf(String::isNotBlank)
+                ?: throw IOException("qms returned a logo without initials."),
+            shape,
+        )
+    }
+    return BrandingPreview(tokens, logo)
 }

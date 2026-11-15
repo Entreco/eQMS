@@ -87,6 +87,7 @@ class DesktopChromeTest {
         val result = CompletableDeferred<Result<String>>()
         val busyProjects = object : ProjectCapabilities by projects {
             override suspend fun openProject(path: String, create: Boolean) = result.await()
+            override suspend fun createProject(path: String, draft: BrandingDraft) = result.await()
         }
         val chrome = DesktopChrome(
             "1.0.0-dev", Result.success(true), { Result.success(Unit) },
@@ -97,6 +98,7 @@ class DesktopChromeTest {
         compose.onNodeWithText("Select directory").assertExists()
         compose.runOnIdle { assertFalse(chrome.enabled); chrome.request(DesktopCommand.Settings) }
         compose.onNodeWithText("Select directory").performClick()
+        compose.confirmIdentity()
         compose.onNodeWithText("Working...").assertExists()
         compose.runOnIdle { assertFalse(chrome.enabled); chrome.request(DesktopCommand.About) }
         compose.onNodeWithText("About DutchDoxx").assertDoesNotExist()

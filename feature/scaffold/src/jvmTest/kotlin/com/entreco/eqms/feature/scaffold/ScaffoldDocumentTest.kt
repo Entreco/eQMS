@@ -45,6 +45,7 @@ abstract class ScaffoldDocumentTestSupport(nativeIntegration: Boolean = false) {
         override suspend fun createFolder(parent: String, name: String) = Result.success("$parent/$name")
         override suspend fun openProject(path: String, create: Boolean): Result<String> =
             if (failOpen) Result.failure(IllegalArgumentException("Verification failed")) else Result.success(path)
+        override suspend fun previewBranding(draft: BrandingDraft) = testBrandingPreview(draft)
     }
 
     protected class Documents : DocumentCapabilities {
@@ -228,6 +229,7 @@ class ScaffoldDocumentTest : ScaffoldDocumentTestSupport() {
         compose.runOnIdle { chrome.request(DesktopCommand.NewProject) }
         compose.onNodeWithText("New folder").assertExists()
         compose.onNodeWithText("Select directory").performClick()
+        compose.confirmIdentity()
         compose.onNodeWithText("Project created successfully.").assertExists()
         compose.onNodeWithText("Policy (Draft)").performClick()
         sourceField("Markdown body").performTextReplacement("keep edits")
