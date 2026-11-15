@@ -2,7 +2,7 @@
 
 Draft, generated record; not approved compliance evidence. Manual review and manual testing are still required.
 
-- Tested revision: `a8dbecddb871e18b6eefd445f1cb04c4b15604ac` (branch `issue/eqms-110-project-creation-branding`, base `8ff676c`). Only this evidence file was added afterwards.
+- Tested revision: `1028f540db99a2557f608c01817e22bc71ea00fc` (branch `issue/eqms-110-project-creation-branding`, base `8ff676c`). Only this evidence file changed afterwards. Rust results below were last run at `a8dbecd`; later commits changed no Rust code.
 - Environment: macOS 26.6.2, OpenJDK 25.0.4, rustc 1.99.1, Gradle wrapper
 
 ## Commands and outcomes
@@ -14,7 +14,8 @@ Draft, generated record; not approved compliance evidence. Manual review and man
 | `cargo test` | Pass: 196 passed, 0 failed (includes `preview_needs_no_workspace_and_validates_like_set`, `branding_preview_matches_what_init_records`) |
 | `./gradlew :apps:desktop:test :feature:ui:jvmTest :feature:document:jvmTest :feature:search:jvmTest :feature:scaffold:jvmTest --continue` | Pass, including new `ProjectBrandingCreateTest` (6), `LogoPreviewTest` (2), `DesktopProjectBrandingTest` (4). Three existing tests initially failed because New project gained the identity step; their fakes and flow were updated (`confirmIdentity`) and re-run. |
 | `./gradlew :feature:ui:compileKotlinWasmJs :feature:scaffold:compileKotlinWasmJs` | Compiles |
-| Native integration tests (`integrationTest`) | Not run: CI-only on macOS runners (EQMS-127) |
+| `./gradlew :feature:scaffold:compileIntegrationTestKotlinJvm` | Compiles, incl. new `dialogsAreDecoratedResizableWindowsThatCloseFromTheirChrome` (T110-09) |
+| Native integration tests (`integrationTest`) | Not run: CI-only on macOS runners (EQMS-127), so the dialog-window behaviour (R110-11) is not yet observed |
 
 ## Requirement mapping
 
@@ -26,6 +27,7 @@ R110-01/02 -> T110-01, T110-02; R110-03..R110-07 -> T110-03; R110-04/06 -> T110-
 
 ## Limitations
 
+- Dialog windows (R110-11) were never rendered or exercised by me; unit tests use the in-scene fallback.
 - The manual checklist in `docs/testing/EQMS-110.md` is not executed; the real application window was not driven by an automated test or a human.
 - The Browse system file dialog and real Tab/Enter/Escape traversal are untested; PNG rendering of a real file is covered only through the unreadable-file fallback.
 - Failure after `qms init` leaves an initialised folder (core is not transactional across init and branding); the UI says so.
