@@ -32,6 +32,7 @@ data class DocumentSnapshot(
     val localTimestamp: String,
     val status: DocumentStatus = DocumentStatus.Draft,
     val page: DocumentPageSetup = DocumentPageSetup(),
+    val template: TemplatePin? = null,
 )
 
 interface DocumentCapabilities : SearchCapabilities {
@@ -39,6 +40,11 @@ interface DocumentCapabilities : SearchCapabilities {
         Result.failure(UnsupportedOperationException("Document rendering is not configured. Source remains available."))
     suspend fun renderSaved(project: String, document: DocumentSnapshot): Result<RenderedDocument> =
         Result.failure(UnsupportedOperationException("Saved document rendering is not configured. Source remains available."))
+    suspend fun renderBuffer(project: String, title: String, body: String, style: StyleRequest): Result<RenderedDocument> =
+        renderBuffer(project, title, body)
+    suspend fun renderSaved(project: String, document: DocumentSnapshot, style: StyleRequest): Result<RenderedDocument> =
+        renderSaved(project, document)
+    suspend fun listTemplates(project: String): Result<List<TemplateSummary>> = Result.success(emptyList())
     suspend fun readDocumentImage(project: String, asset: String): Result<DocumentImage> =
         Result.failure(UnsupportedOperationException("Local image loading is not configured."))
     suspend fun openDocumentLink(target: String): Result<Unit> =

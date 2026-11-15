@@ -17,6 +17,7 @@ pub mod plugin;
 pub mod render;
 pub mod roles;
 pub mod search;
+pub mod style;
 pub mod template;
 pub mod workspace;
 

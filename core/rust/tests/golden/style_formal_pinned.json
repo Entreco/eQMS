@@ -1,0 +1,104 @@
+{
+  "style_schema_version": 1,
+  "template": {
+    "id": "formal-sop",
+    "name": "Formal SOP",
+    "version": 1,
+    "hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "source": "project",
+    "origin": "pinned"
+  },
+  "body_font": "serif",
+  "heading_font": "sans",
+  "body_size_pt": 12,
+  "heading_sizes_pt": [
+    22,
+    18,
+    16,
+    14,
+    13,
+    12
+  ],
+  "heading_color": "#1F3A5F",
+  "heading_numbering": true,
+  "table": "banded",
+  "image_max_width_percent": 60,
+  "image_align": "left",
+  "toc": {
+    "enabled": true,
+    "depth": 2,
+    "leaders": true,
+    "placement": "after_cover"
+  },
+  "cover_page": true,
+  "page_break_before_level": 1,
+  "regions": {
+    "header": {
+      "left": {
+        "segments": [
+          {
+            "kind": "text",
+            "text": "Acme Devices"
+          }
+        ]
+      },
+      "centre": {
+        "segments": [],
+        "image": "project_logo"
+      },
+      "right": {
+        "segments": [
+          {
+            "kind": "text",
+            "text": "DOC-0001 rev abcdef012345"
+          }
+        ]
+      }
+    },
+    "footer": {
+      "left": {
+        "segments": [
+          {
+            "kind": "text",
+            "text": "Document control - Approved"
+          }
+        ]
+      },
+      "centre": {
+        "segments": []
+      },
+      "right": {
+        "segments": [
+          {
+            "kind": "text",
+            "text": "Page "
+          },
+          {
+            "kind": "page"
+          },
+          {
+            "kind": "text",
+            "text": " of "
+          },
+          {
+            "kind": "total"
+          }
+        ]
+      }
+    }
+  },
+  "images": {
+    "project_logo": {
+      "width": 64,
+      "height": 64,
+      "png_base64": "AAAA"
+    }
+  },
+  "numbers": {
+    "audience": "1.2",
+    "procedure": "2",
+    "purpose": "1.1",
+    "scope": "1",
+    "steps": "2.0.1"
+  }
+}

@@ -11,6 +11,9 @@ import com.entreco.eqms.feature.document.RenderHeading
 import com.entreco.eqms.feature.document.RenderSource
 import com.entreco.eqms.feature.document.DocumentImage
 import com.entreco.eqms.feature.document.DocumentPageSetup
+import com.entreco.eqms.feature.document.StyleRequest
+import com.entreco.eqms.feature.document.TemplatePin
+import com.entreco.eqms.feature.document.TemplateSummary
 import com.entreco.eqms.feature.document.PageOrientation
 import com.entreco.eqms.feature.document.PageSize
 import com.entreco.eqms.feature.search.SearchHit
@@ -56,6 +59,59 @@ internal class DesktopDocumentCapabilities(
                     "qms returned rendering for a different saved revision."
                 }
             }
+        }
+
+    override suspend fun renderBuffer(
+        project: String, title: String, body: String, style: StyleRequest,
+    ): Result<RenderedDocument> =
+        operation("render-buffer", project, listOf("--project", project), buildJsonObject {
+            put("title", title); put("body", body)
+            val saved = style.saved
+            val chosen = style.chosen
+            if (chosen != null) put("template", buildJsonObject {
+                put("id", chosen.id); put("version", chosen.version)
+            }) else saved?.template?.let { pin ->
+                put("template", buildJsonObject { put("id", pin.id); put("version", pin.version); put("hash", pin.hash) })
+            }
+            if (saved != null) put("document", buildJsonObject {
+                put("id", saved.id); put("revision", saved.revision); put("status", saved.status.label)
+            })
+        }.toString()) { data ->
+            renderedDocument(data).also {
+                require(it.title == title && it.inputDigest == bodyDigest(body) && it.source.kind == "unsaved" &&
+                    it.source.id.isEmpty() && it.source.revision.isEmpty() && it.source.contentHash.isEmpty() &&
+                    it.style != null) {
+                    "qms returned rendering for a different buffer."
+                }
+            }
+        }
+
+    override suspend fun renderSaved(
+        project: String, document: DocumentSnapshot, style: StyleRequest,
+    ): Result<RenderedDocument> {
+        val chosen = style.chosen
+        val styleArguments = if (chosen == null) listOf("--style") else listOf("--template", "${chosen.id}@${chosen.version}")
+        return operation("render", project, listOf(document.id, "--revision", document.revision) + styleArguments) { data ->
+            renderedDocument(data).also {
+                require(it.title == document.title && it.inputDigest == bodyDigest(document.body) &&
+                    it.source == RenderSource("saved", document.id, document.revision, document.contentHash) &&
+                    it.style != null) {
+                    "qms returned rendering for a different saved revision."
+                }
+            }
+        }
+    }
+
+    override suspend fun listTemplates(project: String): Result<List<TemplateSummary>> =
+        operation("list", project, group = "template") { data ->
+            data.jsonArray.map {
+                val item = it.jsonObject
+                TemplateSummary(
+                    item.nonemptyString("id"), item.nonnegativeInt("version").also { version ->
+                        require(version >= 1) { "Invalid template version." }
+                    }, item.nonemptyString("name"), item.string("document_type"), item.nonemptyString("source"),
+                )
+            }.sortedWith(compareBy({ it.name.lowercase() }, { it.version }))
         }
 
     override suspend fun readDocumentImage(project: String, asset: String): Result<DocumentImage> =
@@ -233,17 +289,18 @@ internal class DesktopDocumentCapabilities(
         arguments: List<String> = emptyList(),
         input: String? = null,
         search: Boolean = false,
+        group: String = "document",
         decode: (JsonElement) -> T,
     ): Result<T> = withContext(Dispatchers.IO) {
         try {
             val argv = if (search) listOf("search", "--json", project)
                 else if (command == "render-buffer") listOf("document", command, "--json")
-                else listOf("document", command, "--json", project)
+                else listOf(group, command, "--json", project)
             val result = runInterruptible { executor.execute(executable, argv + arguments, input) }
             val response = Json.parseToJsonElement(result.output.trim()).jsonObject
             require(response.qmsSchemaVersion() == 2) { "qms returned an unsupported JSON schema version." }
             require(response.isQmsJsonV2Envelope()) { "qms returned an invalid or unsupported JSON response." }
-            require(response.stringValue("command") == (if (search) command else "document.$command") || response.isCliUsageError(result.exitCode)) {
+            require(response.stringValue("command") == (if (search) command else "$group.$command") || response.isCliUsageError(result.exitCode)) {
                 "qms returned a response for an unexpected command."
             }
             if (result.exitCode != 0) {
@@ -325,6 +382,13 @@ private fun snapshot(data: JsonElement): DocumentSnapshot {
         id, title, value.string("body"), revision, contentHash, eventHash,
         value.string("configured_author"), value.string("local_timestamp"), status(value.string("status")),
         pageSetup(value.getValue("page").jsonObject),
+        value["template"]?.takeUnless { it is JsonNull }?.jsonObject?.let {
+            TemplatePin(it.nonemptyString("id"), it.nonnegativeInt("version").also { version ->
+                require(version >= 1) { "Invalid template version." }
+            }, it.string("hash").also { hash ->
+                require(Regex("sha256:[0-9a-f]{64}").matches(hash)) { "Invalid template hash." }
+            })
+        },
     )
 }
 

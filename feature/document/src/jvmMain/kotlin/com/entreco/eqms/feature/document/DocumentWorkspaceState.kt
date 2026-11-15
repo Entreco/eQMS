@@ -41,6 +41,10 @@ internal class DocumentTab(
     var renderedTitle = ""
     var renderedBody = ""
     var renderedRevision: String? = null
+    var renderedTemplate: TemplateSummary? = null
+
+    /** Preview-only style choice; never saved with the document. */
+    var previewTemplate by mutableStateOf<TemplateSummary?>(null)
     var renderRequestedAt = System.nanoTime()
     var reportedRendering: RenderedDocument? = null
     var error by mutableStateOf<String?>(null)

@@ -472,7 +472,7 @@ impl Template {
 }
 
 /// Where a template is read from.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Source {
     Builtin,
@@ -554,6 +554,31 @@ impl<'a> TemplateStore<'a> {
             .filter(|stored| stored.template.id == id)
             .max_by_key(|stored| stored.template.version)
             .ok_or_else(|| error(format!("unknown template `{id}`")))
+    }
+
+    /// A specific installed version (`None` = latest) of a template.
+    pub fn get(&self, id: &str, version: Option<u32>) -> Result<StoredTemplate, WorkspaceError> {
+        self.list()?
+            .into_iter()
+            .filter(|stored| stored.template.id == id)
+            .filter(|stored| version.is_none_or(|wanted| stored.template.version == wanted))
+            .max_by_key(|stored| stored.template.version)
+            .ok_or_else(|| match version {
+                Some(version) => error(format!("unknown template `{id}` version {version}")),
+                None => error(format!("unknown template `{id}`")),
+            })
+    }
+
+    /// Bytes of an installed template asset, verified against its content hash.
+    pub fn read_asset(&self, sha256: &str) -> Result<Vec<u8>, WorkspaceError> {
+        if !is_sha256(sha256) {
+            return Err(error("asset hash must be 64 lowercase hex"));
+        }
+        let bytes = self.workspace.read_canonical_file(&asset_path(sha256))?;
+        if format!("{:x}", Sha256::digest(&bytes)) != sha256 {
+            return Err(error("template asset does not match its recorded hash"));
+        }
+        Ok(bytes)
     }
 
     /// Installs a new immutable template version as one journaled event. Existing versions are

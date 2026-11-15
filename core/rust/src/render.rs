@@ -107,6 +107,9 @@ pub struct Document {
     pub nodes: Vec<Node>,
     pub toc: Vec<Heading>,
     pub diagnostics: Vec<String>,
+    /// Resolved template style (EQMS-115); absent unless a style was requested.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub style: Option<crate::style::StyleModel>,
 }
 
 pub fn allowed_link(target: &str) -> bool {
@@ -439,6 +442,7 @@ pub fn parse(title: &str, body: &str) -> Result<Document, String> {
         nodes: normalized,
         toc,
         diagnostics,
+        style: None,
     })
 }
 
