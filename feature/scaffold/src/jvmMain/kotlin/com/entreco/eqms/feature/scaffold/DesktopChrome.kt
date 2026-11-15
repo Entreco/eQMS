@@ -2,7 +2,7 @@ package com.entreco.eqms.feature.scaffold
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -92,7 +92,7 @@ internal fun ChromeDialog(
             })
         },
         text = {
-            Column(Modifier.width(440.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 when (command) {
                     DesktopCommand.Settings -> {
                         Text("Appearance: ${if (dark) "Dark" else "Light"}")
@@ -121,6 +121,7 @@ internal fun ChromeDialog(
                 }
             }
         },
+        windowTitle = if (command == DesktopCommand.Settings) "Settings" else "Check for updates",
         confirmButton = {
             DefaultButton(enabled = !saving, onClick = onDismiss) { Text(if (checking) "Cancel" else "Close") }
         },

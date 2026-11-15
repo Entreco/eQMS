@@ -55,6 +55,15 @@ Out: editing branding of an existing project and chrome/logo display (EQMS-111,
   path field; the file is validated by core through the preview. Kotlin does not
   parse the PNG for validation.
 
+- Dialog windows (review feedback): every `WorkspaceDialog` (identity, directory
+  chooser, new folder, settings/update check, document confirmations, unsaved
+  changes) is a real modal OS window with native title bar and close button that
+  can be dragged and resized (`DialogWindow`, minimum 420x260 px, Escape closes,
+  body scrolls when small, fields fill the width). The desktop app enables this
+  through `LocalDialogWindows`; the default is the in-scene `Dialog` so Compose
+  component tests can still see dialog content. The window variant is verified by
+  a CI-only native integration test, not by unit tests.
+
 ## Risk and security rationale
 
 Risk Management and Security Risk Management apply in a limited form: the UI

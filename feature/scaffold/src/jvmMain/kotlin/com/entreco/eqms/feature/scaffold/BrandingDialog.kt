@@ -12,6 +12,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import com.entreco.eqms.feature.ui.WorkspaceDialog
 import com.entreco.eqms.feature.ui.WorkspaceTextField
@@ -67,8 +68,10 @@ fun BrandingDialog(
     WorkspaceDialog(
         onDismissRequest = onCancel,
         title = { Text("Project identity") },
+        windowTitle = "Project identity",
+        size = DpSize(640.dp, 700.dp),
         text = {
-            Column(Modifier.width(560.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 WorkspaceTextField(
                     value = name,
                     onValueChange = { name = it },

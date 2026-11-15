@@ -15,6 +15,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
@@ -369,8 +370,10 @@ private fun DirectoryDialog(
     WorkspaceDialog(
         onDismissRequest = { if (!busy) onCancel() },
         title = { Text(if (create) "Create project" else "Open project") },
+        windowTitle = if (create) "Create project" else "Open project",
+        size = DpSize(680.dp, 580.dp),
         text = {
-            Column(Modifier.width(560.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 WorkspaceTextField(
                     value = path,
                     onValueChange = { path = it },
@@ -424,6 +427,7 @@ private fun DirectoryDialog(
         WorkspaceDialog(
             onDismissRequest = { if (!busy) newFolder = false },
             title = { Text("New folder") },
+            windowTitle = "New folder",
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     WorkspaceTextField(

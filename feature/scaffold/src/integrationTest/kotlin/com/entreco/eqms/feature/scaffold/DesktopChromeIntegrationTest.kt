@@ -1,7 +1,9 @@
 package com.entreco.eqms.feature.scaffold
 
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.*
+import com.entreco.eqms.feature.ui.LocalDialogWindows
 import kotlin.test.*
 import org.junit.Test
 
@@ -66,5 +68,25 @@ class DesktopChromeIntegrationTest : ScaffoldDocumentTestSupport(nativeIntegrati
         compose.onNodeWithText("Could not load appearance: invalid value").assertExists()
         compose.runOnIdle { chrome.request(DesktopCommand.About) }
         compose.onNodeWithText("DutchDoxx 1.0.0-dev").assertExists()
+    }
+
+    @Test
+    fun dialogsAreDecoratedResizableWindowsThatCloseFromTheirChrome() {
+        val chrome = testChrome()
+        compose.setContent {
+            CompositionLocalProvider(LocalDialogWindows provides true) { ProjectScreen(projects, chrome = chrome) }
+        }
+        compose.menu(chrome, DesktopCommand.NewProject)
+        fun dialogs() = java.awt.Window.getWindows().filterIsInstance<java.awt.Dialog>()
+            .filter { it.isShowing && it.title == "Create project" }
+        compose.waitUntil(5000) { dialogs().isNotEmpty() }
+        compose.runOnIdle {
+            val dialog = dialogs().single()
+            assertTrue(dialog.isResizable)
+            assertFalse(dialog.isUndecorated)
+            dialog.dispatchEvent(java.awt.event.WindowEvent(dialog, java.awt.event.WindowEvent.WINDOW_CLOSING))
+        }
+        compose.waitUntil(3000) { dialogs().isEmpty() }
+        compose.onNodeWithText("Project selection cancelled.").assertExists()
     }
 }

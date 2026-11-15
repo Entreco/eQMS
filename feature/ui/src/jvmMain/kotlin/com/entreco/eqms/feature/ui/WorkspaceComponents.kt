@@ -15,7 +15,17 @@ import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogWindow
+import androidx.compose.ui.window.WindowPosition
+import androidx.compose.ui.window.rememberDialogState
 import org.jetbrains.jewel.foundation.theme.JewelTheme
 import org.jetbrains.jewel.foundation.ExperimentalJewelApi
 import org.jetbrains.jewel.foundation.Stroke
@@ -76,6 +86,12 @@ fun WorkspaceTextField(
     }
 }
 
+/**
+ * When true, [WorkspaceDialog] opens a real, modal, draggable and resizable window with native chrome.
+ * The in-scene fallback keeps Compose component tests able to see dialog content.
+ */
+val LocalDialogWindows = staticCompositionLocalOf { false }
+
 @Composable
 fun WorkspaceDialog(
     onDismissRequest: () -> Unit,
@@ -83,18 +99,45 @@ fun WorkspaceDialog(
     text: @Composable () -> Unit,
     confirmButton: @Composable () -> Unit,
     dismissButton: @Composable () -> Unit = {},
+    windowTitle: String = "DutchDoxx",
+    size: DpSize = DpSize(520.dp, 340.dp),
 ) {
-    Dialog(onDismissRequest = onDismissRequest) {
-        Column(
-            Modifier.widthIn(min = 360.dp, max = 760.dp)
-                .background(JewelTheme.globalColors.panelBackground)
-                .border(1.dp, JewelTheme.globalColors.borders.normal)
-                .padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
+    val body: @Composable (Modifier) -> Unit = { modifier ->
+        Column(modifier, verticalArrangement = Arrangement.spacedBy(16.dp)) {
             title()
             Divider(Orientation.Horizontal)
             text()
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, androidx.compose.ui.Alignment.End)) {
+                dismissButton()
+                confirmButton()
+            }
+        }
+    }
+    if (!LocalDialogWindows.current) {
+        Dialog(onDismissRequest = onDismissRequest) {
+            body(
+                Modifier.widthIn(min = 360.dp, max = 760.dp)
+                    .background(JewelTheme.globalColors.panelBackground)
+                    .border(1.dp, JewelTheme.globalColors.borders.normal)
+                    .padding(20.dp),
+            )
+        }
+        return
+    }
+    DialogWindow(
+        onCloseRequest = onDismissRequest,
+        state = rememberDialogState(position = WindowPosition(androidx.compose.ui.Alignment.Center), size = size),
+        title = windowTitle,
+        resizable = true,
+        onKeyEvent = {
+            (it.key == Key.Escape && it.type == KeyEventType.KeyDown).also { escape -> if (escape) onDismissRequest() }
+        },
+    ) {
+        SideEffect { window.minimumSize = java.awt.Dimension(420, 260) }
+        Column(Modifier.fillMaxSize().background(JewelTheme.globalColors.panelBackground).padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            title()
+            Divider(Orientation.Horizontal)
+            Box(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())) { text() }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, androidx.compose.ui.Alignment.End)) {
                 dismissButton()
                 confirmButton()

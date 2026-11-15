@@ -4,6 +4,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.window.application
 import com.entreco.eqms.feature.scaffold.ProjectScreen
 import com.entreco.eqms.feature.scaffold.DesktopChrome
+import com.entreco.eqms.feature.ui.LocalDialogWindows
 import java.io.IOException
 import java.nio.file.Path
 import kotlinx.serialization.SerializationException
@@ -212,13 +213,15 @@ private fun launchDesktop(chrome: DesktopChrome) = application {
         onCloseRequest = requestClose,
     ) { layout ->
         DesktopMenus(chrome, requestClose)
-        ProjectScreen(
-            capabilities, documents, closeRequested,
-            onCloseHandled = { closeRequested = false },
-            onCloseConfirmed = ::exitApplication,
-            chrome = chrome,
-            headerActionsModifier = workspaceActionsModifier(),
-            layout = layout,
-        )
+        CompositionLocalProvider(LocalDialogWindows provides true) {
+            ProjectScreen(
+                capabilities, documents, closeRequested,
+                onCloseHandled = { closeRequested = false },
+                onCloseConfirmed = ::exitApplication,
+                chrome = chrome,
+                headerActionsModifier = workspaceActionsModifier(),
+                layout = layout,
+            )
+        }
     }
 }

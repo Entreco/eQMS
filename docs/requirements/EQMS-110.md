@@ -17,6 +17,7 @@ related: [EQMS-107, EQMS-109, EQMS-110]
 | R110-07 | Create is disabled while there is no valid preview or while creating; success records branding via `qms init` and opens the project; failure is shown with a hint that the folder may exist. |
 | R110-08 | Branding recorded at creation is the branding shown by `qms project branding show` for the new project. |
 | R110-09 | The step is keyboard operable: labelled fields, focusable buttons, Enter/Escape semantics of dialogs. |
+| R110-11 | In the desktop app every dialog opens as a modal window with native chrome (title, close button), movable and resizable; closing it from the chrome or Escape cancels it. |
 | R110-10 | Existing Rust, Kotlin and Wasm builds and regressions pass; existing `ProjectCapabilities` implementations keep working. |
 
 Design, hazards and limitations: [EQMS-110 design](../architecture/EQMS-110.md).

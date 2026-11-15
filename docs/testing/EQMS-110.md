@@ -16,6 +16,7 @@ Issue: #81. Defined before implementation.
 | T110-04 | R110-04, R110-06 | `LogoPreviewTest` (Compose): renders generated shapes and initials without error. |
 | T110-05 | R110-01, R110-07 | `DesktopProjectBrandingTest` (fake process executor): exact argv for preview and for `init` (`=` form, values starting with `-`), success mapping, error envelope, wrong command, invalid JSON. |
 | T110-06 | R110-09 | `ProjectBrandingCreateTest`: fields reachable by label; Create/Cancel focusable. Real Tab traversal is manual. |
+| T110-09 | R110-11 | `DesktopChromeIntegrationTest.dialogsAreDecoratedResizableWindowsThatCloseFromTheirChrome` (CI-only native): dialog window is decorated and resizable; closing it cancels project creation. Unit suites keep the in-scene fallback. |
 | T110-07 | R110-10 | `cargo fmt --check`, `cargo clippy`, `cargo test`; Gradle jvmTest for `feature:ui`, `feature:scaffold`, `feature:document`, `feature:search`, `apps:desktop`; Wasm compile. |
 | T110-08 | R110-01 | Latency check: time of `qms project branding preview` from the built binary, recorded as observed in the evidence (no threshold asserted). |
 
@@ -35,4 +36,5 @@ Launch the desktop app (see Build and Run), then:
 - [ ] Tab/Shift+Tab reach every control; Enter creates; Escape cancels.
 - [ ] After Create, run `qms project branding show <folder>`: values match what was previewed.
 - [ ] Cancel at the identity step: the folder stays uninitialised.
+- [ ] Every dialog (identity, folder chooser, Settings, Check for updates, unsaved-changes, link and lifecycle confirmations) opens as its own window with title bar and close button; drag it, resize it (content reflows, scrolls when small), close with the window button and with Escape.
 - [ ] Review the risk table and scope split in the design.
