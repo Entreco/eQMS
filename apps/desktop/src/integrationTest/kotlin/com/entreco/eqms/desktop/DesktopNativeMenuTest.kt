@@ -13,6 +13,10 @@ import org.jetbrains.compose.resources.painterResource
 import org.junit.Test
 
 class DesktopNativeMenuTest {
+    init {
+        requireNativeIntegrationEnvironment()
+    }
+
     @Test
     fun realWindowInstallsMenuOrderAndNativeApplicationHandlers() {
         System.setProperty("apple.awt.application.name", "DutchDoxx")

@@ -17,11 +17,14 @@ import java.nio.file.Files
 import javax.imageio.ImageIO
 import kotlin.test.assertEquals
 import kotlinx.coroutines.runBlocking
-import org.junit.Assume.assumeTrue
 import org.junit.Rule
 import org.junit.Test
 
 class DesktopJewelPreviewTest {
+    init {
+        requireNativeIntegrationEnvironment()
+    }
+
     @get:Rule val compose = createComposeRule()
 
     private fun SemanticsNodeInteraction.activate() =
@@ -41,10 +44,10 @@ class DesktopJewelPreviewTest {
     @Test
     fun realNativeWorkspaceRendersInBothThemes() {
         val destination = System.getenv("EQMS_JEWEL_PREVIEW_DIR")
-        assumeTrue("Set EQMS_JEWEL_PREVIEW_DIR to capture an isolated real-native preview.", !destination.isNullOrBlank())
+        require(!destination.isNullOrBlank()) { "Native CI must set EQMS_JEWEL_PREVIEW_DIR." }
         val executable = System.getenv("EQMS_QMS_PATH")
         require(!executable.isNullOrBlank()) { "Set EQMS_QMS_PATH to the release qms executable." }
-        val output = File(destination!!).apply { mkdirs(); check(isDirectory) }
+        val output = File(destination).apply { mkdirs(); check(isDirectory) }
         val project = Files.createDirectories(Files.createTempDirectory(output.toPath(), "preview-").resolve("jewel-preview"))
         fun git(vararg arguments: String) {
             val result = executeProcess("git", listOf("-C", project.toString()) + arguments)

@@ -19,6 +19,10 @@ import org.junit.Rule
 import org.junit.Test
 
 class DesktopWindowTest {
+    init {
+        requireNativeIntegrationEnvironment()
+    }
+
     @get:Rule val compose = createComposeRule()
 
     @Test

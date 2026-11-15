@@ -4,8 +4,6 @@ import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.graphics.toAwtImage
 import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.semantics.SemanticsActions
-import com.entreco.eqms.feature.scaffold.*
 import com.entreco.eqms.desktop.generated.resources.Res
 import com.entreco.eqms.desktop.generated.resources.about
 import com.entreco.eqms.desktop.generated.resources.icon
@@ -47,29 +45,6 @@ class DesktopLogoTest {
                 assertEquals(canonical.height, generated.height)
             }
             assertEquals(0, icon.toAwtImage().getRGB(0, 0) ushr 24)
-        }
-    }
-
-    @Test
-    fun actualAboutDialogShowsAccessibleLogoAndVersionInBothThemes() {
-        val chrome = DesktopChrome(
-            desktopVersion(), Result.success(true), { Result.success(Unit) },
-            { error("No update request expected") }, { error("No browser expected") },
-            aboutLogo = { DesktopLogo() },
-        )
-        val projects = object : ProjectCapabilities {
-            override suspend fun listDirectory(path: String?): Result<DirectoryListing> = error("No directory request expected")
-            override suspend fun createFolder(parent: String, name: String): Result<String> = error("No creation expected")
-            override suspend fun openProject(path: String, create: Boolean): Result<String> = error("No project request expected")
-        }
-        compose.setContent { ProjectScreen(projects, chrome = chrome) }
-        repeat(2) { theme ->
-            compose.runOnIdle { chrome.request(DesktopCommand.About) }
-            compose.onNodeWithContentDescription("DutchDoxx logo").assertIsDisplayed()
-            compose.onNodeWithText("DutchDoxx ${desktopVersion()}").assertIsDisplayed()
-            compose.onNodeWithText("An eQMS quality workspace. Drafts are not approvals.").assertIsDisplayed()
-            compose.onNodeWithText("Close").performSemanticsAction(SemanticsActions.OnClick) { it() }
-            if (theme == 0) compose.onNodeWithText("Light theme").performClick()
         }
     }
 

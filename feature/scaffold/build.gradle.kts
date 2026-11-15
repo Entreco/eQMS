@@ -7,7 +7,27 @@ plugins {
 description = "Project shell, navigation and workspace selection"
 
 kotlin {
-    jvm()
+    jvm {
+        val testCompilation = compilations.getByName("test")
+        val integrationTestCompilation = compilations.create("integrationTest") {
+            associateWith(testCompilation)
+            defaultSourceSet.kotlin.srcDir("src/integrationTest/kotlin")
+        }
+        tasks.register<Test>("integrationTest") {
+            description = "Runs native About-window tests exclusively on isolated macOS CI."
+            group = "verification"
+            testClassesDirs = integrationTestCompilation.output.classesDirs
+            classpath = integrationTestCompilation.output.allOutputs + integrationTestCompilation.runtimeDependencyFiles
+            maxParallelForks = 1
+            forkEvery = 1
+            outputs.upToDateWhen { false }
+            doFirst {
+                check(System.getenv("GITHUB_ACTIONS") == "true" && System.getenv("RUNNER_OS") == "macOS") {
+                    "Native integration tests are CI-only and require an isolated macOS GitHub Actions runner."
+                }
+            }
+        }
+    }
     @OptIn(org.jetbrains.kotlin.gradle.ExperimentalWasmDsl::class)
     wasmJs { browser() }
     sourceSets {

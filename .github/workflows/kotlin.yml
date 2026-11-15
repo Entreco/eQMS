@@ -1,0 +1,75 @@
+name: Kotlin
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  kotlin-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v6.3.0
+        with:
+          distribution: jetbrains
+          java-version: '25'
+          force-download: true
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Safe desktop and feature JVM tests
+        run: >-
+          xvfb-run --auto-servernum ./gradlew --continue --no-daemon --console=plain
+          :apps:desktop:test :feature:scaffold:jvmTest :feature:ui:jvmTest
+          :feature:document:jvmTest :feature:search:jvmTest
+      - name: Report verifier tests
+        if: always()
+        run: python3 -m unittest discover -s scripts/tests -p 'test_verify_native_reports.py'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: kotlin-test-reports
+          path: |
+            **/build/test-results/
+            **/build/reports/tests/
+          if-no-files-found: error
+          retention-days: 7
+
+  native-integration:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v6.3.0
+        with:
+          distribution: jetbrains
+          java-version: '25'
+          force-download: true
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Build native CLI for synthetic workspace
+        run: cargo build --release --locked -p eqms-cli
+      - name: Native desktop integration
+        env:
+          EQMS_QMS_PATH: ${{ github.workspace }}/target/release/qms
+          EQMS_JEWEL_PREVIEW_DIR: ${{ runner.temp }}/native-preview
+          EQMS_CHROME_PREVIEW_DIR: ${{ runner.temp }}/native-chrome
+        run: ./gradlew --continue --no-daemon --console=plain :apps:desktop:integrationTest :feature:scaffold:integrationTest
+      - name: Verify native tests executed without skips
+        if: always()
+        run: python3 scripts/verify_native_reports.py apps/desktop/build/test-results/integrationTest feature/scaffold/build/test-results/integrationTest
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: native-integration-evidence
+          path: |
+            apps/desktop/build/test-results/integrationTest/
+            apps/desktop/build/reports/tests/integrationTest/
+            feature/scaffold/build/test-results/integrationTest/
+            feature/scaffold/build/reports/tests/integrationTest/
+            ${{ runner.temp }}/native-preview/**/*.png
+            ${{ runner.temp }}/native-chrome/*.png
+          if-no-files-found: error
+          retention-days: 7

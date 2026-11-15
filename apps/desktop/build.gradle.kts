@@ -27,6 +27,30 @@ require(Regex("[1-9][0-9]*\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z
     "dutchDoxxVersion must have a positive major version and semantic version format."
 }
 
+val integrationTestSourceSet = sourceSets.create("integrationTest")
+kotlin.target.compilations.named("integrationTest") {
+    associateWith(kotlin.target.compilations.getByName("main"))
+}
+configurations[integrationTestSourceSet.implementationConfigurationName]
+    .extendsFrom(configurations.testImplementation.get())
+configurations[integrationTestSourceSet.runtimeOnlyConfigurationName]
+    .extendsFrom(configurations.testRuntimeOnly.get())
+
+tasks.register<Test>("integrationTest") {
+    description = "Runs real native desktop windows and OS input exclusively in GitHub Actions."
+    group = "verification"
+    testClassesDirs = integrationTestSourceSet.output.classesDirs
+    classpath = integrationTestSourceSet.runtimeClasspath
+    maxParallelForks = 1
+    forkEvery = 1
+    outputs.upToDateWhen { false }
+    doFirst {
+        check(System.getenv("GITHUB_ACTIONS") == "true" && System.getenv("RUNNER_OS") == "macOS") {
+            "Native integration tests are CI-only and require an isolated macOS GitHub Actions runner."
+        }
+    }
+}
+
 compose.desktop {
     application {
         mainClass = "com.entreco.eqms.desktop.MainKt"
