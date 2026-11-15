@@ -309,12 +309,19 @@ class DesktopJewelPreviewTest {
         compose.waitUntil(10_000) { compose.onAllNodesWithContentDescription("Synthetic workflow").fetchSemanticsNodes().isNotEmpty() }
         println("Native preview: workflow image decoded")
         // Decoding replaces the shorter loading placeholder; position again with the real image dimensions.
-        compose.onNodeWithContentDescription("Synthetic workflow").performScrollTo()
+        val imageBounds = compose.onNodeWithContentDescription("Synthetic workflow").getUnclippedBoundsInRoot()
+        val viewportBounds = content.getUnclippedBoundsInRoot()
+        assertTrue(imageBounds.bottom - imageBounds.top <= viewportBounds.bottom - viewportBounds.top,
+            "Decoded workflow image must fit the viewport")
+        content.performSemanticsAction(SemanticsActions.ScrollBy) { scroll ->
+            assertTrue(scroll(0f, (imageBounds.top - viewportBounds.top).value * density))
+        }
         compose.waitUntil(10_000) {
             val image = compose.onNodeWithContentDescription("Synthetic workflow").getUnclippedBoundsInRoot()
             val viewport = compose.onNodeWithContentDescription("Rendered document content").getUnclippedBoundsInRoot()
             image.top >= viewport.top && image.bottom <= viewport.bottom
         }
+        println("Native preview: workflow image is within viewport")
         capture("native-document-image-dark.png")
     }
 }

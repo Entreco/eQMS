@@ -87,6 +87,10 @@ indexed scroll actions instead of `performScrollToNode`, whose content-driven
 search can fail to terminate while image decoding changes pagination. Require
 the exact placeholder/image node, then decoded semantics and viewport bounds.
 Case and image-stage logs distinguish this path from setup or cleanup stalls.
+The timeout run's buffered log confirms decoding completed before the stall.
+Reposition the decoded image with one measured `ScrollBy` action rather than
+the unbounded `performScrollTo` helper; require that it fits the viewport and
+retain the bounded full-visibility assertion. Stream stage logs immediately.
 
 ## Risk Management and Security Risk Management
 

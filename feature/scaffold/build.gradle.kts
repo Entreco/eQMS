@@ -24,6 +24,7 @@ kotlin {
             forkEvery = 1
             timeout.set(Duration.ofMinutes(5))
             testLogging.events("started", "passed", "failed", "skipped")
+            testLogging.showStandardStreams = true
             outputs.upToDateWhen { false }
             doFirst {
                 check(System.getenv("GITHUB_ACTIONS") == "true" && System.getenv("RUNNER_OS") == "macOS") {
