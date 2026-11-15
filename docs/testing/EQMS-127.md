@@ -30,3 +30,15 @@ Issue: #107. Defined before implementation. Requirements:
 
 Missing or skipped tests are not passing functional coverage. Native tests must
 not be executed on the developer's active desktop for this verification.
+
+T127-02 direct JUnit guard probe (local only, no windows/input):
+
+```sh
+./gradlew -I scripts/verify_local_native_guards.gradle \
+  :apps:desktop:verifyLocalNativeClassGuards \
+  :feature:scaffold:verifyLocalNativeClassGuards
+```
+
+This invokes all nine native cases through JUnit with their compiled integration
+runtime classpaths. Expected initialization failures must carry the CI-only
+guard message; the probe fails on any other outcome.
