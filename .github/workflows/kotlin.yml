@@ -20,6 +20,8 @@ jobs:
           java-version: '25'
           force-download: true
       - uses: gradle/actions/setup-gradle@v4
+      - name: Build native CLI for process adapter tests
+        run: cargo build --release --locked -p eqms-cli
       - name: Safe desktop and feature JVM tests
         run: >-
           xvfb-run --auto-servernum ./gradlew --continue --no-daemon --console=plain
