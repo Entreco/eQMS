@@ -1,0 +1,44 @@
+gradle.projectsEvaluated {
+    if (gradle.rootProject.name != 'eQMS') {
+        return
+    }
+    [
+        ':apps:desktop': [
+            'com.entreco.eqms.desktop.DesktopWindowNativeTest',
+            'com.entreco.eqms.desktop.DesktopWindowTest',
+            'com.entreco.eqms.desktop.DesktopNativeMenuTest',
+            'com.entreco.eqms.desktop.DesktopJewelPreviewTest',
+            'com.entreco.eqms.desktop.DesktopAboutIntegrationTest',
+        ],
+        ':feature:scaffold': [
+            'com.entreco.eqms.feature.scaffold.ScaffoldAboutIntegrationTest',
+            'com.entreco.eqms.feature.scaffold.DesktopChromeIntegrationTest',
+        ],
+    ].each { path, testClasses ->
+        def module = gradle.rootProject.project(path)
+        def output = new ByteArrayOutputStream()
+        module.tasks.register('verifyLocalNativeClassGuards', JavaExec) {
+            if (path == ':apps:desktop') {
+                classpath = module.sourceSets.integrationTest.runtimeClasspath
+            } else {
+                def compilation = module.kotlin.targets.jvm.compilations.integrationTest
+                classpath = compilation.output.allOutputs + compilation.runtimeDependencyFiles
+            }
+            mainClass = 'org.junit.runner.JUnitCore'
+            args = testClasses
+            standardOutput = output
+            errorOutput = output
+            ignoreExitValue = true
+            doFirst {
+                assert System.getenv('GITHUB_ACTIONS') != 'true'
+            }
+            doLast {
+                def text = output.toString('UTF-8')
+                assert executionResult.get().exitValue == 1 : text
+                def expected = path == ':apps:desktop' ? 5 : 4
+                assert text.count('Native integration tests are CI-only') == expected : text
+                println("$path: $expected direct JUnit cases rejected before native UI initialization")
+            }
+        }
+    }
+}

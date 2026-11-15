@@ -2,6 +2,12 @@ package com.entreco.eqms.feature.scaffold
 
 import androidx.compose.ui.test.junit4.ComposeContentTestRule
 
+internal fun chromeTestProjects() = object : ProjectCapabilities {
+    override suspend fun listDirectory(path: String?) = Result.success(DirectoryListing("/project", null, emptyList()))
+    override suspend fun createFolder(parent: String, name: String) = Result.success("$parent/$name")
+    override suspend fun openProject(path: String, create: Boolean) = Result.success(path)
+}
+
 internal fun testChrome(
     project: Result<String?> = Result.success(null),
     recents: Result<List<String>> = Result.success(emptyList()),

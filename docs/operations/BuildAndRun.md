@@ -13,6 +13,39 @@ related:
 
 # Build and Run
 
+## Safe unit tests and CI-only native integration (EQMS-127)
+
+Local `:apps:desktop:test` and `check` exclude native application-window tests.
+Safe Compose component tests remain in the ordinary JVM suites. Run those with:
+
+```sh
+./gradlew :apps:desktop:test :feature:scaffold:jvmTest :feature:ui:jvmTest \
+  :feature:document:jvmTest :feature:search:jvmTest
+```
+
+`DesktopWindowNativeTest`, `DesktopWindowTest`, `DesktopNativeMenuTest`, and
+`DesktopJewelPreviewTest` live in desktop `src/integrationTest/kotlin`.
+`:apps:desktop:integrationTest` is **CI-only**: it rejects local execution,
+including direct IDE/JUnit launches, before initializing native windows.
+Do not run these tests on an active developer desktop or set CI markers locally.
+They open windows and the native input test controls the real OS pointer.
+
+The real About-dialog method from `DesktopLogoTest` also runs there as
+`DesktopAboutIntegrationTest`. Scaffold's `ScaffoldAboutIntegrationTest` and
+`DesktopChromeIntegrationTest` isolate four additional About-window methods
+under `:feature:scaffold:integrationTest`, with the same CI-only guards.
+Non-window logo/chrome/document regressions remain in ordinary unit suites.
+
+The Kotlin workflow runs safe JVM tests and a separate serial macOS/JBR 25
+native integration job on PRs and main pushes. Native CI builds `qms`, supplies
+synthetic preview directories and retains reports/screenshots. Missing native
+prerequisites, missing expected tests, failures or unexpected skips fail the job;
+they are not passing coverage. Historical evidence commands using the four
+classes under `test` describe older revisions, not the current execution policy.
+Native results and server-side required-check verification are recorded in
+[EQMS-127 evidence](../testing/evidence/EQMS-127.md); human review/testing remains
+separate from automated CI.
+
 ## Document reading and source modes (EQMS-083)
 
 Documents open in editable **Markdown**. The three top toolbar controls are

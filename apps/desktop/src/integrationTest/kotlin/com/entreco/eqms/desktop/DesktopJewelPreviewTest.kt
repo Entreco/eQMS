@@ -4,6 +4,7 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.awt.ComposeWindow
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import com.entreco.eqms.feature.scaffold.ProjectScreen
@@ -16,12 +17,16 @@ import java.io.File
 import java.nio.file.Files
 import javax.imageio.ImageIO
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
-import org.junit.Assume.assumeTrue
 import org.junit.Rule
 import org.junit.Test
 
 class DesktopJewelPreviewTest {
+    init {
+        requireNativeIntegrationEnvironment()
+    }
+
     @get:Rule val compose = createComposeRule()
 
     private fun SemanticsNodeInteraction.activate() =
@@ -41,10 +46,10 @@ class DesktopJewelPreviewTest {
     @Test
     fun realNativeWorkspaceRendersInBothThemes() {
         val destination = System.getenv("EQMS_JEWEL_PREVIEW_DIR")
-        assumeTrue("Set EQMS_JEWEL_PREVIEW_DIR to capture an isolated real-native preview.", !destination.isNullOrBlank())
+        require(!destination.isNullOrBlank()) { "Native CI must set EQMS_JEWEL_PREVIEW_DIR." }
         val executable = System.getenv("EQMS_QMS_PATH")
         require(!executable.isNullOrBlank()) { "Set EQMS_QMS_PATH to the release qms executable." }
-        val output = File(destination!!).apply { mkdirs(); check(isDirectory) }
+        val output = File(destination).apply { mkdirs(); check(isDirectory) }
         val project = Files.createDirectories(Files.createTempDirectory(output.toPath(), "preview-").resolve("jewel-preview"))
         fun git(vararg arguments: String) {
             val result = executeProcess("git", listOf("-C", project.toString()) + arguments)
@@ -252,8 +257,17 @@ class DesktopJewelPreviewTest {
             compose.onNodeWithText("Save").assertIsNotEnabled()
             capture(captureName)
         }
-        compose.onNodeWithContentDescription("Hide Documents panel").activate()
-        compose.onNodeWithContentDescription("Hide Review panel").activate()
+        for (panel in listOf("Documents", "Review")) {
+            val toggle = compose.onNodeWithContentDescription("Toggle $panel panel")
+            toggle.assertIsSelected().activate()
+            compose.waitUntil(5_000) {
+                compose.onAllNodes(hasContentDescription("Toggle $panel panel") and isNotSelected())
+                    .fetchSemanticsNodes().size == 1
+            }
+            toggle.assertIsNotSelected()
+        }
+        compose.onNodeWithContentDescription("Resize left panel").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Resize right panel").assertDoesNotExist()
         capture("jewel-collapsed.png")
         compose.onNodeWithContentDescription("Document tab Risk management plan (sample)").activate()
         compose.waitUntil(5_000) {
@@ -282,15 +296,32 @@ class DesktopJewelPreviewTest {
             }
         }
         selectMode("Preview")
-        compose.onNodeWithContentDescription("Rendered document content").performScrollToNode(hasContentDescription("Synthetic workflow"))
+        val content = compose.onNodeWithContentDescription("Rendered document content")
+        val imageOrPlaceholder = hasContentDescription("Synthetic workflow") or hasText("Loading image: Synthetic workflow")
+        val pageCount = content.fetchSemanticsNode().config[SemanticsProperties.CollectionInfo].rowCount
+        assertTrue(pageCount > 0, "Expected paginated preview items")
+        println("Native preview: locating workflow image across $pageCount lazy items")
+        for (index in 0 until pageCount) {
+            content.performScrollToIndex(index)
+            if (compose.onAllNodes(imageOrPlaceholder).fetchSemanticsNodes().isNotEmpty()) break
+        }
+        compose.onNode(imageOrPlaceholder).assertExists()
         compose.waitUntil(10_000) { compose.onAllNodesWithContentDescription("Synthetic workflow").fetchSemanticsNodes().isNotEmpty() }
+        println("Native preview: workflow image decoded")
         // Decoding replaces the shorter loading placeholder; position again with the real image dimensions.
-        compose.onNodeWithContentDescription("Synthetic workflow").performScrollTo()
+        val imageBounds = compose.onNodeWithContentDescription("Synthetic workflow").getUnclippedBoundsInRoot()
+        val viewportBounds = content.getUnclippedBoundsInRoot()
+        assertTrue(imageBounds.bottom - imageBounds.top <= viewportBounds.bottom - viewportBounds.top,
+            "Decoded workflow image must fit the viewport")
+        content.performSemanticsAction(SemanticsActions.ScrollBy) { scroll ->
+            assertTrue(scroll(0f, (imageBounds.top - viewportBounds.top).value * density))
+        }
         compose.waitUntil(10_000) {
             val image = compose.onNodeWithContentDescription("Synthetic workflow").getUnclippedBoundsInRoot()
             val viewport = compose.onNodeWithContentDescription("Rendered document content").getUnclippedBoundsInRoot()
             image.top >= viewport.top && image.bottom <= viewport.bottom
         }
+        println("Native preview: workflow image is within viewport")
         capture("native-document-image-dark.png")
     }
 }
