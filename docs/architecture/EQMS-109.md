@@ -53,7 +53,7 @@ No approvals are claimed.
 |---|---|---|
 | Unreadable text on accent | Core `on_accent`; core warnings shown in the UI; accent used only for indicators, never as the sole carrier of meaning | Warnings are advisory; Jewel's own components keep the stock accent |
 | Malformed/malicious CLI output | Strict envelope and colour validation; failure falls back to theme defaults and is reported | Trust in the local `qms` binary is unchanged (EQMS-103) |
-| Branding shown for the wrong project | Tokens are keyed to the opened project path and reloaded on open; cleared on close | Race on rapid project switches is handled by ignoring stale results only when the path differs |
+| Branding shown for the wrong project | Tokens are loaded in an effect keyed to the opened project and reopen counter; a project change cancels the pending load and clears tokens | A failed load shows a notice and uses theme defaults |
 | Branding affecting controlled documents | Document paper colours untouched | Template style (EQMS-115) will define document-level use |
 
 ## Limitations
