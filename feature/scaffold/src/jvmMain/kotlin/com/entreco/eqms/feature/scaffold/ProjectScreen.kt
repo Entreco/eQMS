@@ -229,9 +229,7 @@ fun ProjectScreen(
                     val openPath = project
                     val shown = branding
                     if (openPath != null && shown != null) {
-                        Divider(Orientation.Vertical, Modifier.height(20.dp))
-                        LogoPreview(shown, storedLogoPath(openPath, shown), size = 28.dp)
-                        Divider(Orientation.Vertical, Modifier.height(20.dp))
+                        LogoPreview(shown, storedLogoPath(openPath, shown), Modifier.padding(horizontal = 4.dp), size = 28.dp)
                     }
                     Text(
                         shown?.tokens?.name?.takeIf { openPath != null }

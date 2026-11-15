@@ -12,7 +12,7 @@ under `AGENTS.md`: `qms project branding set` exists but has no UI.
 
 ## Scope
 
-In: header `DutchDoxx | logo | project name`; a gear **Settings** button replaces the
+In: header `DutchDoxx, logo, project name`; a gear **Settings** button replaces the
 Light/Dark theme button and opens **Project Settings** (appearance toggle + branding
 editor with explicit Save); the project accent styles default (primary) buttons.
 Out: branding in documents/templates (EQMS-115); new core behaviour (none needed).
