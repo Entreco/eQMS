@@ -2,6 +2,8 @@
 
 DutchDoxx is a modern eQMS supporting quality-management work for **ISO 13485**, **ISO 81001**, and **IEC 62304 Class C**.
 
+**Naming:** *DutchDoxx* is the product name (UI, About, installers, user docs); *eQMS* and `qms` are technical names (repository, packages, CLI, `EQMS-nnn` IDs). The About dialog and footer carry a fixed "Powered by DutchDoxx" attribution that project branding cannot replace ([EQMS-108](docs/architecture/EQMS-108.md)). Check the name for trademark conflicts and set a licence before any public release; logo trademark/licensing is the project owner's responsibility.
+
 The target architecture is a **CLI-first, AI-first, offline-first** quality management system with a **Rust core and native CLI**, plus Kotlin desktop/web UI shells. Speed and usability are product requirements, with performance budgets based on measured workloads rather than language choice.
 
 The Rust foundation provides a native `qms` binary with help/version, workspace
