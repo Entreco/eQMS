@@ -35,6 +35,11 @@ Out: branding in documents/templates (EQMS-115); new core behaviour (none needed
   on-accent (hover/pressed shades); disabled colours and focus outline remain Jewel's. No
   branding -> Jewel default.
 
+- Window chrome: `ThemedWindowContent` (feature:ui) is shared by all dialog windows and About. On
+  macOS it makes the native title bar transparent with the theme background and window appearance
+  (as the main window), with a themed centred title; other platforms keep the platform title bar.
+  It uses AWT `apple.awt.*` root-pane properties because Jewel has no decorated dialog; dialogs stay modal.
+
 ## Risk (RM/SRM)
 
 Low; UI only. Hazards: unreadable text on accent (on-accent comes from core, contrast warnings
