@@ -38,9 +38,9 @@ kotlin {
     sourceSets {
         commonMain.dependencies {
             api(project(":feature:document"))
+            api(project(":feature:ui"))
         }
         jvmMain.dependencies {
-            implementation(project(":feature:ui"))
             implementation(libs.jewel.standalone)
         }
         jvmTest.dependencies {

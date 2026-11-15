@@ -87,6 +87,33 @@ internal class WorkspaceCli(
         }
         return WorkspaceCommandResult.Success(projectPath)
     }
+
+    /** Runs `qms project branding show` and returns its validated `data` object. */
+    fun brandingData(path: Path): Result<JsonObject> {
+        val result = try {
+            processExecutor.execute(executable, listOf("project", "branding", "show", "--json", path.toString()))
+        } catch (error: IOException) {
+            return Result.failure(IOException("Could not start qms: ${error.message ?: "I/O error"}"))
+        } catch (error: SecurityException) {
+            return Result.failure(IOException("The qms executable could not be started."))
+        } catch (error: InterruptedException) {
+            Thread.currentThread().interrupt()
+            return Result.failure(IOException("The qms operation was interrupted."))
+        }
+        val response = parseResponse(result.output)
+        if (response == null || !response.isQmsJsonV2Envelope()) {
+            return Result.failure(IOException("qms returned an invalid JSON response."))
+        }
+        if (result.exitCode != 0 || response.stringValue("status") != "ok") {
+            return Result.failure(IOException(response.errorMessage() ?: "qms project branding show failed."))
+        }
+        if (response.stringValue("command") != "project.branding.show") {
+            return Result.failure(IOException("qms returned a response for an unexpected command."))
+        }
+        val data = response["data"] as? JsonObject
+            ?: return Result.failure(IOException("qms returned a response without branding data."))
+        return Result.success(data)
+    }
 }
 
 private fun parseResponse(output: String): JsonObject? =

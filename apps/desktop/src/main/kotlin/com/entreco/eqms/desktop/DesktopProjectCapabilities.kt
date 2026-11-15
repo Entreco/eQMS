@@ -3,6 +3,7 @@ package com.entreco.eqms.desktop
 import com.entreco.eqms.feature.scaffold.DirectoryListing
 import com.entreco.eqms.feature.scaffold.ProjectCapabilities
 import com.entreco.eqms.feature.scaffold.ProjectDirectory
+import com.entreco.eqms.feature.ui.BrandTokens
 import java.io.IOException
 import java.io.UncheckedIOException
 import java.nio.file.Files
@@ -44,6 +45,10 @@ internal class DesktopProjectCapabilities(
             is WorkspaceCommandResult.Success -> result.path
             is WorkspaceCommandResult.Failure -> throw IOException(result.message)
         }
+    }
+
+    override suspend fun brandTokens(path: String): Result<BrandTokens?> = withContext(Dispatchers.IO) {
+        cli.brandingData(Paths.get(path)).mapCatching(::brandTokensFrom)
     }
 
     private suspend fun <T> filesystemOperation(operation: () -> T): Result<T> = withContext(Dispatchers.IO) {

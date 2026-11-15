@@ -72,6 +72,8 @@ fun ProjectScreen(
     var chromeDialog by remember { mutableStateOf<DesktopCommand?>(null) }
     var aboutVisible by remember { mutableStateOf(false) }
     var aboutRequest by remember { mutableIntStateOf(0) }
+    var brand by remember { mutableStateOf<BrandTokens?>(null) }
+    var brandError by remember { mutableStateOf<String?>(null) }
     val interactive = !busy && !documentBusy && creating == null &&
         chromeDialog == null && !savingAppearance
 
@@ -182,6 +184,17 @@ fun ProjectScreen(
         }
     }
 
+    LaunchedEffect(project, projectGeneration) {
+        brand = null
+        brandError = null
+        project?.let { opened ->
+            capabilities.brandTokens(opened).fold(
+                onSuccess = { brand = it },
+                onFailure = { brandError = "Project branding unavailable: ${it.message ?: "unknown error"}" },
+            )
+        }
+    }
+
     LaunchedEffect(closeRequested, interactive) {
         if (closeRequested && interactive) {
             navigate(onCloseConfirmed)
@@ -190,6 +203,7 @@ fun ProjectScreen(
     }
 
     IntUiTheme(isDark = dark) {
+        BrandTheme(brand) {
         if (aboutVisible) {
             AboutWindow(chrome, dark, aboutRequest, onClose = { aboutVisible = false })
         }
@@ -246,6 +260,12 @@ fun ProjectScreen(
                             }
                         }
                         Divider(Orientation.Horizontal)
+                        brandError?.let {
+                            Text(it, Modifier.padding(horizontal = 16.dp), color = JewelTheme.globalColors.text.error)
+                        }
+                        brand?.warnings.orEmpty().forEach {
+                            Text("Branding warning: $it", Modifier.padding(horizontal = 16.dp))
+                        }
                         appearanceError?.let {
                             Text(it, Modifier.padding(horizontal = 16.dp), color = JewelTheme.globalColors.text.error)
                         }
@@ -288,6 +308,7 @@ fun ProjectScreen(
                 }
             },
         )
+        }
     }
 }
 

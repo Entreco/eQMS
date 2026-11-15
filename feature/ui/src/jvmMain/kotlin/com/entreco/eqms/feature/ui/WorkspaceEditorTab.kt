@@ -65,7 +65,7 @@ fun WorkspaceEditorTab(
             .height(30.dp).widthIn(max = 280.dp)
             .alpha(if (enabled) 1f else 0.5f).clip(shape).background(background)
             .border(if (selected) 1.dp else 0.dp,
-                if (selected) JewelTheme.globalColors.borders.normal else androidx.compose.ui.graphics.Color.Transparent, shape)
+                if (selected) Brand.accent else androidx.compose.ui.graphics.Color.Transparent, shape)
             .focusOutline(focused, shape)
             .hoverable(interactions, enabled)
             .selectable(selected, enabled = enabled, role = Role.Tab,
