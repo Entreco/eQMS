@@ -19,6 +19,9 @@ kotlin {
             implementation(libs.jewel.standalone)
             implementation(libs.intellij.icons)
         }
+        commonTest.dependencies {
+            implementation(kotlin("test"))
+        }
         jvmTest.dependencies {
             implementation(kotlin("test"))
             implementation(compose.desktop.uiTestJUnit4)
