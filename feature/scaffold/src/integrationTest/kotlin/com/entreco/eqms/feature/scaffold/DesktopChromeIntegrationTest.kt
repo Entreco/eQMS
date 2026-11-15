@@ -56,6 +56,7 @@ class DesktopChromeIntegrationTest : ScaffoldDocumentTestSupport(nativeIntegrati
         compose.onNodeWithText("DutchDoxx 1.0.0-dev").assertDoesNotExist()
         compose.onNodeWithText("Project verified and opened.").assertExists()
         compose.runOnIdle { chrome.request(DesktopCommand.About) }
+        compose.waitUntil(5_000) { compose.onAllNodesWithText("DutchDoxx 1.0.0-dev").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithText("DutchDoxx 1.0.0-dev").assertIsDisplayed()
         compose.runOnIdle { assertNotSame(about, aboutFrames().single()) }
         compose.onNodeWithText("Close").performSemanticsAction(SemanticsActions.OnClick) { it() }
