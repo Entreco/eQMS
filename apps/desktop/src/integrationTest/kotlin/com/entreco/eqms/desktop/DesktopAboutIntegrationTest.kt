@@ -35,7 +35,7 @@ class DesktopAboutIntegrationTest {
             compose.onNodeWithText("Close").performSemanticsAction(SemanticsActions.OnClick) { it() }
             if (theme == 0) {
                 compose.onNodeWithContentDescription("Settings").performClick()
-                compose.onNodeWithText("Use dark appearance").performClick()
+                compose.onNodeWithText("Use light appearance").performClick()
                 compose.onNodeWithText("Close").performClick()
             }
         }

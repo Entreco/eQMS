@@ -30,9 +30,15 @@ class DesktopJewelPreviewTest {
     @get:Rule val compose = createComposeRule()
 
     private fun toggleAppearance(label: String) {
+        compose.waitUntil(5_000) {
+            compose.onAllNodes(hasContentDescription("Settings") and isEnabled()).fetchSemanticsNodes().size == 1
+        }
         compose.onNodeWithContentDescription("Settings").activate()
+        compose.waitUntil(5_000) { compose.onAllNodesWithText(label).fetchSemanticsNodes().size == 1 }
         compose.onNodeWithText(label).activate()
+        compose.waitUntil(5_000) { compose.onAllNodesWithText("Close").fetchSemanticsNodes().size == 1 }
         compose.onNodeWithText("Close").activate()
+        compose.waitUntil(5_000) { compose.onAllNodesWithText("Close").fetchSemanticsNodes().isEmpty() }
     }
 
     private fun SemanticsNodeInteraction.activate() =
