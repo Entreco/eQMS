@@ -97,6 +97,10 @@ internal class WorkspaceCli(
     fun brandingData(path: Path): Result<JsonObject> =
         brandingCommand("show", listOf("--json", path.toString()))
 
+    /** Runs `qms project branding set`, which journals the change; returns the recorded branding. */
+    fun brandingSet(path: Path, arguments: List<String>): Result<JsonObject> =
+        brandingCommand("set", listOf("--json") + arguments + path.toString())
+
     /** Runs the workspace-free `qms project branding preview`; nothing is written. */
     fun brandingPreview(arguments: List<String>): Result<JsonObject> =
         brandingCommand("preview", listOf("--json") + arguments)

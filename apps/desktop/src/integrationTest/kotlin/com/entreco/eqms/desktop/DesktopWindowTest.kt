@@ -65,7 +65,7 @@ class DesktopWindowTest {
         compose.onAllNodesWithText("DutchDoxx").assertCountEquals(1)
         compose.onAllNodesWithText("Open project").assertCountEquals(0)
         compose.onAllNodesWithText("Create project").assertCountEquals(0)
-        compose.onNodeWithText("Dark theme").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Settings").assertIsDisplayed()
         val original = checkNotNull(frame)
         val lightColor = headerColor
         compose.runOnIdle {
@@ -79,9 +79,7 @@ class DesktopWindowTest {
         click("Select directory")
         waitForText("Project verified and opened.")
         compose.onNodeWithText("Project verified and opened.").assertExists()
-        click("Dark theme")
-        waitForText("Light theme")
-        compose.onNodeWithText("Light theme").assertIsDisplayed()
+        setAppearance(dark = true)
         compose.runOnIdle {
             assertSame(original, frame)
             assertTrue(chrome.dark)
@@ -95,29 +93,33 @@ class DesktopWindowTest {
         if (isMacOS) {
             compose.runOnIdle { original.setSize(960, 720) }
             compose.waitUntil(5000) {
-                compose.onNodeWithText("Light theme").fetchSemanticsNode().boundsInRoot.right / density < 960
+                compose.onNodeWithContentDescription("Settings").fetchSemanticsNode().boundsInRoot.right / density < 960
             }
             capture(original, "unified-layout.png")
             val label = compose.onNodeWithText("DutchDoxx").fetchSemanticsNode().boundsInRoot
             assertTrue(label.top / density < 30, "App label must be in the native title region")
             assertTrue(label.left / density >= 70, "Native traffic lights must have reserved space: $label, density=$density")
-            val button = compose.onNodeWithText("Light theme").fetchSemanticsNode().boundsInRoot
+            val button = compose.onNodeWithContentDescription("Settings").fetchSemanticsNode().boundsInRoot
             assertTrue(button.right / density < original.width, "Theme action must fit inside the window")
-            click("Light theme")
+            setAppearance(dark = false)
             compose.waitUntil(5000) { !chrome.dark }
-            waitForText("Dark theme")
-            compose.onNodeWithText("Dark theme").assertIsDisplayed()
             compose.runOnIdle { assertEquals(lightColor, headerColor); assertSame(original, frame) }
             capture(original, "unified-light.png")
-            click("Dark theme")
-            waitForText("Light theme")
-            compose.onNodeWithText("Light theme").assertIsDisplayed()
+            setAppearance(dark = true)
             capture(original, "unified-dark.png")
         }
         compose.runOnIdle {
             original.dispatchEvent(WindowEvent(original, WindowEvent.WINDOW_CLOSING))
         }
         compose.waitUntil(3000) { closed }
+    }
+
+    private fun setAppearance(dark: Boolean) {
+        compose.onNodeWithContentDescription("Settings").performSemanticsAction(SemanticsActions.OnClick) { it() }
+        click(if (dark) "Use dark appearance" else "Use light appearance")
+        waitForText(if (dark) "Appearance: Dark" else "Appearance: Light")
+        click("Close")
+        compose.waitUntil(5000) { compose.onAllNodesWithText("Close").fetchSemanticsNodes().isEmpty() }
     }
 
     private fun click(text: String) {

@@ -29,6 +29,12 @@ class DesktopJewelPreviewTest {
 
     @get:Rule val compose = createComposeRule()
 
+    private fun toggleAppearance(label: String) {
+        compose.onNodeWithContentDescription("Settings").activate()
+        compose.onNodeWithText(label).activate()
+        compose.onNodeWithText("Close").activate()
+    }
+
     private fun SemanticsNodeInteraction.activate() =
         performSemanticsAction(SemanticsActions.OnClick) { it() }
 
@@ -212,7 +218,7 @@ class DesktopJewelPreviewTest {
         move(MouseEvent.MOUSE_EXITED, -10, -10)
         captureTooltip("jewel-tooltip-dark.png")
         captureTooltip("jewel-tooltip-right-dark.png", "History", 4)
-        compose.onNodeWithText("Light theme").activate()
+        toggleAppearance("Use light appearance")
         sourceField("Markdown body").assertTextContains("## Working practices", substring = true)
         capture("jewel-light.png")
         move(MouseEvent.MOUSE_MOVED, ((inactiveTab.left + 30) / density).toInt(),
@@ -289,7 +295,7 @@ class DesktopJewelPreviewTest {
             }
         }
         for (theme in listOf("light", "dark")) {
-            if (theme == "dark") compose.onNodeWithText("Dark theme").activate()
+            if (theme == "dark") toggleAppearance("Use dark appearance")
             for (mode in listOf("Preview", "Markdown + Preview", "Markdown")) {
                 selectMode(mode)
                 capture("native-document-${mode.lowercase().replace(" + ", "-")}-$theme.png")

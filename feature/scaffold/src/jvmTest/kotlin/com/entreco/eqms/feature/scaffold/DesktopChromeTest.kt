@@ -22,8 +22,10 @@ class DesktopChromeTest {
             { error("No update check expected") }, { error("No browser expected") },
         )
         compose.setContent { ProjectScreen(projects, chrome = chrome) }
-        compose.onNodeWithText("Dark theme").performClick()
-        compose.runOnIdle { assertEquals(true, saved); chrome.request(DesktopCommand.Settings) }
+        compose.onNodeWithContentDescription("Settings").performClick()
+        compose.onNodeWithText("Appearance: Light").assertExists()
+        compose.onNodeWithText("Use dark appearance").performClick()
+        compose.runOnIdle { assertEquals(true, saved) }
         compose.onNodeWithText("Appearance: Dark").assertExists()
         compose.onNodeWithText("Use light appearance").performClick()
         compose.onNodeWithText("Appearance: Light").assertExists()
@@ -32,7 +34,7 @@ class DesktopChromeTest {
         compose.onAllNodesWithText("Could not save appearance: disk failure").onFirst().assertExists()
         compose.onNodeWithText("Appearance: Light").assertExists()
         compose.onNodeWithText("Close").performClick()
-        compose.onNodeWithText("Dark theme").assertExists()
+        compose.onNodeWithContentDescription("Settings").assertExists()
     }
 
     @Test

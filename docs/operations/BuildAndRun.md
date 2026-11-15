@@ -130,10 +130,13 @@ platform/font changes can change the page count. Tables flow by rows; oversized
 indivisible blocks have a visible scrollable overflow diagnostic. Tables are
 edited as Markdown, not rich cells.
 
-Project branding (EQMS-107 CLI; creation UI in EQMS-110, editing UI still pending EQMS-111).
+Project branding (EQMS-107 CLI; creation UI in EQMS-110; header, settings and accent in EQMS-111).
 In the desktop app, **File > New project** > choose a folder > **Project identity**
 sets name, logo (generated, Shuffle, or PNG via Browse) and accent with a live
-preview from `qms project branding preview`:
+preview from `qms project branding preview`. The header shows
+`DutchDoxx | logo | project name`; the gear (Settings) button opens **Project
+Settings** (theme toggle and branding editor with explicit Save via
+`qms project branding set`); the project accent colours primary buttons:
 
 ```sh
 qms init <project> --name "Acme Medical" --accent auto

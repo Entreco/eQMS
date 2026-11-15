@@ -43,7 +43,7 @@ class ProjectBrandingTest {
             compose.onAllNodesWithText("Branding warning:", substring = true).fetchSemanticsNodes().isNotEmpty()
         }
         compose.onNodeWithText("Branding warning: ${weak.warnings.single()}").assertExists()
-        compose.onNodeWithText("Light theme").assertIsEnabled()
+        compose.onNodeWithContentDescription("Settings").assertIsEnabled()
     }
 
     @Test

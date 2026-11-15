@@ -3,6 +3,7 @@ package com.entreco.eqms.feature.scaffold
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.junit4.ComposeContentTestRule
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import com.entreco.eqms.feature.ui.BrandLogo
@@ -50,4 +51,12 @@ internal fun ComposeContentTestRule.menu(chrome: DesktopChrome, command: Desktop
 internal fun ComposeContentTestRule.openRecent(chrome: DesktopChrome, path: String) {
     runOnIdle { chrome.requestRecent(path) }
     waitForIdle()
+}
+
+/** Flips the theme the way a user does: gear button, appearance button, Close. */
+internal fun ComposeContentTestRule.toggleAppearanceFromSettings() {
+    onNodeWithContentDescription("Settings").performClick()
+    val toDark = onAllNodesWithText("Use dark appearance").fetchSemanticsNodes().isNotEmpty()
+    onNodeWithText(if (toDark) "Use dark appearance" else "Use light appearance").performClick()
+    onNodeWithText("Close").performClick()
 }

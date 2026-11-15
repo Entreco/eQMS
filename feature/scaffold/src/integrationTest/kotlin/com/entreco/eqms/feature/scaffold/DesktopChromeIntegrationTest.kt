@@ -34,8 +34,9 @@ class DesktopChromeIntegrationTest : ScaffoldDocumentTestSupport(nativeIntegrati
             chrome.request(DesktopCommand.About)
         }
         compose.runOnIdle { assertSame(about, aboutFrames().single()) }
-        compose.onNodeWithText("Light theme").performClick()
-        compose.onNodeWithText("Dark theme").assertExists()
+        compose.onNodeWithContentDescription("Settings").performClick()
+        compose.onNodeWithText("Use dark appearance").performClick()
+        compose.onNodeWithText("Appearance: Dark").assertExists()
         compose.onNodeWithText("DutchDoxx 1.0.0-dev").assertIsDisplayed()
         compose.runOnIdle {
             about!!.extendedState = about!!.extendedState or java.awt.Frame.ICONIFIED
