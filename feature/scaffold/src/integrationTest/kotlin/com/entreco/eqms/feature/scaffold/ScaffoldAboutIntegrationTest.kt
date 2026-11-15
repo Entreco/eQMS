@@ -62,6 +62,7 @@ class ScaffoldAboutIntegrationTest : ScaffoldDocumentTestSupport(nativeIntegrati
         compose.onNodeWithText("Policy (Draft)").performClick()
         compose.runOnIdle { chrome.request(DesktopCommand.About) }
         compose.waitUntil(5_000) { compose.onAllNodesWithText("DutchDoxx 1.0.0-dev").fetchSemanticsNodes().isNotEmpty() }
+        compose.waitUntilDisplayed(hasText("DutchDoxx 1.0.0-dev"))
         compose.onNodeWithText("DutchDoxx 1.0.0-dev").assertIsDisplayed()
         sourceField("Markdown body")
             .performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.SetText) {
