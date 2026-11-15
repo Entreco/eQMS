@@ -350,6 +350,11 @@ Use an isolated Python environment for this optional tool; Cairo is not needed.
 Package each installer on its target OS; configuring icons does not validate
 Windows/Linux installation or replace manual launcher/About visual review.
 
+The About window shows the DutchDoxx wordmark, version, author, a licence
+notice (currently "not yet specified") and a fixed "Powered by DutchDoxx"
+attribution, repeated in the status footer. See the
+[EQMS-108 design](../architecture/EQMS-108.md) for naming rules.
+
 The desktop application is named **DutchDoxx**; the repository, workspace
 formats, and native `qms` CLI keep their eQMS names. On macOS the native
 main window uses Jewel/JBR unified chrome: native traffic lights share the
