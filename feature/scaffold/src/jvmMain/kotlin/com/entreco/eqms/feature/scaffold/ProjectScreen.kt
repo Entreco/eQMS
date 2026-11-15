@@ -222,14 +222,14 @@ fun ProjectScreen(
             {
                 Row(
                     Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(2.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text("DutchDoxx", fontWeight = FontWeight.Bold, fontSize = 18.sp)
                     val openPath = project
                     val shown = branding
                     if (openPath != null && shown != null) {
-                        LogoPreview(shown, storedLogoPath(openPath, shown), Modifier.padding(horizontal = 4.dp), size = 28.dp)
+                        LogoPreview(shown, storedLogoPath(openPath, shown), Modifier.padding(4.dp), size = 24.dp)
                     }
                     Text(
                         shown?.tokens?.name?.takeIf { openPath != null }

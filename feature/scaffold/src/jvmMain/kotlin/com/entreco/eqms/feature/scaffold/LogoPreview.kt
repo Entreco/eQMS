@@ -23,6 +23,7 @@ import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
 import org.jetbrains.jewel.ui.component.Text
+import org.jetbrains.skia.Image.Companion.makeFromEncoded
 
 /** Draws what core would record as the logo: the chosen PNG, or the generated shape with initials. */
 @Composable
@@ -30,7 +31,7 @@ fun LogoPreview(preview: BrandingPreview, logoFile: String?, modifier: Modifier 
     val tokens = preview.tokens
     val png = remember(logoFile) {
         logoFile?.let {
-            runCatching { org.jetbrains.skia.Image.makeFromEncoded(File(it).readBytes()).toComposeImageBitmap() }.getOrNull()
+            runCatching { makeFromEncoded(File(it).readBytes()).toComposeImageBitmap() }.getOrNull()
         }
     }
     val description = "Logo preview for ${tokens.name}"
