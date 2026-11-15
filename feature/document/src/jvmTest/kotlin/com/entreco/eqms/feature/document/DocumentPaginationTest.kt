@@ -218,4 +218,67 @@ class DocumentPaginationTest {
         "Title", "digest",
         RenderSource("unsaved", "", "", ""), nodes, emptyList(), emptyList()
     )
+
+    private val styled = DocumentStyle.Fallback.copy(
+        templateId = "formal", templateName = "Formal", origin = StyleOrigin.Pinned,
+        coverPage = true, pageBreakBeforeLevel = 1, headingNumbering = true,
+        numbers = mapOf("a" to "1", "b" to "2"),
+        toc = StyleToc(true, 2, true, StyleTocPlacement.AfterCover),
+        regions = StyleRegions(
+            StyleRegion(StyleSlot(listOf(StyleSegment.Text("Acme")), null), StyleSlot(emptyList(), null), StyleSlot(emptyList(), null)),
+            StyleRegion(StyleSlot(listOf(StyleSegment.Text("Page "), StyleSegment.Page, StyleSegment.Text(" of "), StyleSegment.Total), null),
+                StyleSlot(emptyList(), null), StyleSlot(emptyList(), null)),
+        ),
+    )
+
+    @Test
+    fun templateStyleAddsCoverContentsPageBreaksAndHeadingNumbers() {
+        fun heading(level: Int, title: String, anchor: String) =
+            RenderNode("h$level", anchor = anchor, children = listOf(RenderNode("text", title)))
+        val document = document(listOf(heading(1, "One", "a"), RenderNode("paragraph", children = listOf(RenderNode("text", "x"))),
+            heading(1, "Two", "b"))).copy(
+            toc = listOf(RenderHeading(1, "One", "a"), RenderHeading(1, "Two", "b")), style = styled)
+        var layout: PaginatedLayout? = null
+        compose.setContent {
+            IntUiTheme(isDark = false) {
+                val measured = rememberPaginatedLayout(document, DocumentPageSetup(), 760f, {}, emptyMap()).getOrThrow()
+                SideEffect { layout = measured }
+            }
+        }
+        compose.runOnIdle {
+            val pages = requireNotNull(layout).pages
+            val texts = pages.map { page -> page.joinToString("\n") { it.text?.text.orEmpty() } }
+            assertEquals(4, pages.size) // cover, contents, "1 One", "2 Two"
+            assertEquals("Title", texts[0])
+            assertTrue(texts[1].contains("Contents") && texts[1].contains("1  One") && texts[1].contains("2  Two"))
+            assertTrue(texts[2].startsWith("1  One"))
+            assertTrue(texts[3].startsWith("2  Two"))
+            // Contents list the real pages (1-based): "One" on page 3 and "Two" on page 4.
+            assertTrue(texts[1].lines().first { it.contains("One") }.trim().endsWith("3"))
+            assertTrue(texts[1].lines().first { it.contains("Two") }.trim().endsWith("4"))
+        }
+    }
+
+    @Test
+    fun withoutTemplateStyleTheDocumentRendersAsBefore() {
+        val document = document(listOf(RenderNode("paragraph", children = listOf(RenderNode("text", "x")))))
+        var layout: PaginatedLayout? = null
+        compose.setContent {
+            IntUiTheme(isDark = false) {
+                val measured = rememberPaginatedLayout(document, DocumentPageSetup(), 760f, {}, emptyMap()).getOrThrow()
+                SideEffect { layout = measured }
+            }
+        }
+        compose.runOnIdle {
+            assertEquals(1, requireNotNull(layout).pages.size)
+            assertEquals(null, requireNotNull(layout).style.regions)
+        }
+    }
+
+    @Test
+    fun regionSlotsSubstitutePageAndTotalWithoutReExpandingText() {
+        val slot = styled.regions!!.footer.left
+        assertEquals("Page 2 of 5", slotText(slot, 2, 5))
+        assertEquals("{page}", slotText(StyleSlot(listOf(StyleSegment.Text("{page}")), null), 2, 5))
+    }
 }

@@ -98,4 +98,59 @@ class DocumentRenderDecoderTest {
             renderedDocument(payload(nestedPageBreak = true))
         }
     }
+
+    private val goldenStyle: JsonObject by lazy {
+        Json.parseToJsonElement(java.io.File("../../core/rust/tests/golden/style_formal_pinned.json").readText()).jsonObject
+    }
+    private val anchors = setOf("audience", "procedure", "purpose", "scope", "steps")
+
+    @Test
+    fun coreStyleGoldenIsDecodedIntoTheStyleModel() {
+        val style = decodeStyle(goldenStyle, anchors)
+        assertEquals("Formal SOP", style.templateName)
+        assertEquals(com.entreco.eqms.feature.document.StyleOrigin.Pinned, style.origin)
+        assertEquals(com.entreco.eqms.feature.document.StyleFamily.Serif, style.bodyFont)
+        assertEquals(com.entreco.eqms.feature.document.StyleTocPlacement.AfterCover, style.toc.placement)
+        assertTrue(style.coverPage)
+        assertEquals(1, style.pageBreakBeforeLevel)
+        assertEquals("2.0.1", style.numbers["steps"])
+        assertEquals(setOf("project_logo"), style.images.keys)
+        assertNotNull(style.regions)
+    }
+
+    @Test
+    fun malformedOrUnknownStyleValuesAreRejected() {
+        fun mutate(change: (MutableMap<String, JsonElement>) -> Unit) =
+            JsonObject(goldenStyle.toMutableMap().also(change))
+        listOf(
+            mutate { it["style_schema_version"] = JsonPrimitive(2) },
+            mutate { it["body_font"] = JsonPrimitive("comic") },
+            mutate { it["heading_color"] = JsonPrimitive("red") },
+            mutate { it["body_size_pt"] = JsonPrimitive(99) },
+            mutate { it["heading_sizes_pt"] = buildJsonArray { add(JsonPrimitive(12)) } },
+            mutate { it.remove("toc") },
+            mutate { it["numbers"] = buildJsonObject { put("ghost", "1") } },
+        ).forEach { assertFailsWith<IllegalArgumentException>(it.toString().take(40)) { decodeStyle(it, anchors) } }
+    }
+
+    @Test
+    fun renderedDocumentCarriesStyleWhenPresent() {
+        val withStyle = JsonObject(payload().toMutableMap().also { it["style"] = goldenStyle })
+        assertNull(renderedDocument(payload()).style)
+        val headings = anchors.sorted()
+        val document = JsonObject(withStyle.toMutableMap().also {
+            it["nodes"] = buildJsonArray {
+                headings.forEach { a ->
+                    add(buildJsonObject {
+                        put("kind", "h1"); put("anchor", a)
+                        put("children", buildJsonArray { add(buildJsonObject { put("kind", "text"); put("text", a) }) })
+                    })
+                }
+            }
+            it["toc"] = buildJsonArray {
+                headings.forEach { a -> add(buildJsonObject { put("level", 1); put("title", a); put("anchor", a) }) }
+            }
+        })
+        assertNotNull(renderedDocument(document).style)
+    }
 }

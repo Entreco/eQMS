@@ -212,24 +212,27 @@ internal fun rememberDocumentRender(project: String, tab: DocumentTab, capabilit
     val body = tab.body
     val revision = tab.snapshot?.revision
     val dirty = tab.dirty || tab.snapshot == null
+    val template = tab.previewTemplate
     var error by remember(tab) { mutableStateOf<String?>(null) }
     var loading by remember(tab) { mutableStateOf(false) }
     val current = tab.rendered?.takeIf {
         tab.renderedTitle == title && tab.renderedBody == body && tab.renderedRevision == revision &&
-            (it.source.kind == "unsaved") == dirty
+            tab.renderedTemplate == template && (it.source.kind == "unsaved") == dirty
     }
-    LaunchedEffect(tab, title, body, revision, dirty) {
+    LaunchedEffect(tab, title, body, revision, dirty, template) {
         if (current != null) return@LaunchedEffect
         loading = true
         error = null
         withContext(Dispatchers.Default) { delay(100) }
-        val result = if (dirty) capabilities.renderBuffer(project, title, body)
-            else capabilities.renderSaved(project, requireNotNull(tab.snapshot))
+        val request = StyleRequest(tab.snapshot, template)
+        val result = if (dirty) capabilities.renderBuffer(project, title, body, request)
+            else capabilities.renderSaved(project, requireNotNull(tab.snapshot), request)
         coroutineContext.ensureActive()
-        if (tab.title == title && tab.body == body && tab.snapshot?.revision == revision) {
+        if (tab.title == title && tab.body == body && tab.snapshot?.revision == revision &&
+            tab.previewTemplate == template) {
             result.fold(
                 onSuccess = {
-                    tab.renderedTitle = title; tab.renderedBody = body; tab.renderedRevision = revision
+                    tab.renderedTitle = title; tab.renderedBody = body; tab.renderedRevision = revision; tab.renderedTemplate = template
                     tab.rendered = it
                 },
                 onFailure = { error = it.message ?: "Document rendering failed. Source remains available." },
@@ -259,6 +262,9 @@ private fun Preview(
     val error = render.error ?: navigationError
     var showContents by remember(tab) { mutableStateOf(false) }
     var showSourceDetails by remember(tab) { mutableStateOf(false) }
+    var showStyles by remember(tab) { mutableStateOf(false) }
+    var templates by remember(project) { mutableStateOf<List<TemplateSummary>?>(null) }
+    var styleError by remember(project) { mutableStateOf<String?>(null) }
     var anchorPages by remember(tab) { mutableStateOf<Map<String, Int>>(emptyMap()) }
     var imageRatios by remember(project, tab) { mutableStateOf<Map<String, Float>>(emptyMap()) }
     val scope = rememberCoroutineScope()
@@ -309,6 +315,36 @@ private fun Preview(
                                     if (showSourceDetails) Text("${current.source.id}\n${current.source.revision}\n${current.source.contentHash}", fontSize = 11.sp,
                                         color = JewelTheme.globalColors.text.info)
                                 }
+                                val applied = current.style
+                                if (applied != null) Text("Style: ${applied.label}", color = JewelTheme.globalColors.text.info,
+                                    modifier = Modifier.semantics { contentDescription = "Document style" })
+                                OutlinedButton(onClick = { showStyles = !showStyles }) {
+                                    Text(if (showStyles) "Hide styles" else "Preview style")
+                                }
+                                if (showStyles) {
+                                    LaunchedEffect(project) {
+                                        capabilities.listTemplates(project).fold(
+                                            onSuccess = { templates = it; styleError = null },
+                                            onFailure = { styleError = it.message ?: "Templates could not be listed." },
+                                        )
+                                    }
+                                    Text("Preview only - the document's saved style is not changed.", fontSize = 11.sp,
+                                        color = JewelTheme.globalColors.text.info)
+                                    styleError?.let { Text(it, color = JewelTheme.globalColors.text.error) }
+                                    if (tab.previewTemplate != null) OutlinedButton(onClick = { tab.previewTemplate = null }) {
+                                        Text("Use document's style")
+                                    }
+                                    templates?.let { list ->
+                                        if (list.isEmpty()) Text("No templates installed in this project.",
+                                            color = JewelTheme.globalColors.text.info)
+                                        list.forEach { item ->
+                                            OutlinedButton(onClick = { tab.previewTemplate = item },
+                                                modifier = Modifier.semantics { contentDescription = "Preview style ${item.name} version ${item.version}" }) {
+                                                Text("${item.name} v${item.version}")
+                                            }
+                                        }
+                                    }
+                                }
                                 if (current.toc.isNotEmpty()) {
                                     OutlinedButton(onClick = { showContents = !showContents }) {
                                         Text(if (showContents) "Hide contents" else "Table of contents")
@@ -335,7 +371,8 @@ private fun Preview(
                                         val ratio = width.toFloat() / height
                                         if (imageRatios[node.target] != ratio) imageRatios = imageRatios + (node.target to ratio)
                                     })
-                                else Block(node, project, tab.historical, capabilities, cache, navigate, modifier)
+                                else Block(node, project, tab.historical, capabilities, cache, navigate, modifier,
+                                    current.style ?: DocumentStyle.Fallback)
                             }
                         }
                     }
@@ -347,8 +384,10 @@ private fun Preview(
 
 @Composable
 private fun Block(node: RenderNode, project: String, historical: Boolean, capabilities: DocumentCapabilities,
-    cache: DocumentBitmapCache, navigate: (String) -> Unit, modifier: Modifier = Modifier) {
-    val base = JewelTheme.defaultTextStyle.copy(color = Paper.ink, fontSize = 15.sp, lineHeight = 24.sp)
+    cache: DocumentBitmapCache, navigate: (String) -> Unit, modifier: Modifier = Modifier,
+    style: DocumentStyle = DocumentStyle.Fallback) {
+    val base = JewelTheme.defaultTextStyle.copy(color = Paper.ink, fontFamily = style.bodyFont.family(),
+        fontSize = style.bodySizePt.ptToSp(), lineHeight = (style.bodySizePt * 2.1f).sp)
     when (node.kind) {
         "rule" -> Box(modifier.height(1.dp).background(Paper.rule))
         "image" -> DocumentImageView(node, project, historical, capabilities, cache, modifier)
@@ -358,7 +397,7 @@ private fun Block(node: RenderNode, project: String, historical: Boolean, capabi
                     Text(if (node.kind == "ordered") "${(node.target.toLongOrNull() ?: 1) + index}." else "\u2022", color = Paper.ink)
                     Column(Modifier.weight(1f)) {
                         item.children.ifEmpty { listOf(item.copy(kind = "paragraph")) }.forEach {
-                            Block(it, project, historical, capabilities, cache, navigate)
+                            Block(it, project, historical, capabilities, cache, navigate, style = style)
                         }
                     }
                 }
@@ -369,12 +408,18 @@ private fun Block(node: RenderNode, project: String, historical: Boolean, capabi
             val cellWidth = maxOf(150.dp, maxWidth / columns.coerceAtLeast(1))
             Column(Modifier.horizontalScroll(rememberScrollState())
                 .semantics { contentDescription = "Rendered table with $columns columns" }
-                .border(1.dp, Paper.rule)) {
-                node.children.forEach { row ->
-                    Row(Modifier.height(IntrinsicSize.Min)) {
+                .then(if (style.table == StyleTable.Grid) Modifier.border(1.dp, Paper.rule) else Modifier)) {
+                node.children.forEachIndexed { rowIndex, row ->
+                    Row(Modifier.height(IntrinsicSize.Min)
+                        .then(if (style.table == StyleTable.Banded && rowIndex % 2 == 0 && row.kind != "table_header")
+                            Modifier.background(Paper.codeBackground) else Modifier)
+                        .then(if (style.table != StyleTable.Grid && row.kind == "table_header")
+                            Modifier.border(1.dp, Paper.rule) else Modifier)) {
                         row.children.forEach { cell ->
                             BasicText(inlineText(cell.children, navigate, Paper.ink),
-                                Modifier.width(cellWidth).fillMaxHeight().border(0.5.dp, Paper.rule).padding(10.dp),
+                                Modifier.width(cellWidth).fillMaxHeight()
+                                    .then(if (style.table == StyleTable.Grid) Modifier.border(0.5.dp, Paper.rule) else Modifier)
+                                    .padding(10.dp),
                                 style = base.copy(fontWeight = if (row.kind == "table_header") FontWeight.SemiBold else FontWeight.Normal))
                         }
                     }
@@ -390,18 +435,17 @@ private fun Block(node: RenderNode, project: String, historical: Boolean, capabi
             .border(1.dp, Paper.rule).padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)) {
             if (node.kind == "footnote") Text("Note ${node.text}", fontWeight = FontWeight.SemiBold, color = Paper.ink)
-            node.children.forEach { Block(it, project, historical, capabilities, cache, navigate) }
+            node.children.forEach { Block(it, project, historical, capabilities, cache, navigate, style = style) }
             if (node.kind == "footnote") OutlinedButton(onClick = { navigate("#reference-${node.anchor}") }) { Text("Back to reference") }
         }
         else -> {
             val level = node.kind.takeIf { it.matches(Regex("h[1-6]")) }?.last()?.digitToInt()
-            val style = if (level != null) base.copy(fontSize = (29 - level * 2).sp, lineHeight = (37 - level * 2).sp,
-                fontWeight = FontWeight.SemiBold) else base
+            val textStyle = renderTextStyle(node, base, style)
             val text = inlineText(if (node.children.isEmpty()) listOf(node) else node.children, navigate, Paper.ink)
             Column(modifier) {
                 SelectionContainer {
                     BasicText(text, Modifier.fillMaxWidth().then(if (level != null) Modifier.semantics { heading() } else Modifier),
-                        style = style)
+                        style = textStyle)
                 }
                 fun images(n: RenderNode): List<RenderNode> =
                     if (n.kind == "image") listOf(n) else n.children.flatMap(::images)

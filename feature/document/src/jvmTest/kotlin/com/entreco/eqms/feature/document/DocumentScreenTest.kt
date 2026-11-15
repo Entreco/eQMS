@@ -264,6 +264,17 @@ class DocumentScreenTest {
             return Result.success(rendered(document.title, document.body,
                 RenderSource("saved", document.id, document.revision, document.contentHash)))
         }
+        val templates = listOf(TemplateSummary("formal-sop", 2, "Formal SOP", "SOP", "project"))
+        val styleRequests = mutableListOf<StyleRequest>()
+        override suspend fun listTemplates(project: String) = Result.success(templates)
+        override suspend fun renderSaved(project: String, document: DocumentSnapshot, style: StyleRequest): Result<RenderedDocument> {
+            styleRequests += style
+            return renderSaved(project, document).map {
+                it.copy(style = DocumentStyle.Fallback.copy(
+                    templateId = style.chosen?.id ?: "generic", templateName = style.chosen?.name ?: "Generic controlled document",
+                    origin = if (style.chosen != null) StyleOrigin.Selected else StyleOrigin.Default))
+            }
+        }
         var transitionFails = false
         var transitions = 0
         override suspend fun transitionDocument(project: String, document: DocumentSnapshot, target: DocumentStatus): Result<DocumentSnapshot> {
@@ -549,6 +560,23 @@ class DocumentScreenTest {
         compose.onNodeWithText("Table of contents").performClick()
         compose.onNodeWithContentDescription("Go to End").performClick()
         compose.onNode(hasText("End") and !hasClickAction()).assertIsDisplayed()
+    }
+
+    @Test
+    fun previewStylePickerAppliesATemplateForPreviewOnlyAndCanBeReset() {
+        val capabilities = Capabilities()
+        compose.setContent { IntUiTheme(isDark = false) { DocumentScreen("/project", capabilities, { _, _ -> }) } }
+        compose.onNodeWithText("Policy (Draft)").performClick()
+        compose.onNodeWithContentDescription("View Preview").performClick()
+        compose.waitUntil { compose.onAllNodesWithContentDescription("Document style").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithContentDescription("Document style").assertTextContains("Generic controlled document", substring = true)
+        compose.onNodeWithText("Preview style").performClick()
+        compose.waitUntil { compose.onAllNodesWithContentDescription("Preview style Formal SOP version 2").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithContentDescription("Preview style Formal SOP version 2").performClick()
+        compose.waitUntil { compose.onAllNodes(hasText("Formal SOP v1", substring = true)).fetchSemanticsNodes().isNotEmpty() }
+        assertEquals("formal-sop", capabilities.styleRequests.last().chosen?.id)
+        compose.onNodeWithText("Use document's style").performClick()
+        compose.waitUntil { capabilities.styleRequests.last().chosen == null }
     }
 
     @Test

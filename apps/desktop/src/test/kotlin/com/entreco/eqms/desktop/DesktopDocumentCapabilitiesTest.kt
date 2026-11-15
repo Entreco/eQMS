@@ -4,6 +4,7 @@ import java.io.IOException
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import kotlin.test.*
+import kotlinx.serialization.json.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
@@ -244,5 +245,43 @@ class DesktopDocumentCapabilitiesTest {
         }
         data = "[]"
         assertTrue(capabilities.documentLifecycleHistory("project", id).getOrThrow().isEmpty())
+    }
+
+    @Test
+    fun listTemplatesUsesTheTemplateGroupAndIsDecodedStrictly() = runBlocking {
+        val calls = mutableListOf<List<String>>()
+        var data = """[{"id":"formal-sop","version":2,"name":"Formal SOP","document_type":"SOP","source":"project","sections":3,"content_hash":"sha256:${"a".repeat(64)}"}]"""
+        val capabilities = DesktopDocumentCapabilities("qms", DocumentExecutor { _, args, _ ->
+            calls += args
+            ProcessResult(0, """{"schema_version":2,"status":"ok","command":"template.list","timestamp_unix_ms":1,"findings":[],"references":[],"data":$data,"error":null}""")
+        })
+        val templates = capabilities.listTemplates("proj").getOrThrow()
+        assertEquals(listOf("template", "list", "--json", "proj"), calls.single())
+        assertEquals("Formal SOP", templates.single().name)
+        assertEquals(2, templates.single().version)
+        data = """[{"id":"x","version":0,"name":"X","document_type":"D","source":"project"}]"""
+        assertTrue(capabilities.listTemplates("proj").isFailure)
+    }
+
+    @Test
+    fun styledBufferRenderSendsProjectPinAndChosenTemplate() = runBlocking {
+        val calls = mutableListOf<Pair<List<String>, String?>>()
+        val capabilities = DesktopDocumentCapabilities("qms", DocumentExecutor { _, args, input ->
+            calls += args to input
+            ProcessResult(1, """{"schema_version":2,"status":"error","command":"document.render-buffer","timestamp_unix_ms":1,"findings":[],"references":[],"data":null,"error":{"code":"x","message":"stop","details":null}}""")
+        })
+        val saved = com.entreco.eqms.feature.document.DocumentSnapshot(
+            id, "T", "", revision, "sha256:${"b".repeat(64)}", "e", "a", "t", DocumentStatus.Draft,
+            template = com.entreco.eqms.feature.document.TemplatePin("formal-sop", 1, "sha256:${"d".repeat(64)}"))
+        capabilities.renderBuffer("proj", "T", "body", com.entreco.eqms.feature.document.StyleRequest(saved, null))
+        val pinned = Json.parseToJsonElement(calls.last().second!!).jsonObject
+        assertEquals(listOf("document", "render-buffer", "--json", "--project", "proj"), calls.last().first)
+        assertEquals("formal-sop", pinned.getValue("template").jsonObject.getValue("id").jsonPrimitive.content)
+        assertNotNull(pinned.getValue("template").jsonObject["hash"])
+        capabilities.renderBuffer("proj", "T", "body", com.entreco.eqms.feature.document.StyleRequest(saved,
+            com.entreco.eqms.feature.document.TemplateSummary("other", 3, "Other", "SOP", "project")))
+        val chosen = Json.parseToJsonElement(calls.last().second!!).jsonObject.getValue("template").jsonObject
+        assertEquals("other", chosen.getValue("id").jsonPrimitive.content)
+        assertNull(chosen["hash"])
     }
 }

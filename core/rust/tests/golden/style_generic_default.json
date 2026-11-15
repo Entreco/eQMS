@@ -1,0 +1,38 @@
+{
+  "style_schema_version": 1,
+  "template": {
+    "id": "generic",
+    "name": "Generic controlled document",
+    "version": 1,
+    "hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "source": "project",
+    "origin": "default"
+  },
+  "body_font": "sans",
+  "heading_font": "sans",
+  "body_size_pt": 11,
+  "heading_sizes_pt": [
+    20,
+    17,
+    14,
+    13,
+    12,
+    11
+  ],
+  "heading_color": "#C2410C",
+  "heading_numbering": false,
+  "table": "grid",
+  "image_max_width_percent": 100,
+  "image_align": "center",
+  "toc": {
+    "enabled": false,
+    "depth": 3,
+    "leaders": true,
+    "placement": "start"
+  },
+  "cover_page": false,
+  "page_break_before_level": null,
+  "regions": null,
+  "images": {},
+  "numbers": {}
+}

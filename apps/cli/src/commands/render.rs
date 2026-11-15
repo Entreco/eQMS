@@ -1,7 +1,10 @@
 use crate::output;
 use base64::Engine;
-use clap::{Arg, ArgMatches, Command};
+use clap::{Arg, ArgAction, ArgMatches, Command};
+use eqms_core::markdown::TemplateBinding;
 use eqms_core::render::{self, Document, Node};
+use eqms_core::style::{self, DocumentFacts, Selection};
+use eqms_core::workspace::Workspace;
 use serde::Deserialize;
 use serde_json::json;
 use std::io::{Cursor, Read};
@@ -16,12 +19,28 @@ pub(super) fn commands() -> Vec<Command> {
     vec![
         Command::new("render-buffer")
             .about("Render bounded unsaved title/body JSON from stdin")
+            .arg(
+                Arg::new("project")
+                    .long("project")
+                    .help("Project path; adds the resolved template style (EQMS-115)"),
+            )
             .arg(format()),
         Command::new("render")
             .about("Render an exact saved document without changing it")
             .arg(Arg::new("path").required(true))
             .arg(Arg::new("id").required(true))
             .arg(Arg::new("revision").long("revision"))
+            .arg(
+                Arg::new("style")
+                    .long("style")
+                    .action(ArgAction::SetTrue)
+                    .help("Add the resolved template style of the revision's pin (EQMS-115)"),
+            )
+            .arg(
+                Arg::new("template").long("template").help(
+                    "Preview with this installed template, id or id@version; implies --style",
+                ),
+            )
             .arg(format()),
         Command::new("render-asset")
             .about("Read a bounded unversioned assets/ PNG or JPEG")
@@ -74,9 +93,25 @@ pub(super) fn run(
     let mut document = if operation == "render-buffer" {
         #[derive(Deserialize)]
         #[serde(deny_unknown_fields)]
+        struct TemplateInput {
+            id: String,
+            version: Option<u32>,
+            hash: Option<String>,
+        }
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct DocumentInput {
+            id: String,
+            revision: String,
+            status: String,
+        }
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
         struct Buffer {
             title: String,
             body: String,
+            template: Option<TemplateInput>,
+            document: Option<DocumentInput>,
         }
         let mut bytes = Vec::new();
         input
@@ -88,7 +123,41 @@ pub(super) fn run(
         }
         let buffer: Buffer =
             serde_json::from_slice(&bytes).map_err(|e| format!("Invalid render buffer: {e}"))?;
-        render::parse(&buffer.title, &buffer.body)?
+        let mut document = render::parse(&buffer.title, &buffer.body)?;
+        match args.get_one::<String>("project") {
+            Some(path) => {
+                let pin = buffer.template.as_ref().and_then(|template| {
+                    Some(TemplateBinding {
+                        id: template.id.clone(),
+                        version: template.version?,
+                        hash: template.hash.clone()?,
+                    })
+                });
+                let selection = match (&buffer.template, &pin) {
+                    (_, Some(pin)) => Selection::Pinned(pin),
+                    (Some(template), None) => Selection::Chosen {
+                        id: &template.id,
+                        version: template.version,
+                    },
+                    (None, None) => Selection::Default,
+                };
+                let facts = match &buffer.document {
+                    Some(saved) => DocumentFacts {
+                        title: buffer.title.clone(),
+                        id: saved.id.clone(),
+                        revision: saved.revision.clone(),
+                        status: saved.status.clone(),
+                    },
+                    None => DocumentFacts::unsaved(&buffer.title),
+                };
+                apply_style(&mut document, path, selection, &facts)?;
+            }
+            None if buffer.template.is_some() => {
+                return Err("A template needs --project <path>".into());
+            }
+            None => {}
+        }
+        document
     } else {
         let docs =
             eqms_core::document::Documents::open(value("path")).map_err(|e| e.to_string())?;
@@ -103,8 +172,29 @@ pub(super) fn run(
             kind: "saved".into(),
             id: snapshot.id,
             revision: snapshot.revision,
-            content_hash: snapshot.content_hash,
+            content_hash: snapshot.content_hash.clone(),
         };
+        let chosen = args
+            .get_one::<String>("template")
+            .map(|text| style::parse_selector(text).map_err(|e| e.to_string()))
+            .transpose()?;
+        if chosen.is_some() || args.get_flag("style") {
+            let selection = match (&chosen, &snapshot.template) {
+                (Some((id, version)), _) => Selection::Chosen {
+                    id,
+                    version: *version,
+                },
+                (None, Some(pin)) => Selection::Pinned(pin),
+                (None, None) => Selection::Default,
+            };
+            let facts = DocumentFacts {
+                title: snapshot.title.clone(),
+                id: document.source.id.clone(),
+                revision: document.source.revision.clone(),
+                status: snapshot.status.clone(),
+            };
+            apply_style(&mut document, value("path"), selection, &facts)?;
+        }
         document
     };
     document.diagnostics.sort();
@@ -124,6 +214,20 @@ pub(super) fn run(
             json_output,
         )
     }
+}
+
+fn apply_style(
+    document: &mut Document,
+    path: &str,
+    selection: Selection<'_>,
+    facts: &DocumentFacts,
+) -> Result<(), String> {
+    let workspace = Workspace::open(path).map_err(|e| e.to_string())?;
+    let (model, diagnostics) =
+        style::resolve(&workspace, selection, facts, &document.toc).map_err(|e| e.to_string())?;
+    document.style = Some(model);
+    document.diagnostics.extend(diagnostics);
+    Ok(())
 }
 
 fn escape(text: &str) -> String {
