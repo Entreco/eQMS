@@ -27,6 +27,7 @@ class DesktopChromeIntegrationTest : ScaffoldDocumentTestSupport(nativeIntegrati
         compose.waitUntil(5_000) { compose.onAllNodesWithText("Appearance: Light").fetchSemanticsNodes().isEmpty() }
         compose.runOnIdle { chrome.request(DesktopCommand.About) }
         compose.waitUntil(5_000) { compose.onAllNodesWithText("DutchDoxx 1.0.0-dev").fetchSemanticsNodes().isNotEmpty() }
+        compose.waitUntilDisplayed(hasText("DutchDoxx 1.0.0-dev"))
         compose.onNodeWithText("DutchDoxx 1.0.0-dev").assertIsDisplayed()
         fun aboutFrames() = java.awt.Window.getWindows().filterIsInstance<java.awt.Frame>()
             .filter { it.isShowing && it.title == "About DutchDoxx" }
@@ -40,6 +41,7 @@ class DesktopChromeIntegrationTest : ScaffoldDocumentTestSupport(nativeIntegrati
             chrome.request(DesktopCommand.About)
         }
         compose.runOnIdle { assertSame(about, aboutFrames().single()) }
+        compose.waitUntilDisplayed(hasText("DutchDoxx 1.0.0-dev"))
         compose.onNodeWithText("DutchDoxx 1.0.0-dev").assertIsDisplayed()
         compose.runOnIdle {
             about!!.extendedState = about!!.extendedState or java.awt.Frame.ICONIFIED
@@ -57,6 +59,7 @@ class DesktopChromeIntegrationTest : ScaffoldDocumentTestSupport(nativeIntegrati
         compose.onNodeWithText("Project verified and opened.").assertExists()
         compose.runOnIdle { chrome.request(DesktopCommand.About) }
         compose.waitUntil(5_000) { compose.onAllNodesWithText("DutchDoxx 1.0.0-dev").fetchSemanticsNodes().isNotEmpty() }
+        compose.waitUntilDisplayed(hasText("DutchDoxx 1.0.0-dev"))
         compose.onNodeWithText("DutchDoxx 1.0.0-dev").assertIsDisplayed()
         compose.runOnIdle { assertNotSame(about, aboutFrames().single()) }
         compose.onNodeWithText("Close").performSemanticsAction(SemanticsActions.OnClick) { it() }

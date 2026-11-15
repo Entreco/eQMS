@@ -29,6 +29,7 @@ class DesktopAboutIntegrationTest {
         compose.setContent { ProjectScreen(projects, chrome = chrome) }
         repeat(2) { theme ->
             compose.runOnIdle { chrome.request(DesktopCommand.About) }
+            compose.waitUntilDisplayed(hasContentDescription("DutchDoxx logo"))
             compose.onNodeWithContentDescription("DutchDoxx logo").assertIsDisplayed()
             compose.onNodeWithText("DutchDoxx ${desktopVersion()}").assertIsDisplayed()
             compose.onNodeWithText("An eQMS quality workspace. Drafts are not approvals.").assertIsDisplayed()
