@@ -50,6 +50,13 @@ cleanup. Production behavior changes require evidence of a production defect.
 Hosted macOS alone does not establish GUI/input capability; unsupported CI
 must fail visibly and be reported as blocked.
 
+Use the existing minimum native window size for the pointer fixture, centered
+in the runner's usable display, and await matching action layout after resizing.
+Fail explicitly if the display cannot fit that minimum or the click target is
+outside the usable screen. A second CI run computed x=1035 for the original
+1100-pixel default window and failed to position the pointer; real screen/pointer
+diagnostics distinguish this display constraint from input permission failures.
+
 ## Risk Management and Security Risk Management
 
 Both apply proportionately.

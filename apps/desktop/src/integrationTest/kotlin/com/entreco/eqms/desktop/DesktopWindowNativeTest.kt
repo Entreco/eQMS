@@ -9,6 +9,8 @@ import com.entreco.eqms.feature.scaffold.*
 import java.awt.Robot
 import java.awt.MouseInfo
 import java.awt.Point
+import java.awt.Rectangle
+import java.awt.Toolkit
 import java.awt.event.InputEvent
 import kotlin.test.*
 import kotlinx.coroutines.delay
@@ -45,19 +47,40 @@ class DesktopWindowNativeTest {
                     var robot: Robot? = null
                     try {
                         awaitNative("header action layout") { actions.width > 0 && actions.height > 0 }
+                        val screen = window.graphicsConfiguration.bounds
+                        val insets = Toolkit.getDefaultToolkit().getScreenInsets(window.graphicsConfiguration)
+                        val available = Rectangle(
+                            screen.x + insets.left, screen.y + insets.top,
+                            screen.width - insets.left - insets.right,
+                            screen.height - insets.top - insets.bottom,
+                        )
+                        val minimum = window.minimumSize
+                        assertTrue(minimum.width > 0 && minimum.height > 0)
+                        assertTrue(available.width >= minimum.width && available.height >= minimum.height,
+                            "CI display must fit the minimum native window: available=$available minimum=$minimum")
+                        window.setSize(minimum)
+                        window.setLocation(
+                            available.x + (available.width - minimum.width) / 2,
+                            available.y + (available.height - minimum.height) / 2,
+                        )
+                        val scale = window.graphicsConfiguration.defaultTransform.scaleX
+                        awaitNative("minimum-size window and action layout") {
+                            window.size == minimum && actions.right / scale <= minimum.width
+                        }
                         window.toFront()
                         window.requestFocus()
                         awaitNative("native window focus") { window.isFocused }
                         val origin = window.contentPane.locationOnScreen
-                        val scale = window.graphicsConfiguration.defaultTransform.scaleX
                         val input = Robot().also { robot = it }
                         val target = Point(
                             origin.x + (actions.center.x / scale).toInt(),
                             origin.y + (actions.center.y / scale).toInt(),
                         )
-                        println("Native click: origin=$origin scale=$scale actions=$actions target=$target focused=${window.isFocused}")
+                        println("Native click: screen=$screen available=$available window=${window.bounds} origin=$origin scale=$scale actions=$actions target=$target focused=${window.isFocused}")
+                        assertTrue(available.contains(target), "Native click target must be visible: target=$target available=$available")
                         input.mouseMove(target.x, target.y)
-                        awaitNative("OS pointer positioning; check native input permissions") {
+                        awaitNative("OS pointer positioning; check native input permissions",
+                            diagnostics = { "target=$target actual=${MouseInfo.getPointerInfo()?.location} screen=$screen" }) {
                             MouseInfo.getPointerInfo()?.location == target
                         }
                         input.mousePress(InputEvent.BUTTON1_DOWN_MASK)
@@ -95,10 +118,10 @@ class DesktopWindowNativeTest {
         failure?.let { throw it }
     }
 
-    private suspend fun awaitNative(stage: String, ready: () -> Boolean) {
+    private suspend fun awaitNative(stage: String, diagnostics: () -> String = { "" }, ready: () -> Boolean) {
         assertNotNull(withTimeoutOrNull(5000) {
             while (!ready()) delay(50)
             true
-        }, "Timed out waiting for $stage")
+        }, "Timed out waiting for $stage. ${diagnostics()}")
     }
 }
