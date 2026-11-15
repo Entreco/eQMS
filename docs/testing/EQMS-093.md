@@ -26,6 +26,13 @@ Start with `:feature:scaffold:jvmTest :apps:desktop:test`, then affected
 compilation. Inspect supported package task/metadata and launch app under JBR.
 Use isolated fixtures/preferences; never modify existing workspaces in tests.
 
+Execution policy update (EQMS-127 / #107): native application-window, About,
+menu and OS-pointer portions of T093-01/05/07/08/09/10 run exclusively through
+desktop/scaffold `integrationTest` tasks in isolated macOS CI, not local
+`test`/`jvmTest`. Unit/component portions remain local. See
+[EQMS-127 tests](EQMS-127.md) for guards, discovery and required CI checks.
+Historical evidence describes its original tested revisions.
+
 Evidence must identify the tested code revision before a separate evidence
 commit, JBR/environment, commands, observed failures/exclusions, OS integration
 observations, and limitations. Human review and manual testing remain unchecked.

@@ -19,6 +19,12 @@ Issue: #69. Mappings are defined before implementation.
 | T105-07 | R105-08 | Compose test: save failure shows an error and the project stays open. |
 | T105-08 | R105-09 | Run affected desktop and feature JVM suites (project, document, search, history, page setup, tool rail shortcuts) after migrating tests to menu commands; record exclusions as exclusions, not passes. |
 
+Execution policy update (EQMS-127 / #107): T105-02's native-window menu test and
+the native-window parts of T105-08 now run only in isolated macOS CI through
+`:apps:desktop:integrationTest` and `:feature:scaffold:integrationTest`.
+Local unit/component regressions remain separate. See
+[EQMS-127 tests](EQMS-127.md); historical evidence remains revision-specific.
+
 Manual review/testing (not performed by automation, left unchecked in the PR):
 launch with a remembered project; close and relaunch; move the project folder
 and relaunch; native macOS menu behavior; keyboard and accessibility review.
