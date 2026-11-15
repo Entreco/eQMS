@@ -614,6 +614,15 @@ requirements and tests; targets are not claims of observed results.
 - Contrast issues are reported without blocking.
 - Design, requirements, tests and evidence are recorded under `docs/`.
 
+### EQMS-108: DutchDoxx product identity and attribution (#79)
+**Type:** Feature  
+**Priority:** P1  
+**Description:** Fixed DutchDoxx product identity in the desktop app: fuller About (wordmark, version, author, licence notice), non-removable "Powered by DutchDoxx" attribution in About and footer, window-title rule and documented naming rules. Per-project white-label UI is EQMS-109..111.  
+**Acceptance criteria:**
+- Attribution cannot be hidden by project white-labelling (tested).
+- Naming rules (DutchDoxx product; eQMS/`qms` technical) are documented.
+- Design, requirements, tests and evidence are recorded under `docs/`; see [design](docs/architecture/EQMS-108.md).
+
 ### EQMS-112: Template model and schema v1 (#84)
 **Type:** Feature  
 **Priority:** P1  

@@ -279,6 +279,7 @@ fun ProjectScreen(
                                 if (documentBusy) "Document operation in progress" else if (documentDirty) "Draft has unsaved edits" else "Local workspace",
                                 color = JewelTheme.globalColors.text.info,
                             )
+                            ProductAttribution()
                         }
                         chromeDialog?.let { command ->
                             key(command) {

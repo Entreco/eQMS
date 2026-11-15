@@ -14,6 +14,7 @@ import androidx.compose.ui.window.rememberWindowState
 import com.entreco.eqms.desktop.generated.resources.Res
 import com.entreco.eqms.desktop.generated.resources.icon
 import com.entreco.eqms.feature.scaffold.DesktopChrome
+import com.entreco.eqms.feature.scaffold.ProductIdentity
 import com.entreco.eqms.feature.scaffold.ProjectScreenLayout
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.jewel.foundation.theme.JewelTheme
@@ -46,7 +47,7 @@ internal fun DesktopWindow(
                 titleBarStyle = if (chrome.dark) TitleBarStyle.dark() else TitleBarStyle.lightWithLightHeader(),
             ),
         ) {
-            DecoratedWindow(onCloseRequest, state = state, title = "DutchDoxx", icon = icon) {
+            DecoratedWindow(onCloseRequest, state = state, title = ProductIdentity.windowTitle(null), icon = icon) {
                 SideEffect { window.minimumSize = java.awt.Dimension(960, 720) }
                 val scope = this
                 content { title, actions, body ->
@@ -60,7 +61,7 @@ internal fun DesktopWindow(
             }
         }
     } else {
-        Window(onCloseRequest, state = state, title = "DutchDoxx", icon = icon) {
+        Window(onCloseRequest, state = state, title = ProductIdentity.windowTitle(null), icon = icon) {
             SideEffect { window.minimumSize = java.awt.Dimension(960, 720) }
             content(null)
         }

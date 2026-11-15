@@ -18,12 +18,12 @@ import org.jetbrains.jewel.ui.component.Text
 @Composable
 internal fun AboutWindow(chrome: DesktopChrome, dark: Boolean, request: Int, onClose: () -> Unit) {
     val state = rememberWindowState(
-        width = 620.dp, height = 360.dp,
+        width = 620.dp, height = 480.dp,
         position = WindowPosition(Alignment.Center),
     )
     Window(
         onCloseRequest = onClose,
-        title = "About DutchDoxx",
+        title = "About ${ProductIdentity.NAME}",
         state = state,
         resizable = false,
         undecorated = false,
@@ -39,9 +39,7 @@ internal fun AboutWindow(chrome: DesktopChrome, dark: Boolean, request: Int, onC
                 Modifier.fillMaxSize().background(JewelTheme.globalColors.panelBackground).padding(24.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                chrome.aboutLogo()
-                Text("DutchDoxx ${chrome.version}")
-                Text("An eQMS quality workspace. Drafts are not approvals.")
+                AboutContent(chrome.version, chrome.aboutLogo)
                 Spacer(Modifier.weight(1f))
                 DefaultButton(modifier = Modifier.align(Alignment.End), onClick = onClose) { Text("Close") }
             }
